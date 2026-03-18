@@ -1,0 +1,49 @@
+name = "Fantasy Dungeon"
+description = "A classic dungeon crawl with traps, treasure, and a dragon."
+
+[fields]
+world_description = """
+A vast underground dungeon beneath a ruined castle. Once the vault of a
+mad king who hoarded cursed artifacts, it has been sealed for centuries.
+Traps still function. Creatures have moved in. The player is an adventurer
+who found the entrance and descended, seeking the legendary Crown of Avarice.
+"""
+
+era = "Medieval fantasy"
+tone = "serious"
+genre_tags = ["exploration", "puzzle", "combat"]
+scale = "medium"
+
+story = """
+Find the Crown of Avarice in the deepest level of the dungeon and escape
+alive. The crown is guarded by the undead king who still sits on his
+throne. To reach him, you must navigate traps, solve the riddles of the
+three gates, and find the silver key that unlocks the inner sanctum.
+"""
+
+[[fields.locations]]
+entry = "The Collapsed Entrance -- rubble partially blocks the way back"
+
+[[fields.locations]]
+entry = "The Hall of Mirrors -- disorienting, some mirrors are doors"
+
+[[fields.locations]]
+entry = "The Flooded Crypt -- waist-deep water, something moves beneath"
+
+[[fields.locations]]
+entry = "The Throne Room -- the final chamber, cold and silent"
+
+[[fields.characters]]
+entry = "A trapped ghost who offers hints in exchange for finding her locket"
+
+[[fields.characters]]
+entry = "A goblin merchant who has set up shop in a safe alcove"
+
+[[fields.items]]
+entry = "The silver key -- ornate, hidden in the Hall of Mirrors"
+
+[[fields.items]]
+entry = "The Crown of Avarice -- the ultimate goal, cursed"
+
+[[fields.items]]
+entry = "A torch -- burns slowly, needed in the darkest rooms"

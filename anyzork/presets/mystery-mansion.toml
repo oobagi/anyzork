@@ -1,0 +1,54 @@
+name = "Mystery Mansion"
+description = "A locked-room mystery in a Victorian manor. Someone is dead, everyone is a suspect."
+
+[fields]
+world_description = """
+A grand Victorian manor on a stormy night. The host, Lord Ashworth, has been
+found dead in his locked study. The phone lines are down, the bridge is
+washed out, and no one can leave until morning. The player is a guest who
+happens to be a detective. Every other guest has a motive, an alibi, and
+a secret. The truth is hidden in letters, locked drawers, and overheard
+conversations.
+"""
+
+era = "Victorian / 1890s"
+tone = "dark"
+genre_tags = ["mystery", "puzzle", "social"]
+scale = "small"
+
+story = """
+Determine who murdered Lord Ashworth before the killer strikes again at
+dawn. Gather evidence from the manor, interrogate the guests, and
+present your accusation in the drawing room. Choose wrong and the
+real killer escapes -- or worse.
+"""
+
+[[fields.locations]]
+entry = "The locked study -- the crime scene, blood on the desk"
+
+[[fields.locations]]
+entry = "The library -- floor-to-ceiling books, one shelf hides a passage"
+
+[[fields.locations]]
+entry = "The kitchen -- the cook knows everyone's secrets"
+
+[[fields.locations]]
+entry = "The drawing room -- where accusations are made"
+
+[[fields.characters]]
+entry = "Lady Ashworth -- the grieving widow, or is she?"
+
+[[fields.characters]]
+entry = "Colonel Briggs -- old friend of the victim, owes gambling debts"
+
+[[fields.characters]]
+entry = "The butler, Graves -- loyal, observant, hiding something"
+
+[[fields.items]]
+entry = "A bloodstained letter opener -- the murder weapon"
+
+[[fields.items]]
+entry = "A torn page from a diary -- partial confession"
+
+[[fields.items]]
+entry = "A master key -- opens all rooms in the manor"

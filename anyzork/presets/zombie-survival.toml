@@ -1,0 +1,50 @@
+name = "Zombie Outbreak"
+description = "Survive the first night in a city overrun by the undead. Scavenge, barricade, escape."
+
+[fields]
+world_description = """
+A modern city that fell to a zombie outbreak overnight. Sirens wail in the
+distance. Cars are abandoned mid-intersection. The player wakes in their
+apartment to the sound of pounding on the door. They must scavenge supplies,
+avoid or fight the undead, and find a way out of the city before nightfall
+when the hordes become unstoppable.
+"""
+
+era = "Modern day"
+tone = "dark"
+genre_tags = ["survival", "horror", "exploration"]
+scale = "medium"
+
+story = """
+Escape the city before nightfall. Find a working vehicle, fuel it, and
+reach the highway on-ramp at the edge of town. The military has set up
+a checkpoint there -- but the road is blocked and you will need to find
+a way through.
+"""
+
+[[fields.locations]]
+entry = "Your apartment -- where you wake up, third floor"
+
+[[fields.locations]]
+entry = "The convenience store -- ransacked but something useful remains"
+
+[[fields.locations]]
+entry = "The police station -- locked armory, but the keys are somewhere"
+
+[[fields.locations]]
+entry = "A gas station at the edge of town -- the escape route"
+
+[[fields.characters]]
+entry = "A survivor barricaded in the convenience store, paranoid but willing to trade"
+
+[[fields.characters]]
+entry = "A bitten firefighter who knows which streets are blocked"
+
+[[fields.items]]
+entry = "Car keys -- found on a body, needed for the escape vehicle"
+
+[[fields.items]]
+entry = "A jerry can of fuel -- heavy, needed to fuel the car"
+
+[[fields.items]]
+entry = "A crowbar -- versatile tool, opens locked doors and defends against zombies"
