@@ -168,6 +168,7 @@ class GameEngine:
                 break
 
             if verb in ("look", "l") and len(tokens) == 1:
+                self.console.clear()
                 self.display_room(player["current_room_id"], force_full=True)
                 self._tick()
                 continue
@@ -215,9 +216,9 @@ class GameEngine:
 
             dsl_handled = False
             if resolve_command is not None:
-                result = resolve_command(raw, self.db)
-                if result.success or result.messages != ["I don't understand that."]:
-                    # DSL matched (success or a meaningful failure message)
+                result = resolve_command(raw, self.db, player["current_room_id"])
+                if result.success:
+                    # DSL command succeeded — show messages and move on
                     for msg in result.messages:
                         self.console.print(msg)
                     dsl_handled = True
@@ -1137,6 +1138,9 @@ class GameEngine:
         while in_dialogue:
             # Filter options for this node based on flags and inventory.
             visible_options = self._get_visible_options(current_node["id"])
+
+            # Clear the terminal so only the current dialogue panel is visible.
+            self.console.clear()
 
             # Render the dialogue panel.
             self._render_dialogue_panel(npc, current_node, visible_options)

@@ -403,13 +403,17 @@ def apply_effect(
 # Main entry point — resolve a player command
 # ---------------------------------------------------------------------------
 
-def resolve_command(raw_input: str, db: GameDB) -> CommandResult:
+def resolve_command(
+    raw_input: str, db: GameDB, current_room_id: str | None = None
+) -> CommandResult:
     """Resolve a player's text input against the command database.
 
     This is the main entry point for the command DSL interpreter. It:
 
     1. Extracts the verb (first word) from the input.
-    2. Fetches all enabled commands for that verb from the database.
+    2. Fetches all enabled commands for that verb from the database,
+       filtered to those whose ``context_room_ids`` include the player's
+       current room (or are global).
     3. Tries each command's pattern for a match (ordered by priority, then
        specificity — fewest slots wins ties).
     4. For each pattern match, skips one-shot commands already executed.
@@ -421,6 +425,12 @@ def resolve_command(raw_input: str, db: GameDB) -> CommandResult:
 
     If a command matches but preconditions fail, returns a failure result with
     the command's ``failure_message`` (or a generic fallback).
+
+    Args:
+        raw_input: The player's raw text input.
+        db: The game database connection.
+        current_room_id: The player's current room ID.  When provided,
+            commands scoped to other rooms are excluded from resolution.
     """
     raw_input = raw_input.strip()
     if not raw_input:
@@ -430,8 +440,9 @@ def resolve_command(raw_input: str, db: GameDB) -> CommandResult:
     parts = raw_input.split(None, 1)
     verb = parts[0].lower()
 
-    # Fetch candidate commands, already ordered by priority DESC
-    candidates = db.get_commands_for_verb(verb)
+    # Fetch candidate commands, already ordered by priority DESC,
+    # filtered to the player's current room scope.
+    candidates = db.get_commands_for_verb(verb, current_room_id)
     if not candidates:
         return CommandResult(success=False, messages=["I don't understand that."])
 

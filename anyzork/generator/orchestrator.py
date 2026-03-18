@@ -173,11 +173,19 @@ def _run_validation(db: GameDB) -> list[str]:
     all_items = {row["id"] for row in db._fetchall("SELECT id FROM items")}
     all_npcs = {row["id"] for row in db._fetchall("SELECT id FROM npcs")}
     for cmd in db.get_all_commands():
-        if cmd["context_room_id"] and cmd["context_room_id"] not in room_ids:
-            errors.append(
-                f"Command {cmd['id']!r} references non-existent room "
-                f"{cmd['context_room_id']!r}."
-            )
+        ctx = cmd.get("context_room_ids")
+        if ctx:
+            import json as _json
+            try:
+                ctx_list = _json.loads(ctx) if isinstance(ctx, str) else ctx
+            except (_json.JSONDecodeError, TypeError):
+                ctx_list = []
+            for rid in ctx_list:
+                if rid not in room_ids:
+                    errors.append(
+                        f"Command {cmd['id']!r} references non-existent room "
+                        f"{rid!r} in context_room_ids."
+                    )
 
     # --- Quest coverage ---
     quest_rows = db._fetchall("SELECT * FROM quests")

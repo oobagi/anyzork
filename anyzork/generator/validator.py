@@ -496,16 +496,23 @@ def _check_commands(db: GameDB) -> list[ValidationError]:
     for cmd in commands:
         cmd_label = f"Command '{cmd['id']}'"
 
-        # context_room_id must be valid if set.
-        ctx_room = cmd.get("context_room_id")
-        if ctx_room and ctx_room not in room_set:
-            errors.append(
-                ValidationError(
-                    "error",
-                    "command",
-                    f"{cmd_label} references non-existent context_room_id '{ctx_room}'.",
-                )
-            )
+        # context_room_ids must reference valid rooms if set.
+        ctx_rooms = cmd.get("context_room_ids")
+        if ctx_rooms:
+            import json as _json
+            try:
+                ctx_list = _json.loads(ctx_rooms) if isinstance(ctx_rooms, str) else ctx_rooms
+            except (_json.JSONDecodeError, TypeError):
+                ctx_list = []
+            for rid in ctx_list:
+                if rid not in room_set:
+                    errors.append(
+                        ValidationError(
+                            "error",
+                            "command",
+                            f"{cmd_label} references non-existent room '{rid}' in context_room_ids.",
+                        )
+                    )
 
         # puzzle_id must be valid if set.
         cmd_puzzle = cmd.get("puzzle_id")

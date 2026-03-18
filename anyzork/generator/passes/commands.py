@@ -145,9 +145,15 @@ COMMANDS_SCHEMA: dict[str, Any] = {
                         "enum": [0, 1],
                         "description": "1 = fires only once, then disabled forever.",
                     },
-                    "context_room_id": {
-                        "type": ["string", "null"],
-                        "description": "If set, command only works in this room.",
+                    "context_room_ids": {
+                        "type": ["array", "null"],
+                        "items": {"type": "string"},
+                        "description": (
+                            "JSON array of room IDs where this command is "
+                            "active. null = global (works anywhere). "
+                            '["room_a"] = only in that room. '
+                            '["room_a", "room_b"] = works in either.'
+                        ),
                     },
                     "done_message": {
                         "type": "string",
@@ -264,7 +270,9 @@ Each command is a JSON rule:
 - **failure_message**: Shown when preconditions fail. Must be informative.
 - **one_shot**: 1 = fires only once (key unlocks, puzzle solutions, quest
   discoveries). 0 = repeatable.
-- **context_room_id**: If set, command only works in this specific room.
+- **context_room_ids**: JSON array of room IDs where the command is active.
+  null = global (works anywhere). `["room_a"]` = only in that room.
+  `["room_a", "room_b"]` = works in either.
 
 ### BUILT-IN VERBS — DO NOT GENERATE COMMANDS FOR THESE
 
@@ -384,7 +392,7 @@ puzzle, using a tool in a non-standard way).
 
 You MUST use the exact `id` values from the data above. Do NOT invent
 room, item, NPC, lock, exit, or puzzle IDs — copy them verbatim from
-the lists. If `context_room_id` or `puzzle_id` does not match an
+the lists. If `context_room_ids` entries or `puzzle_id` does not match an
 existing entity, the reference will be dropped.
 
 ### Design Principles
@@ -446,7 +454,7 @@ Also generate a `flags` array listing ALL flags referenced by your commands
       "failure_message": "You need the right key for this door.",
       "priority": 10,
       "one_shot": 1,
-      "context_room_id": "dungeon_entrance"
+      "context_room_ids": ["dungeon_entrance"]
     }}
   ],
   "flags": [
@@ -531,10 +539,20 @@ def _validate_commands(
                 f"Command {cid} pattern '{pattern}' does not start with verb '{verb}'"
             )
 
-        # Context room reference
-        ctx_room = cmd.get("context_room_id")
-        if ctx_room and ctx_room not in room_ids:
-            errors.append(f"Command {cid} references unknown context_room_id: {ctx_room}")
+        # Context room reference(s)
+        ctx_rooms = cmd.get("context_room_ids")
+        if ctx_rooms:
+            if isinstance(ctx_rooms, list):
+                for r in ctx_rooms:
+                    if r not in room_ids:
+                        errors.append(
+                            f"Command {cid} references unknown room in context_room_ids: {r}"
+                        )
+            elif isinstance(ctx_rooms, str) and ctx_rooms not in room_ids:
+                # Legacy single-string form
+                errors.append(
+                    f"Command {cid} references unknown context_room_ids: {ctx_rooms}"
+                )
 
         # Validate precondition types
         for pre in cmd.get("preconditions", []):
@@ -576,9 +594,8 @@ def _validate_commands(
 def _insert_commands(db: GameDB, commands: list[dict], context: dict) -> list[dict]:
     """Insert validated commands into the database.
 
-    FK references (context_room_id, puzzle_id) are checked against known
-    IDs before insertion.  Invalid references are set to NULL with a
-    warning.
+    FK references (context_room_ids, puzzle_id) are checked against known
+    IDs before insertion.  Invalid references are removed with a warning.
 
     Returns the list of successfully inserted commands.
     """
@@ -589,16 +606,32 @@ def _insert_commands(db: GameDB, commands: list[dict], context: dict) -> list[di
     for cmd in commands:
         cid = cmd.get("id", "<unknown>")
 
-        # --- Validate context_room_id (nullable FK) ---
-        ctx_room = cmd.get("context_room_id")
-        if ctx_room is not None and ctx_room not in room_ids:
-            logger.warning(
-                "Command %s references non-existent context_room_id %r — "
-                "setting to NULL",
-                cid,
-                ctx_room,
-            )
-            cmd["context_room_id"] = None
+        # --- Validate context_room_ids (nullable, JSON array of room IDs) ---
+        ctx_rooms = cmd.get("context_room_ids")
+        if ctx_rooms is not None:
+            if isinstance(ctx_rooms, list):
+                valid_rooms = [r for r in ctx_rooms if r in room_ids]
+                invalid = [r for r in ctx_rooms if r not in room_ids]
+                for r in invalid:
+                    logger.warning(
+                        "Command %s references non-existent room %r in "
+                        "context_room_ids — removing",
+                        cid,
+                        r,
+                    )
+                cmd["context_room_ids"] = valid_rooms if valid_rooms else None
+            elif isinstance(ctx_rooms, str):
+                # Legacy single-string form
+                if ctx_rooms not in room_ids:
+                    logger.warning(
+                        "Command %s references non-existent context_room_ids %r — "
+                        "setting to NULL",
+                        cid,
+                        ctx_rooms,
+                    )
+                    cmd["context_room_ids"] = None
+                else:
+                    cmd["context_room_ids"] = [ctx_rooms]
 
         # --- Validate puzzle_id (nullable FK) ---
         puz_id = cmd.get("puzzle_id")
@@ -611,6 +644,10 @@ def _insert_commands(db: GameDB, commands: list[dict], context: dict) -> list[di
             )
             cmd["puzzle_id"] = None
 
+        ctx_value = cmd.get("context_room_ids")
+        if isinstance(ctx_value, list):
+            ctx_value = json.dumps(ctx_value) if ctx_value else None
+
         db.insert_command(
             id=cmd["id"],
             verb=cmd["verb"],
@@ -619,7 +656,7 @@ def _insert_commands(db: GameDB, commands: list[dict], context: dict) -> list[di
             effects=json.dumps(cmd.get("effects", [])),
             success_message=cmd.get("success_message", ""),
             failure_message=cmd.get("failure_message", ""),
-            context_room_id=cmd.get("context_room_id"),
+            context_room_ids=ctx_value,
             puzzle_id=cmd.get("puzzle_id"),
             priority=cmd.get("priority", 0),
             is_enabled=1,
@@ -682,7 +719,7 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
             "id": c["id"],
             "verb": c["verb"],
             "pattern": c["pattern"],
-            "context_room_id": c.get("context_room_id"),
+            "context_room_ids": c.get("context_room_ids"),
             "one_shot": c.get("one_shot", 0),
         }
         for c in inserted_commands

@@ -210,7 +210,7 @@ CREATE TABLE IF NOT EXISTS commands (
     effects         TEXT    NOT NULL DEFAULT '[]',  -- JSON array
     success_message TEXT    NOT NULL DEFAULT '',
     failure_message TEXT    NOT NULL DEFAULT '',
-    context_room_id TEXT    REFERENCES rooms(id),
+    context_room_ids TEXT,                          -- JSON array of room IDs, NULL = global
     puzzle_id       TEXT    REFERENCES puzzles(id),
     priority        INTEGER NOT NULL DEFAULT 0,
     is_enabled      INTEGER NOT NULL DEFAULT 1,
@@ -220,7 +220,7 @@ CREATE TABLE IF NOT EXISTS commands (
 );
 
 CREATE INDEX IF NOT EXISTS idx_commands_verb       ON commands(verb);
-CREATE INDEX IF NOT EXISTS idx_commands_context     ON commands(context_room_id);
+CREATE INDEX IF NOT EXISTS idx_commands_context     ON commands(context_room_ids);
 CREATE INDEX IF NOT EXISTS idx_commands_puzzle      ON commands(puzzle_id);
 
 -- -------------------------------------------------------
@@ -965,12 +965,17 @@ class GameDB:
 
     # ------------------------------------------------------------ commands
 
-    def get_commands_for_verb(self, verb: str) -> list[dict]:
+    def get_commands_for_verb(self, verb: str, current_room_id: str | None = None) -> list[dict]:
         """Return all enabled commands matching a verb, ordered by priority.
 
-        Higher priority commands are returned first.
+        Higher priority commands are returned first.  If *current_room_id*
+        is given, commands whose ``context_room_ids`` JSON array does not
+        include that room are excluded.  Commands with ``context_room_ids``
+        set to ``NULL`` are considered global and always included.
         """
-        return self._fetchall(
+        import json as _json
+
+        rows = self._fetchall(
             """
             SELECT * FROM commands
             WHERE LOWER(verb) = LOWER(?) AND is_enabled = 1
@@ -978,6 +983,26 @@ class GameDB:
             """,
             (verb,),
         )
+
+        if current_room_id is None:
+            return rows
+
+        filtered: list[dict] = []
+        for row in rows:
+            ctx = row.get("context_room_ids")
+            if ctx is None:
+                # Global command -- always in scope
+                filtered.append(row)
+            else:
+                try:
+                    room_list = _json.loads(ctx)
+                except (TypeError, _json.JSONDecodeError):
+                    # Treat unparseable as global (defensive)
+                    filtered.append(row)
+                    continue
+                if current_room_id in room_list:
+                    filtered.append(row)
+        return filtered
 
     def get_all_commands(self) -> list[dict]:
         """Return every command row (enabled or not)."""
@@ -1205,7 +1230,24 @@ class GameDB:
         )
 
     def insert_command(self, **fields: Any) -> None:
-        """Insert a single command row."""
+        """Insert a single command row.
+
+        Accepts either the new ``context_room_ids`` (JSON array string or
+        ``None``) or the legacy ``context_room_id`` (single room ID string
+        or ``None``).  When the legacy field is supplied it is automatically
+        converted to a single-element JSON array.
+        """
+        import json as _json
+
+        # --- Backward compat: convert legacy context_room_id -> context_room_ids ---
+        if "context_room_id" in fields:
+            legacy_value = fields.pop("context_room_id")
+            if "context_room_ids" not in fields:
+                if legacy_value is not None:
+                    fields["context_room_ids"] = _json.dumps([legacy_value])
+                else:
+                    fields["context_room_ids"] = None
+
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
