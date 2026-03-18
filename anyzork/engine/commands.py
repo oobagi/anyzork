@@ -1,0 +1,520 @@
+"""Command DSL interpreter for the AnyZork runtime engine.
+
+Evaluates command DSL rules deterministically at play-time. No LLM involved.
+Each command is a structured precondition/effect rule stored as JSON in the
+database. This module parses player input, matches it against command patterns,
+checks preconditions against game state, and applies effects atomically.
+
+Implements the full specification from docs/dsl/command-spec.md.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import re
+from dataclasses import dataclass, field
+
+from anyzork.db.schema import GameDB
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Result type
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CommandResult:
+    """Outcome of resolving a player command.
+
+    Attributes:
+        success: Whether a command matched and all preconditions passed.
+        messages: Ordered list of text messages to display to the player.
+        effects_applied: List of effect type strings that were executed
+            (e.g. ``["remove_item", "unlock", "print"]``).
+    """
+
+    success: bool
+    messages: list[str] = field(default_factory=list)
+    effects_applied: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Slot resolution — map display names to database IDs
+# ---------------------------------------------------------------------------
+
+def _resolve_name_to_id(name: str, db: GameDB) -> str:
+    """Attempt to resolve a display name to a database ID.
+
+    Tries, in order:
+    1. Direct ID match (items, npcs, rooms) — the name *is* already an ID.
+    2. Case-insensitive name match against items (inventory first, then all).
+    3. Case-insensitive name match against NPCs.
+    4. Case-insensitive name match against rooms.
+    5. Fallback: convert to snake_case (replace spaces/hyphens with
+       underscores, lowercase) and return that as a best-guess ID.
+    """
+    # 1. Direct ID match
+    if db.get_item(name):
+        return name
+    if db.get_npc(name):
+        return name
+    if db.get_room(name):
+        return name
+
+    # 2. Item by name — check inventory first, then all items
+    inv_match = db.find_item_by_name(name, "inventory", "")
+    if inv_match:
+        return inv_match["id"]
+
+    player = db.get_player()
+    if player:
+        room_match = db.find_item_by_name(name, "room", player["current_room_id"])
+        if room_match:
+            return room_match["id"]
+
+    # Brute-force search all items by name (handles items in other rooms
+    # referenced by preconditions with explicit room IDs).
+    row = db._fetchone(
+        "SELECT id FROM items WHERE LOWER(name) = LOWER(?)", (name,)
+    )
+    if row:
+        return row["id"]
+
+    # 3. NPC by name
+    row = db._fetchone(
+        "SELECT id FROM npcs WHERE LOWER(name) = LOWER(?)", (name,)
+    )
+    if row:
+        return row["id"]
+
+    # 4. Room by name
+    row = db._fetchone(
+        "SELECT id FROM rooms WHERE LOWER(name) = LOWER(?)", (name,)
+    )
+    if row:
+        return row["id"]
+
+    # 5. Fallback — snake_case conversion
+    return re.sub(r"[\s\-]+", "_", name.strip()).lower()
+
+
+def _substitute_slots(value: str, slots: dict[str, str]) -> str:
+    """Replace ``{slot_name}`` placeholders with resolved slot values."""
+    for slot_name, slot_value in slots.items():
+        value = value.replace(f"{{{slot_name}}}", slot_value)
+    return value
+
+
+# ---------------------------------------------------------------------------
+# Pattern matching
+# ---------------------------------------------------------------------------
+
+def parse_player_input(raw_input: str, pattern: str) -> dict[str, str] | None:
+    """Match player input against a command pattern, extracting named slots.
+
+    The pattern contains literal words and ``{slot}`` placeholders. Literal
+    words must match exactly (case-insensitive). Slots capture one or more
+    contiguous words.
+
+    Returns a dict mapping slot names to their captured (raw) values, or
+    ``None`` if the pattern does not match.
+
+    Examples::
+
+        >>> parse_player_input("use rusty key on wooden door",
+        ...                    "use {item} on {target}")
+        {"item": "rusty key", "target": "wooden door"}
+
+        >>> parse_player_input("look", "look")
+        {}
+
+        >>> parse_player_input("go north", "look at {target}")
+        None
+    """
+    # Tokenise the pattern into literal segments and slot names.
+    # We build a regex that captures slot values as named groups.
+    #
+    # Strategy: split pattern on {slot} tokens. Literals become escaped
+    # regex fragments; slots become named capturing groups matching one
+    # or more non-empty word sequences.
+    slot_pattern = re.compile(r"\{(\w+)\}")
+    parts = slot_pattern.split(pattern)
+    # `parts` alternates: [literal, slot_name, literal, slot_name, ...]
+
+    regex_parts: list[str] = []
+    slot_names: list[str] = []
+    # Count total slots so we can make the last one greedy
+    total_slots = len(slot_pattern.findall(pattern))
+    slot_index = 0
+    for i, part in enumerate(parts):
+        if i % 2 == 0:
+            # Literal segment — escape and allow flexible whitespace
+            words = part.split()
+            if words:
+                escaped = r"\s+".join(re.escape(w) for w in words)
+                regex_parts.append(escaped)
+        else:
+            # Slot name — last slot is greedy, others are lazy
+            slot_names.append(part)
+            slot_index += 1
+            quantifier = ".+" if slot_index == total_slots else ".+?"
+            regex_parts.append(rf"(?P<{part}>{quantifier})")
+
+    # Join all parts with flexible whitespace
+    full_regex = r"\s+".join(p for p in regex_parts if p)
+    full_regex = rf"^\s*{full_regex}\s*$"
+
+    m = re.match(full_regex, raw_input, re.IGNORECASE)
+    if m is None:
+        return None
+
+    return {name: m.group(name).strip() for name in slot_names}
+
+
+def _count_slots(pattern: str) -> int:
+    """Return the number of ``{slot}`` placeholders in a pattern."""
+    return len(re.findall(r"\{(\w+)\}", pattern))
+
+
+# ---------------------------------------------------------------------------
+# Precondition evaluation
+# ---------------------------------------------------------------------------
+
+def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None = None) -> bool:
+    """Evaluate a single precondition against the current game state.
+
+    Supports all precondition types from the DSL spec:
+    ``in_room``, ``has_item``, ``has_flag``, ``not_flag``, ``item_in_room``,
+    ``npc_in_room``, ``lock_unlocked``, ``puzzle_solved``, ``health_above``.
+
+    Slot references (``{slot_name}``) in string fields are substituted before
+    evaluation.
+
+    Returns ``True`` if the precondition is satisfied.
+    """
+    slots = slots or {}
+    cond_type = condition["type"]
+
+    player = db.get_player()
+    if player is None:
+        logger.error("No player state found in database")
+        return False
+
+    current_room = player["current_room_id"]
+
+    if cond_type == "in_room":
+        room = _substitute_slots(condition["room"], slots)
+        return current_room == room
+
+    if cond_type == "has_item":
+        item_ref = _substitute_slots(condition["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        # Check inventory for this item
+        inventory = db.get_inventory()
+        return any(i["id"] == item_id for i in inventory)
+
+    if cond_type == "has_flag":
+        flag = _substitute_slots(condition["flag"], slots)
+        return db.has_flag(flag)
+
+    if cond_type == "not_flag":
+        flag = _substitute_slots(condition["flag"], slots)
+        return not db.has_flag(flag)
+
+    if cond_type == "item_in_room":
+        item_ref = _substitute_slots(condition["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        room = _substitute_slots(condition["room"], slots)
+        if room == "_current":
+            room = current_room
+        item = db.get_item(item_id)
+        return item is not None and item["room_id"] == room
+
+    if cond_type == "npc_in_room":
+        npc_ref = _substitute_slots(condition["npc"], slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        room = _substitute_slots(condition["room"], slots)
+        if room == "_current":
+            room = current_room
+        npc = db.get_npc(npc_id)
+        return npc is not None and npc["room_id"] == room and bool(npc["is_alive"])
+
+    if cond_type == "lock_unlocked":
+        lock_ref = _substitute_slots(condition["lock"], slots)
+        lock = db.get_lock(lock_ref)
+        return lock is not None and not lock["is_locked"]
+
+    if cond_type == "puzzle_solved":
+        puzzle_ref = _substitute_slots(condition["puzzle"], slots)
+        puzzle = db.get_puzzle(puzzle_ref)
+        return puzzle is not None and bool(puzzle["is_solved"])
+
+    if cond_type == "health_above":
+        threshold = condition["threshold"]
+        return player["hp"] > threshold
+
+    if cond_type == "container_open":
+        container_ref = _substitute_slots(condition["container"], slots)
+        container_id = _resolve_name_to_id(container_ref, db)
+        item = db.get_item(container_id)
+        if item is None or not item.get("is_container"):
+            return False
+        return bool(item.get("is_open")) or not bool(item.get("has_lid"))
+
+    logger.warning("Unknown precondition type: %s", cond_type)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Effect execution
+# ---------------------------------------------------------------------------
+
+def apply_effect(
+    effect: dict,
+    db: GameDB,
+    slots: dict[str, str] | None = None,
+    command_id: str = "",
+) -> list[str]:
+    """Apply a single effect and return any messages to display.
+
+    Supports all effect types from the DSL spec:
+    ``move_item``, ``remove_item``, ``set_flag``, ``unlock``, ``move_player``,
+    ``spawn_item``, ``change_health``, ``add_score``, ``reveal_exit``,
+    ``solve_puzzle``, ``discover_quest``, ``print``.
+
+    Args:
+        effect: The effect dict with a ``type`` field and type-specific params.
+        db: The game database connection.
+        slots: Resolved slot values from pattern matching.
+        command_id: The parent command's ID, used for deterministic score
+            entry deduplication.
+
+    Returns a list of messages (usually 0 or 1 strings).
+    """
+    slots = slots or {}
+    effect_type = effect["type"]
+    messages: list[str] = []
+
+    player = db.get_player()
+    if player is None:
+        logger.error("No player state found in database")
+        return messages
+
+    current_room = player["current_room_id"]
+
+    if effect_type == "move_item":
+        item_ref = _substitute_slots(effect["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        from_loc = _substitute_slots(effect["from"], slots)
+        to_loc = _substitute_slots(effect["to"], slots)
+
+        if to_loc == "_inventory":
+            db.move_item(item_id, "inventory", "")
+        elif to_loc == "_current":
+            db.move_item(item_id, "room", current_room)
+        else:
+            db.move_item(item_id, "room", to_loc)
+
+    elif effect_type == "remove_item":
+        item_ref = _substitute_slots(effect["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        db.remove_item(item_id)
+
+    elif effect_type == "set_flag":
+        flag = _substitute_slots(effect["flag"], slots)
+        value = effect.get("value", True)
+        if value is False or value == "false":
+            db.clear_flag(flag)
+        else:
+            db.set_flag(flag, "true")
+
+    elif effect_type == "unlock":
+        lock_ref = _substitute_slots(effect["lock"], slots)
+        lock = db.unlock(lock_ref)
+        if lock and lock.get("unlock_message"):
+            messages.append(lock["unlock_message"])
+
+    elif effect_type == "move_player":
+        room_ref = _substitute_slots(effect["room"], slots)
+        db.update_player(current_room_id=room_ref)
+
+    elif effect_type == "spawn_item":
+        item_ref = _substitute_slots(effect["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        location = _substitute_slots(effect["location"], slots)
+
+        if location == "_inventory":
+            db.spawn_item(item_id, "inventory")
+        elif location == "_current":
+            db.spawn_item(item_id, "room", current_room)
+        else:
+            db.spawn_item(item_id, "room", location)
+
+    elif effect_type == "change_health":
+        amount = effect["amount"]
+        new_hp = max(0, min(player["max_hp"], player["hp"] + amount))
+        db.update_player(hp=new_hp)
+
+    elif effect_type == "add_score":
+        points = effect["points"]
+        move_number = player.get("moves", 0)
+        reason = f"command:{command_id}" if command_id else f"score_{points}pts"
+        db.add_score_entry(reason, points, move_number)
+
+    elif effect_type == "reveal_exit":
+        exit_ref = _substitute_slots(effect["exit"], slots)
+        db.reveal_exit(exit_ref)
+
+    elif effect_type == "solve_puzzle":
+        puzzle_ref = _substitute_slots(effect["puzzle"], slots)
+        db.solve_puzzle(puzzle_ref)
+
+    elif effect_type == "discover_quest":
+        quest_ref = _substitute_slots(effect["quest"], slots)
+        quest = db.get_quest(quest_ref)
+        if quest and quest.get("discovery_flag"):
+            db.set_flag(quest["discovery_flag"], "true")
+
+    elif effect_type == "open_container":
+        container_ref = _substitute_slots(effect["container"], slots)
+        container_id = _resolve_name_to_id(container_ref, db)
+        db.open_container(container_id)
+
+    elif effect_type == "move_item_to_container":
+        item_ref = _substitute_slots(effect["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        container_ref = _substitute_slots(effect["container"], slots)
+        container_id = _resolve_name_to_id(container_ref, db)
+        db.move_item_to_container(item_id, container_id)
+
+    elif effect_type == "print":
+        message = _substitute_slots(effect["message"], slots)
+        messages.append(message)
+
+    else:
+        logger.warning("Unknown effect type: %s", effect_type)
+
+    return messages
+
+
+# ---------------------------------------------------------------------------
+# Main entry point — resolve a player command
+# ---------------------------------------------------------------------------
+
+def resolve_command(raw_input: str, db: GameDB) -> CommandResult:
+    """Resolve a player's text input against the command database.
+
+    This is the main entry point for the command DSL interpreter. It:
+
+    1. Extracts the verb (first word) from the input.
+    2. Fetches all enabled commands for that verb from the database.
+    3. Tries each command's pattern for a match (ordered by priority, then
+       specificity — fewest slots wins ties).
+    4. For each pattern match, skips one-shot commands already executed.
+    5. Checks all preconditions; if all pass, applies all effects atomically.
+    6. Returns a ``CommandResult`` with success status, messages, and effects.
+
+    If no command matches the input at all, returns a failure result with
+    ``"I don't understand that."``.
+
+    If a command matches but preconditions fail, returns a failure result with
+    the command's ``failure_message`` (or a generic fallback).
+    """
+    raw_input = raw_input.strip()
+    if not raw_input:
+        return CommandResult(success=False, messages=["I don't understand that."])
+
+    # Extract verb — first whitespace-delimited word, lowercased
+    parts = raw_input.split(None, 1)
+    verb = parts[0].lower()
+
+    # Fetch candidate commands, already ordered by priority DESC
+    candidates = db.get_commands_for_verb(verb)
+    if not candidates:
+        return CommandResult(success=False, messages=["I don't understand that."])
+
+    # Sort candidates: priority DESC (already from DB), then specificity
+    # (fewer slots = more specific = tried first among same priority).
+    # Stable sort preserves DB insertion order for fully equal candidates.
+    candidates.sort(key=lambda c: (-c["priority"], _count_slots(c["pattern"])))
+
+    # Track the best failure message from a matching-but-failing command
+    best_fail_message: str | None = None
+
+    for cmd in candidates:
+        # Parse preconditions and effects from JSON strings
+        preconditions = json.loads(cmd["preconditions"]) if cmd["preconditions"] else []
+        effects = json.loads(cmd["effects"]) if cmd["effects"] else []
+
+        # Try pattern match
+        match = parse_player_input(raw_input, cmd["pattern"])
+        if match is None:
+            continue
+
+        # Resolve slot values from display names to database IDs
+        resolved_slots: dict[str, str] = {}
+        for slot_name, raw_value in match.items():
+            resolved_slots[slot_name] = _resolve_name_to_id(raw_value, db)
+
+        # Check one-shot: if already executed, show done_message or skip
+        if cmd["one_shot"] and cmd["executed"]:
+            done_msg = cmd.get("done_message", "")
+            if done_msg:
+                # Verify preconditions still hold (e.g., player is in the
+                # right room) before showing the done message.  Skip
+                # preconditions that check for flags set BY this command
+                # (they will have changed since execution).
+                preconds_pass = all(
+                    check_precondition(cond, db, resolved_slots)
+                    for cond in preconditions
+                    if cond.get("type") not in ("not_flag",)
+                )
+                if preconds_pass:
+                    return CommandResult(success=True, messages=[done_msg])
+            continue
+
+        # Check all preconditions
+        all_pass = all(
+            check_precondition(cond, db, resolved_slots)
+            for cond in preconditions
+        )
+
+        if not all_pass:
+            # Record the failure message from the most specific matching command
+            fail_msg = cmd.get("failure_message")
+            if fail_msg:
+                best_fail_message = fail_msg
+            continue
+
+        # All preconditions passed — apply effects
+        all_messages: list[str] = []
+        applied: list[str] = []
+
+        for eff in effects:
+            try:
+                msgs = apply_effect(eff, db, resolved_slots, command_id=cmd["id"])
+                applied.append(eff["type"])
+                all_messages.extend(msgs)
+            except Exception:
+                logger.exception("Effect failed: %s", eff)
+                # DSL spec: log warning but continue executing remaining effects
+                applied.append(eff["type"])
+
+        # Also include the command's success_message if present and non-empty
+        if cmd.get("success_message"):
+            all_messages.append(_substitute_slots(cmd["success_message"], resolved_slots))
+
+        # Mark one-shot commands as executed
+        if cmd["one_shot"]:
+            db.mark_command_executed(cmd["id"])
+
+        return CommandResult(success=True, messages=all_messages, effects_applied=applied)
+
+    # No command's preconditions passed (but at least one pattern matched)
+    if best_fail_message:
+        return CommandResult(success=False, messages=[best_fail_message])
+
+    # No pattern matched at all
+    return CommandResult(success=False, messages=["I don't understand that."])
