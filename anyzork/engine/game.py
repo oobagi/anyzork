@@ -42,7 +42,6 @@ STYLE_QUEST_HEADER = "bold bright_cyan"         # quest notification headers
 STYLE_QUEST_COMPLETE = "bold bright_green"      # quest completion panel
 STYLE_PROMPT = "bold yellow"                # input prompt ">"
 STYLE_COMMAND = "cyan"                      # command/verb names in help text
-STYLE_TOPIC = "cyan"                        # NPC dialogue topics
 STYLE_VICTORY_BORDER = "bright_green"       # win panel border
 STYLE_VICTORY_TITLE = "bold bright_green"   # win panel title
 STYLE_DEFEAT_BORDER = "red"                 # lose panel border
@@ -343,46 +342,15 @@ class GameEngine:
             # talk to
             if verb == "talk" and len(tokens) >= 3 and tokens[1] == "to":
                 npc_name = " ".join(tokens[2:])
-                self._handle_talk(npc_name, player["current_room_id"])
+                self._enter_dialogue(npc_name, player["current_room_id"])
                 self._tick()
                 continue
 
             if verb == "talk" and len(tokens) >= 2 and tokens[1] != "to":
                 npc_name = " ".join(tokens[1:])
-                self._handle_talk(npc_name, player["current_room_id"])
+                self._enter_dialogue(npc_name, player["current_room_id"])
                 self._tick()
                 continue
-
-            # ask {npc} about {topic}
-            if verb == "ask" and len(tokens) >= 4:
-                rest = " ".join(tokens[1:])
-                about_idx = rest.lower().find(" about ")
-                if about_idx != -1:
-                    npc_name = rest[:about_idx].strip()
-                    topic = rest[about_idx + 7:].strip()
-                    self._handle_ask(npc_name, topic, player["current_room_id"])
-                    self._tick()
-                    continue
-
-            # ---- Greetings ----
-            # Treat greeting words as "talk to {npc}" when there's
-            # exactly one NPC in the room.
-            if verb in ("hello", "hi", "hey", "greetings"):
-                npcs = self.db.get_npcs_in(player["current_room_id"])
-                if len(npcs) == 1:
-                    self._handle_talk(npcs[0]["name"], player["current_room_id"])
-                    self._tick()
-                    continue
-                elif len(npcs) > 1:
-                    npc_names = ", ".join(
-                        f"[{STYLE_NPC}]{npc['name']}[/]" for npc in npcs
-                    )
-                    self.console.print(
-                        f"Who do you want to talk to? {npc_names}",
-                        style=STYLE_SYSTEM,
-                    )
-                    continue
-                # No NPCs -- fall through to "I don't understand"
 
             # ---- Nothing matched ----
             self.console.print("I don't understand that.", style=STYLE_SYSTEM)
@@ -608,8 +576,7 @@ class GameEngine:
                 f"  [{c}]use[/] {{item}} [{c}]on[/] {{thing}}  — use an item on something\n"
                 f"  [{c}]search[/] / [{c}]look in[/] {{container}}  — search inside a container\n"
                 f"  [{c}]put[/] {{item}} [{c}]in[/] {{container}}  — put something into a container\n"
-                f"  [{c}]talk to[/] {{npc}}      — talk to someone\n"
-                f"  [{c}]ask[/] {{npc}} [{c}]about[/] {{topic}}  — ask someone about a topic\n"
+                f"  [{c}]talk to[/] {{npc}}      — start a conversation\n"
                 "\n"
                 "[bold]Movement[/]\n"
                 f"  Type a direction: [{c}]north[/], [{c}]south[/], [{c}]east[/], "
@@ -1132,8 +1099,13 @@ class GameEngine:
             style=STYLE_SUCCESS,
         )
 
-    def _handle_talk(self, npc_name: str, current_room_id: str) -> None:
-        """Talk to an NPC in the current room."""
+    def _enter_dialogue(self, npc_name: str, current_room_id: str) -> None:
+        """Enter dialogue mode with an NPC.
+
+        Finds the NPC, gets their root dialogue node, then runs a sub-loop
+        that renders a Rich Panel with numbered options until the player
+        leaves or reaches a terminal node.
+        """
         db = self.db
 
         npc = db.find_npc_by_name(npc_name, current_room_id)
@@ -1141,18 +1113,10 @@ class GameEngine:
             self.console.print("There's no one here by that name.", style=STYLE_SYSTEM)
             return
 
-        dialogues = db.get_npc_dialogue(npc["id"])
-        chosen = self._pick_dialogue(dialogues)
-
-        if chosen is not None:
-            self.console.print(
-                f"[{STYLE_NPC}]{npc['name']}[/]: {chosen['content']}"
-            )
-            # Set any flags from this dialogue.
-            self._apply_dialogue_flags(chosen)
-            # Mark this line as delivered so it progresses next time.
-            db.mark_dialogue_delivered(chosen["id"])
-        else:
+        # NPCs without a dialogue tree use their default_dialogue as a
+        # one-liner (e.g. a zombie that can't talk).
+        root_node = db.get_root_dialogue_node(npc["id"])
+        if root_node is None:
             default = npc.get("default_dialogue", "")
             if default:
                 self.console.print(
@@ -1162,74 +1126,157 @@ class GameEngine:
                 self.console.print(
                     f"{npc['name']} has nothing to say.", style=STYLE_SYSTEM
                 )
-
-        # Show available topics the player can ask about.
-        self._show_available_topics(npc)
-
-    def _handle_ask(self, npc_name: str, topic: str, current_room_id: str) -> None:
-        """Ask an NPC about a specific topic."""
-        db = self.db
-
-        npc = db.find_npc_by_name(npc_name, current_room_id)
-        if npc is None:
-            self.console.print("There's no one here by that name.", style=STYLE_SYSTEM)
             return
 
-        dialogues = db.get_npc_dialogue(npc["id"], topic)
-        chosen = self._pick_dialogue(dialogues)
+        # Apply root node flags on entry.
+        self._apply_node_flags(root_node)
 
-        if chosen is not None:
-            self.console.print(
-                f"[{STYLE_NPC}]{npc['name']}[/]: {chosen['content']}"
-            )
-            self._apply_dialogue_flags(chosen)
-            # Mark this line as delivered for dialogue progression.
-            db.mark_dialogue_delivered(chosen["id"])
-        else:
-            self.console.print(
-                f"{npc['name']} has nothing to say about that.", style=STYLE_SYSTEM
-            )
+        current_node = root_node
+        in_dialogue = True
 
-    def _pick_dialogue(self, dialogues: list[dict]) -> dict | None:
-        """Pick the best dialogue entry whose required flags are met.
+        while in_dialogue:
+            # Filter options for this node based on flags and inventory.
+            visible_options = self._get_visible_options(current_node["id"])
 
-        Selection logic (in order of preference):
-        1. Highest-priority *undelivered* entry whose flags are met.
-        2. If all qualifying entries have been delivered, return the one
-           that was delivered most recently (last in the sorted list) so
-           the NPC always has something to say.
+            # Render the dialogue panel.
+            self._render_dialogue_panel(npc, current_node, visible_options)
 
-        Dialogues arrive sorted by priority descending from the database.
+            # If no visible options, show the text and exit.
+            if not visible_options:
+                self.console.print()
+                break
+
+            # Wait for player input.
+            try:
+                choice = Prompt.ask("[dim]>[/]")
+            except (EOFError, KeyboardInterrupt):
+                self.console.print()
+                break
+
+            choice = choice.strip().lower()
+
+            # Exit dialogue.
+            if choice in ("0", "leave", "bye", "exit", "quit"):
+                self.console.print()
+                break
+
+            # Parse numeric choice.
+            try:
+                choice_num = int(choice)
+            except ValueError:
+                self.console.print("  Pick a number.", style=STYLE_SYSTEM)
+                continue
+
+            if choice_num < 1 or choice_num > len(visible_options):
+                self.console.print("  Pick a number.", style=STYLE_SYSTEM)
+                continue
+
+            selected = visible_options[choice_num - 1]
+
+            # Apply the option's set_flags.
+            self._apply_option_flags(selected)
+
+            # Navigate to next node.
+            next_node_id = selected.get("next_node_id")
+            if next_node_id is None:
+                # Terminal option -- show nothing more, exit dialogue.
+                self.console.print()
+                break
+
+            next_node = db.get_dialogue_node(next_node_id)
+            if next_node is None:
+                # Broken link -- exit gracefully.
+                self.console.print()
+                break
+
+            # Apply the new node's set_flags.
+            self._apply_node_flags(next_node)
+            current_node = next_node
+
+    def _get_visible_options(self, node_id: str) -> list[dict]:
+        """Return dialogue options visible to the player at this node.
+
+        Filters by required_flags, excluded_flags, and required_items.
+        Adds an ``_is_item_gated`` key to options that appeared because
+        the player has a required item (for [NEW] tagging).
         """
         db = self.db
+        all_options = db.get_dialogue_options(node_id)
+        inventory_ids = {item["id"] for item in db.get_inventory()}
+        visible: list[dict] = []
 
-        eligible: list[dict] = []
-        for d in dialogues:
-            required_raw = d.get("required_flags")
-            if required_raw:
+        for opt in all_options:
+            # Check required_flags -- all must be true.
+            req_raw = opt.get("required_flags")
+            if req_raw:
                 try:
-                    required = json.loads(required_raw)
+                    required = json.loads(req_raw)
                 except (json.JSONDecodeError, TypeError):
                     required = []
-                if not all(db.has_flag(f) for f in required):
+                if required and not all(db.has_flag(f) for f in required):
                     continue
-            eligible.append(d)
 
-        if not eligible:
-            return None
+            # Check excluded_flags -- if ANY are true, hide this option.
+            excl_raw = opt.get("excluded_flags")
+            if excl_raw:
+                try:
+                    excluded = json.loads(excl_raw)
+                except (json.JSONDecodeError, TypeError):
+                    excluded = []
+                if excluded and any(db.has_flag(f) for f in excluded):
+                    continue
 
-        # Prefer undelivered lines (first one = highest priority).
-        for d in eligible:
-            if not d.get("is_delivered"):
-                return d
+            # Check required_items -- all must be in inventory.
+            items_raw = opt.get("required_items")
+            is_item_gated = False
+            if items_raw:
+                try:
+                    req_items = json.loads(items_raw)
+                except (json.JSONDecodeError, TypeError):
+                    req_items = []
+                if req_items:
+                    if not all(iid in inventory_ids for iid in req_items):
+                        continue
+                    is_item_gated = True
 
-        # All delivered -- fall back to the last eligible entry
-        # (lowest priority among eligible = the most recently relevant line).
-        return eligible[-1]
+            # Copy the dict so we can annotate without mutating DB cache.
+            annotated = dict(opt)
+            annotated["_is_item_gated"] = is_item_gated
+            visible.append(annotated)
 
-    def _apply_dialogue_flags(self, dialogue: dict) -> None:
-        """Set any flags defined in a dialogue entry's set_flags field."""
-        set_raw = dialogue.get("set_flags")
+        return visible
+
+    def _render_dialogue_panel(
+        self,
+        npc: dict,
+        node: dict,
+        visible_options: list[dict],
+    ) -> None:
+        """Render a dialogue panel showing the NPC's text and options."""
+        lines: list[str] = []
+        lines.append(f"\n{node['content']}\n")
+
+        for i, opt in enumerate(visible_options, 1):
+            tag = " [bright_yellow]\\[NEW][/]" if opt.get("_is_item_gated") else ""
+            lines.append(f"  {i}. {opt['text']}{tag}")
+
+        lines.append("  0. [dim]\\[Leave][/]")
+
+        body = "\n".join(lines)
+
+        self.console.print(
+            Panel(
+                body,
+                title=f"[{STYLE_NPC}]Talking to {npc['name']}[/]",
+                title_align="left",
+                border_style=STYLE_NPC,
+                padding=(1, 2),
+            )
+        )
+
+    def _apply_node_flags(self, node: dict) -> None:
+        """Set any flags defined in a dialogue node's set_flags field."""
+        set_raw = node.get("set_flags")
         if not set_raw:
             return
         try:
@@ -1239,33 +1286,17 @@ class GameEngine:
         for flag in flags:
             self.db.set_flag(flag, "true")
 
-    def _show_available_topics(self, npc: dict) -> None:
-        """Show the player which topics they can ``ask {npc} about``."""
-        db = self.db
-        topic_rows = db.get_npc_topics(npc["id"])
-        if not topic_rows:
+    def _apply_option_flags(self, option: dict) -> None:
+        """Set any flags defined in a dialogue option's set_flags field."""
+        set_raw = option.get("set_flags")
+        if not set_raw:
             return
-
-        # Filter to topics whose required_flags are currently met.
-        available: list[str] = []
-        for row in topic_rows:
-            required_raw = row.get("required_flags")
-            if required_raw:
-                try:
-                    required = json.loads(required_raw)
-                except (json.JSONDecodeError, TypeError):
-                    required = []
-                if not all(db.has_flag(f) for f in required):
-                    continue
-            topic = row.get("topic", "")
-            if topic and topic not in available:
-                available.append(topic)
-
-        if available:
-            topics_str = ", ".join(f"[{STYLE_TOPIC}]{t}[/]" for t in available)
-            self.console.print(
-                f"  You could ask about: {topics_str}", style=STYLE_SYSTEM
-            )
+        try:
+            flags = json.loads(set_raw)
+        except (json.JSONDecodeError, TypeError):
+            return
+        for flag in flags:
+            self.db.set_flag(flag, "true")
 
     # ------------------------------------------------------------------
     # End conditions

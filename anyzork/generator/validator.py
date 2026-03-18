@@ -139,8 +139,8 @@ def _all_quests(db: GameDB) -> list[dict]:
     return db._fetchall("SELECT * FROM quests")
 
 
-def _all_dialogue(db: GameDB) -> list[dict]:
-    return db._fetchall("SELECT * FROM dialogue")
+def _all_dialogue_nodes(db: GameDB) -> list[dict]:
+    return db._fetchall("SELECT * FROM dialogue_nodes")
 
 
 def _is_slot_ref(value: str) -> bool:
@@ -779,11 +779,11 @@ def _check_npcs(db: GameDB) -> list[ValidationError]:
     errors: list[ValidationError] = []
     npcs = _all_npcs(db)
     room_set = _room_ids(db)
-    dialogue_entries = _all_dialogue(db)
+    dialogue_nodes = _all_dialogue_nodes(db)
     npc_set = _npc_ids(db)
 
-    # Build set of NPC IDs that have at least one dialogue entry.
-    npcs_with_dialogue: set[str] = {d["npc_id"] for d in dialogue_entries}
+    # Build set of NPC IDs that have at least one dialogue node.
+    npcs_with_dialogue: set[str] = {d["npc_id"] for d in dialogue_nodes}
 
     for npc in npcs:
         # Room reference must be valid.
@@ -796,14 +796,14 @@ def _check_npcs(db: GameDB) -> list[ValidationError]:
                 )
             )
 
-    # Dialogue entries must reference valid NPCs.
-    for d in dialogue_entries:
+    # Dialogue nodes must reference valid NPCs.
+    for d in dialogue_nodes:
         if d["npc_id"] not in npc_set:
             errors.append(
                 ValidationError(
                     "error",
                     "npc",
-                    f"Dialogue entry '{d['id']}' references non-existent NPC '{d['npc_id']}'.",
+                    f"Dialogue node '{d['id']}' references non-existent NPC '{d['npc_id']}'.",
                 )
             )
 

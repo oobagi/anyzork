@@ -133,21 +133,34 @@ CREATE TABLE IF NOT EXISTS npcs (
 CREATE INDEX IF NOT EXISTS idx_npcs_room_id ON npcs(room_id);
 
 -- -------------------------------------------------------
--- dialogue: NPC dialogue lines gated by state
+-- dialogue_nodes: branching dialogue tree nodes
 -- -------------------------------------------------------
-CREATE TABLE IF NOT EXISTS dialogue (
-    id              TEXT PRIMARY KEY,
-    npc_id          TEXT    NOT NULL REFERENCES npcs(id),
-    topic           TEXT,
-    content         TEXT    NOT NULL,
-    required_flags  TEXT,   -- JSON array of flag IDs or NULL
-    set_flags       TEXT,   -- JSON array of flag IDs or NULL
-    priority        INTEGER NOT NULL DEFAULT 0,
-    is_delivered    INTEGER NOT NULL DEFAULT 0
+CREATE TABLE IF NOT EXISTS dialogue_nodes (
+    id          TEXT PRIMARY KEY,
+    npc_id      TEXT NOT NULL REFERENCES npcs(id),
+    content     TEXT NOT NULL,
+    set_flags   TEXT,          -- JSON array of flags to set when this node is visited
+    is_root     INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_dialogue_npc_id ON dialogue(npc_id);
-CREATE INDEX IF NOT EXISTS idx_dialogue_topic  ON dialogue(topic);
+CREATE INDEX IF NOT EXISTS idx_dialogue_nodes_npc_id ON dialogue_nodes(npc_id);
+
+-- -------------------------------------------------------
+-- dialogue_options: player choices within a dialogue node
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS dialogue_options (
+    id              TEXT PRIMARY KEY,
+    node_id         TEXT NOT NULL REFERENCES dialogue_nodes(id),
+    text            TEXT NOT NULL,      -- what the player sees as their choice
+    next_node_id    TEXT REFERENCES dialogue_nodes(id),  -- NULL = terminal (ends conversation)
+    required_flags  TEXT,   -- JSON array: flags that must be true for this option to appear
+    excluded_flags  TEXT,   -- JSON array: flags that must NOT be true (hide after used)
+    required_items  TEXT,   -- JSON array: item IDs player must have in inventory
+    set_flags       TEXT,   -- JSON array: flags set when this option is chosen
+    sort_order      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_dialogue_options_node_id ON dialogue_options(node_id);
 
 -- -------------------------------------------------------
 -- locks: gates that block exits until conditions are met
@@ -796,60 +809,33 @@ class GameDB:
         matches.sort(key=lambda npc: len(npc["name"]))
         return matches[0]
 
-    def get_npc_dialogue(
-        self, npc_id: str, topic: str | None = None
-    ) -> list[dict]:
-        """Return matching dialogue entries for an NPC, ordered by priority.
-
-        If ``topic`` is ``None``, returns non-topic (``talk to``) dialogue.
-        Otherwise filters by the given topic keyword.
-        """
-        if topic is None:
-            return self._fetchall(
-                """
-                SELECT * FROM dialogue
-                WHERE npc_id = ? AND topic IS NULL
-                ORDER BY priority DESC
-                """,
-                (npc_id,),
-            )
-        return self._fetchall(
+    def get_root_dialogue_node(self, npc_id: str) -> dict | None:
+        """Return the root dialogue node (is_root=1) for an NPC."""
+        return self._fetchone(
             """
-            SELECT * FROM dialogue
-            WHERE npc_id = ? AND LOWER(topic) = LOWER(?)
-            ORDER BY priority DESC
-            """,
-            (npc_id, topic),
-        )
-
-    def get_npc_topics(self, npc_id: str) -> list[dict]:
-        """Return all dialogue entries with a non-NULL topic for an NPC.
-
-        Used to show the player what topics they can ``ask about``.
-        Returns rows ordered by topic so callers can iterate or display them.
-        """
-        return self._fetchall(
-            """
-            SELECT * FROM dialogue
-            WHERE npc_id = ? AND topic IS NOT NULL
-            ORDER BY topic
+            SELECT * FROM dialogue_nodes
+            WHERE npc_id = ? AND is_root = 1
             """,
             (npc_id,),
         )
 
-    def mark_dialogue_delivered(self, dialogue_id: str) -> None:
-        """Mark a dialogue entry as delivered (``is_delivered = 1``).
+    def get_dialogue_node(self, node_id: str) -> dict | None:
+        """Return a single dialogue node by id."""
+        return self._fetchone(
+            "SELECT * FROM dialogue_nodes WHERE id = ?",
+            (node_id,),
+        )
 
-        Silently no-ops if the ``is_delivered`` column doesn't exist
-        (old .zork files created before the schema update).
-        """
-        try:
-            self._mutate(
-                "UPDATE dialogue SET is_delivered = 1 WHERE id = ?",
-                (dialogue_id,),
-            )
-        except Exception:
-            pass
+    def get_dialogue_options(self, node_id: str) -> list[dict]:
+        """Return all options for a dialogue node, ordered by sort_order."""
+        return self._fetchall(
+            """
+            SELECT * FROM dialogue_options
+            WHERE node_id = ?
+            ORDER BY sort_order
+            """,
+            (node_id,),
+        )
 
     # --------------------------------------------------------------- player
 
@@ -1182,12 +1168,21 @@ class GameDB:
             tuple(fields.values()),
         )
 
-    def insert_dialogue(self, **fields: Any) -> None:
-        """Insert a single dialogue row."""
+    def insert_dialogue_node(self, **fields: Any) -> None:
+        """Insert a single dialogue node row."""
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO dialogue ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO dialogue_nodes ({cols}) VALUES ({placeholders})",  # noqa: S608
+            tuple(fields.values()),
+        )
+
+    def insert_dialogue_option(self, **fields: Any) -> None:
+        """Insert a single dialogue option row."""
+        cols = ", ".join(fields.keys())
+        placeholders = ", ".join("?" for _ in fields)
+        self._mutate(
+            f"INSERT INTO dialogue_options ({cols}) VALUES ({placeholders})",  # noqa: S608
             tuple(fields.values()),
         )
 

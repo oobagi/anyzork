@@ -1220,13 +1220,15 @@ def build_game() -> Path:
         )
 
         # ==============================================================
-        # 6. Dialogue
+        # 6. Dialogue Trees
         # ==============================================================
 
-        db.insert_dialogue(
-            id="maria_talk_default",
+        # ---- Maria's dialogue tree ----
+
+        # Root node: Maria's introduction
+        db.insert_dialogue_node(
+            id="maria_root",
             npc_id="survivor_maria",
-            topic=None,
             content=(
                 "'I'm Maria. I was working the night shift at St. Agnes when "
                 "it all went to hell. People started biting -- patients, visitors, "
@@ -1234,15 +1236,14 @@ def build_game() -> Path:
                 "gas station on Mercer is the evacuation point. Military was "
                 "supposed to be there. I don't think they ever came.'"
             ),
-            required_flags=None,
             set_flags=json.dumps(["spoke_to_maria"]),
-            priority=0,
+            is_root=1,
         )
 
-        db.insert_dialogue(
-            id="maria_about_zombies",
+        # Sub-nodes for each topic
+        db.insert_dialogue_node(
+            id="maria_hospital",
             npc_id="survivor_maria",
-            topic="zombies",
             content=(
                 "'Don't call them that,' Maria says quietly. 'They're... they "
                 "were people. Something happened. A virus, a chemical, I don't "
@@ -1250,15 +1251,13 @@ def build_game() -> Path:
                 "faster. If you're going to move, do it now -- you've got maybe "
                 "two hours of daylight left.'"
             ),
-            required_flags=json.dumps(["spoke_to_maria"]),
             set_flags=json.dumps(["knows_about_zombies"]),
-            priority=0,
+            is_root=0,
         )
 
-        db.insert_dialogue(
-            id="maria_about_gas_station",
+        db.insert_dialogue_node(
+            id="maria_gas_station",
             npc_id="survivor_maria",
-            topic="gas station",
             content=(
                 "'The gas station door is chained shut from outside. Someone "
                 "locked it to keep them out -- or to keep something in. You'll "
@@ -1266,54 +1265,285 @@ def build_game() -> Path:
                 "check the trunk maybe.' She shakes her head. 'I'm not going "
                 "out there. Not again.'"
             ),
-            required_flags=json.dumps(["spoke_to_maria"]),
             set_flags=json.dumps(["knows_about_station"]),
-            priority=0,
+            is_root=0,
         )
 
-        db.insert_dialogue(
-            id="maria_about_building",
+        db.insert_dialogue_node(
+            id="maria_building",
             npc_id="survivor_maria",
-            topic="building",
             content=(
                 "'Most of the apartments are empty. People either evacuated "
                 "early or...' She trails off. 'Don't go upstairs past the "
                 "third floor. I heard sounds from up there. Not human sounds.'"
             ),
-            required_flags=json.dumps(["spoke_to_maria"]),
             set_flags=None,
-            priority=0,
+            is_root=0,
         )
 
-        db.insert_dialogue(
-            id="radio_default",
+        db.insert_dialogue_node(
+            id="maria_bolt_cutters_react",
+            npc_id="survivor_maria",
+            content=(
+                "Maria's eyes widen. 'Bolt cutters! That's exactly what we "
+                "need to get through the chain on the gas station door. Go -- "
+                "cut that chain and get inside. The truck keys have to be in "
+                "there somewhere.'"
+            ),
+            set_flags=None,
+            is_root=0,
+        )
+
+        db.insert_dialogue_node(
+            id="maria_registration_react",
+            npc_id="survivor_maria",
+            content=(
+                "Maria takes the papers and scans them quickly. 'Marcus Webb... "
+                "445 Mercer. That's the gas station owner.' She taps the sticky "
+                "note. 'Truck keys under the counter. He left a getaway plan. "
+                "Smart man. Let's hope he made it out.'"
+            ),
+            set_flags=None,
+            is_root=0,
+        )
+
+        # Options from root node
+        db.insert_dialogue_option(
+            id="maria_opt_hospital",
+            node_id="maria_root",
+            text='"What happened at the hospital?"',
+            next_node_id="maria_hospital",
+            required_flags=None,
+            excluded_flags=json.dumps(["asked_about_hospital"]),
+            required_items=None,
+            set_flags=json.dumps(["asked_about_hospital"]),
+            sort_order=0,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_opt_gas_station",
+            node_id="maria_root",
+            text='"Do you know about the gas station?"',
+            next_node_id="maria_gas_station",
+            required_flags=None,
+            excluded_flags=json.dumps(["asked_about_station"]),
+            required_items=None,
+            set_flags=json.dumps(["asked_about_station"]),
+            sort_order=1,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_opt_building",
+            node_id="maria_root",
+            text='"What about this building?"',
+            next_node_id="maria_building",
+            required_flags=None,
+            excluded_flags=json.dumps(["asked_about_building"]),
+            required_items=None,
+            set_flags=json.dumps(["asked_about_building"]),
+            sort_order=2,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_opt_bolt_cutters",
+            node_id="maria_root",
+            text='"I found bolt cutters!"',
+            next_node_id="maria_bolt_cutters_react",
+            required_flags=None,
+            excluded_flags=json.dumps(["showed_maria_bolt_cutters"]),
+            required_items=json.dumps(["bolt_cutters"]),
+            set_flags=json.dumps(["showed_maria_bolt_cutters"]),
+            sort_order=3,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_opt_registration",
+            node_id="maria_root",
+            text='"I found some papers in a car."',
+            next_node_id="maria_registration_react",
+            required_flags=None,
+            excluded_flags=json.dumps(["showed_maria_registration"]),
+            required_items=json.dumps(["car_registration"]),
+            set_flags=json.dumps(["showed_maria_registration"]),
+            sort_order=4,
+        )
+
+        # Sub-node options: loop back to root after viewing a topic
+        db.insert_dialogue_option(
+            id="maria_hospital_back",
+            node_id="maria_hospital",
+            text='"I have more questions."',
+            next_node_id="maria_root",
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=0,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_hospital_leave",
+            node_id="maria_hospital",
+            text='"Thanks. Stay safe."',
+            next_node_id=None,
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=1,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_gas_station_back",
+            node_id="maria_gas_station",
+            text='"I have more questions."',
+            next_node_id="maria_root",
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=0,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_gas_station_leave",
+            node_id="maria_gas_station",
+            text='"Thanks. Stay safe."',
+            next_node_id=None,
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=1,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_building_back",
+            node_id="maria_building",
+            text='"I have more questions."',
+            next_node_id="maria_root",
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=0,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_building_leave",
+            node_id="maria_building",
+            text='"Thanks. Stay safe."',
+            next_node_id=None,
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=1,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_bolt_cutters_back",
+            node_id="maria_bolt_cutters_react",
+            text='"I have more questions."',
+            next_node_id="maria_root",
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=0,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_bolt_cutters_leave",
+            node_id="maria_bolt_cutters_react",
+            text='"On it."',
+            next_node_id=None,
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=1,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_registration_back",
+            node_id="maria_registration_react",
+            text='"I have more questions."',
+            next_node_id="maria_root",
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=0,
+        )
+
+        db.insert_dialogue_option(
+            id="maria_registration_leave",
+            node_id="maria_registration_react",
+            text='"Good to know."',
+            next_node_id=None,
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=1,
+        )
+
+        # ---- Radio operator dialogue tree ----
+
+        db.insert_dialogue_node(
+            id="radio_root",
             npc_id="radio_voice",
-            topic=None,
             content=(
                 "The radio crackles: '...this is an automated emergency broadcast. "
                 "Evacuation route: Highway 1 North. Checkpoint at mile marker 40. "
                 "Bring supplies. Bring fuel. Do not travel after dark. This message "
                 "will repeat...'"
             ),
-            required_flags=None,
             set_flags=json.dumps(["heard_broadcast"]),
-            priority=0,
+            is_root=1,
         )
 
-        db.insert_dialogue(
-            id="radio_about_checkpoint",
+        db.insert_dialogue_node(
+            id="radio_checkpoint",
             npc_id="radio_voice",
-            topic="checkpoint",
             content=(
                 "'...military checkpoint is at mile marker 40. Medical tents, "
                 "food, water. Armed perimeter. If you can get there, you're safe. "
                 "Key word: if. The highway is not clear. Drive fast. Don't stop "
                 "for anything. Over and out.'"
             ),
-            required_flags=json.dumps(["heard_broadcast"]),
             set_flags=json.dumps(["knows_about_checkpoint"]),
-            priority=0,
+            is_root=0,
         )
+
+        db.insert_dialogue_option(
+            id="radio_opt_checkpoint",
+            node_id="radio_root",
+            text='"Ask about the checkpoint."',
+            next_node_id="radio_checkpoint",
+            required_flags=None,
+            excluded_flags=json.dumps(["asked_about_checkpoint"]),
+            required_items=None,
+            set_flags=json.dumps(["asked_about_checkpoint"]),
+            sort_order=0,
+        )
+
+        db.insert_dialogue_option(
+            id="radio_checkpoint_leave",
+            node_id="radio_checkpoint",
+            text='"Copy that."',
+            next_node_id=None,
+            required_flags=None,
+            excluded_flags=None,
+            required_items=None,
+            set_flags=None,
+            sort_order=0,
+        )
+
+        # The zombie NPC has no dialogue tree -- it uses default_dialogue
+        # only. Trying to "talk to zombie" will print:
+        #   "The zombie groans -- a low, rattling sound..."
 
         # ==============================================================
         # 7. Puzzles (before locks, since locks FK to puzzles)
@@ -1454,6 +1684,19 @@ def build_game() -> Path:
             ("heard_broadcast", "false",
              "Set when the player hears the radio broadcast."),
             ("knows_about_checkpoint", "false",
+             "Set when the player asks the radio about the checkpoint."),
+            # Dialogue tree tracking flags (excluded_flags hide used options)
+            ("asked_about_hospital", "false",
+             "Set when the player asks Maria about the hospital."),
+            ("asked_about_station", "false",
+             "Set when the player asks Maria about the gas station."),
+            ("asked_about_building", "false",
+             "Set when the player asks Maria about the building."),
+            ("showed_maria_bolt_cutters", "false",
+             "Set when the player shows Maria the bolt cutters."),
+            ("showed_maria_registration", "false",
+             "Set when the player shows Maria the registration papers."),
+            ("asked_about_checkpoint", "false",
              "Set when the player asks the radio about the checkpoint."),
             # Exploration flags
             ("window_examined", "false",
