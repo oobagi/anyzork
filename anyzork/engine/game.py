@@ -145,7 +145,7 @@ class GameEngine:
                 info_parts.append(f"v{engine_version}")
             else:
                 info_parts.append(
-                    f"Engine v{engine_version} | Save v{save_version} [yellow](outdated)[/yellow]"
+                    f"Engine v{engine_version} | Save v{save_version} \\[outdated]"
                 )
             seed = meta.get("seed")
             if seed:
@@ -498,6 +498,30 @@ class GameEngine:
     # Room display
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _highlight_interactables(
+        text: str, items: list[dict], npcs: list[dict]
+    ) -> str:
+        """Highlight item and NPC names in room description text.
+
+        Performs case-insensitive replacement, longest names first to avoid
+        partial matches (e.g., "AR-15 rifle" before "AR-15").
+        """
+        # Collect all names, longest first.
+        names: list[tuple[str, str]] = []  # (name, style)
+        for it in items:
+            names.append((it["name"], STYLE_ITEM))
+        for npc in npcs:
+            names.append((npc["name"], STYLE_NPC))
+        names.sort(key=lambda x: len(x[0]), reverse=True)
+
+        for name, style in names:
+            # Case-insensitive replace, preserving original case.
+            import re as _re
+            pattern = _re.compile(_re.escape(name), _re.IGNORECASE)
+            text = pattern.sub(f"[{style}]{name}[/]", text)
+        return text
+
     def _is_room_lit(self, room: dict) -> bool:
         """Return ``True`` if the room is visible to the player.
 
@@ -613,12 +637,18 @@ class GameEngine:
                     first_visit=first_visit,
                 )
             if narrated:
-                display_body = narrated
+                # Escape Rich markup in LLM output (e.g., [15] in "AR-15").
+                from rich.markup import escape
+                display_body = escape(narrated)
             elif self._narrator._failure_count == 1:
                 self.console.print(
                     "(Narrator unavailable for this turn -- showing engine output.)",
                     style=STYLE_SYSTEM,
                 )
+
+        # Highlight interactable names in the room body.
+        all_npcs = self.db.get_npcs_in(room_id)
+        display_body = self._highlight_interactables(display_body, items, all_npcs)
 
         # Display the room panel.
         self.console.print(
