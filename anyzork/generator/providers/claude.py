@@ -104,19 +104,10 @@ class ClaudeProvider(BaseProvider):
     ) -> str:
         ctx = context or NarratorContext()
 
-        system_prompt = (
-            "You are a narrator for a text adventure game. "
-            f"Theme: {ctx.theme}. Tone: {ctx.tone}. "
-            "Describe exactly what the engine tells you — no more, no less. "
-            "Do not add items, exits, or information not present in the engine output."
-        )
-        if ctx.room_lore:
-            system_prompt += f"\n\nRoom lore context:\n{ctx.room_lore}"
-
         messages = [{"role": "user", "content": prompt}]
 
         return self._call_with_retry(
-            system_prompt=system_prompt,
+            system_prompt=ctx.system_prompt or "",
             messages=messages,
             temperature=ctx.temperature,
             max_tokens=ctx.max_tokens,

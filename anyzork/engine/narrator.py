@@ -193,6 +193,7 @@ class Narrator:
         Never raises -- all exceptions are caught and logged.
         """
         ctx = NarratorContext(
+            system_prompt=self._system_prompt,
             theme=self._game_ctx.theme,
             tone=self._game_ctx.tone,
             temperature=0.9,
@@ -200,7 +201,7 @@ class Narrator:
         )
         try:
             result = self._provider.generate_text(
-                self._system_prompt + "\n\n" + prompt,
+                prompt,
                 context=ctx,
             )
             self._failure_count = 0

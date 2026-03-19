@@ -109,17 +109,8 @@ class GeminiProvider(BaseProvider):
     ) -> str:
         ctx = context or NarratorContext()
 
-        system_instruction = (
-            "You are a narrator for a text adventure game. "
-            f"Theme: {ctx.theme}. Tone: {ctx.tone}. "
-            "Describe exactly what the engine tells you — no more, no less. "
-            "Do not add items, exits, or information not present in the engine output."
-        )
-        if ctx.room_lore:
-            system_instruction += f"\n\nRoom lore context:\n{ctx.room_lore}"
-
         config = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction,
+            system_instruction=ctx.system_prompt or None,
             temperature=ctx.temperature,
             max_output_tokens=ctx.max_tokens,
         )
