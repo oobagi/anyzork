@@ -182,12 +182,17 @@ class GeminiProvider(BaseProvider):
                         time.sleep(delay)
                     continue
 
-                # Detect truncated JSON — finish reason MAX_TOKENS with unclosed JSON
+                # Detect truncated output — finish reason MAX_TOKENS.
+                # For structured JSON this is fatal (broken JSON). For plain
+                # text (narrator) the partial output is still usable.
                 if finish_reason and "MAX_TOKENS" in str(finish_reason):
-                    raise ProviderError(
-                        "Gemini output was truncated (MAX_TOKENS). "
-                        "The response is too large. Retrying with guidance to be more concise."
-                    )
+                    if config.response_mime_type and "json" in config.response_mime_type:
+                        raise ProviderError(
+                            "Gemini output was truncated (MAX_TOKENS). "
+                            "The response is too large."
+                        )
+                    # Plain text — return what we got, it's good enough.
+                    logger.debug("Gemini output truncated but usable (plain text).")
 
                 return text
 
