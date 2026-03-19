@@ -75,6 +75,8 @@ class GeminiProvider(BaseProvider):
             "Do not include any explanation, markdown formatting, or text outside the JSON object.\n\n"
             f"Required JSON schema:\n{json.dumps(schema, indent=2)}"
         )
+        if ctx.seed is not None:
+            system_instruction += f"\n\nGeneration seed: {ctx.seed}. Use this seed to guide deterministic choices."
 
         user_content = prompt
         if ctx.existing_data:
@@ -107,17 +109,8 @@ class GeminiProvider(BaseProvider):
     ) -> str:
         ctx = context or NarratorContext()
 
-        system_instruction = (
-            "You are a narrator for a text adventure game. "
-            f"Theme: {ctx.theme}. Tone: {ctx.tone}. "
-            "Describe exactly what the engine tells you — no more, no less. "
-            "Do not add items, exits, or information not present in the engine output."
-        )
-        if ctx.room_lore:
-            system_instruction += f"\n\nRoom lore context:\n{ctx.room_lore}"
-
         config = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction,
+            system_instruction=ctx.system_prompt or None,
             temperature=ctx.temperature,
             max_output_tokens=ctx.max_tokens,
         )
@@ -180,11 +173,22 @@ class GeminiProvider(BaseProvider):
                         time.sleep(delay)
                     continue
 
-                # Detect truncated JSON — finish reason MAX_TOKENS with unclosed JSON
+                # Log token usage for debugging.
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    logger.info(
+                        "Gemini tokens — input: %s, output: %s, finish: %s",
+                        getattr(usage, "prompt_token_count", "?"),
+                        getattr(usage, "candidates_token_count", "?"),
+                        finish_reason,
+                    )
+
+                # Detect truncated output — finish reason MAX_TOKENS.
                 if finish_reason and "MAX_TOKENS" in str(finish_reason):
                     raise ProviderError(
-                        "Gemini output was truncated (MAX_TOKENS). "
-                        "The response is too large. Retrying with guidance to be more concise."
+                        f"Gemini output was truncated (MAX_TOKENS). "
+                        f"Output tokens: {getattr(usage, 'candidates_token_count', '?') if usage else '?'}. "
+                        f"Limit was: {config.max_output_tokens}."
                     )
 
                 return text

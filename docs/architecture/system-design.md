@@ -1,463 +1,201 @@
 # AnyZork System Architecture
 
-## 1. Architectural Overview
+## 1. Overview
 
-AnyZork is a CLI tool that turns a natural language prompt into a playable Zork-style text adventure. The system is split into two distinct phases with fundamentally different runtime characteristics:
+AnyZork is a CLI tool that turns a natural-language prompt into a playable text adventure. It is intentionally split into two phases:
 
-**Phase 1 -- Generation (LLM-powered).** The user provides a prompt like "a haunted lighthouse on a foggy coast." An orchestrator feeds this through a sequence of focused LLM passes, each one building a specific layer of the game world (rooms, items, NPCs, puzzles, commands, lore). Each pass writes structured data into a SQLite database -- the `.zork` file.
+1. Generation: an LLM produces structured world data and stores it in a SQLite `.zork` file.
+2. Runtime: a deterministic engine reads that file and executes the game with no LLM in the game loop unless optional narrator mode is enabled.
 
-**Phase 2 -- Runtime (deterministic).** The game engine reads from the `.zork` file and executes player commands by evaluating DSL rules stored in the database. No LLM is involved. State transitions are explicit, preconditions are checked, effects are applied, and the result is always consistent.
+The separation is the product. The model creates content once; the engine owns state forever.
 
-This separation exists for one reason: LLMs are excellent at creative generation and terrible at state management. A real-time LLM game forgets rooms, hallucinates inventory, and drifts on puzzle solutions. By confining the LLM to a one-time generation step and running the actual game deterministically, we get creative worlds without runtime inconsistency.
-
-```
-                        GENERATION PHASE                          RUNTIME PHASE
-                        ================                          =============
-
-User Prompt ──> CLI ──> Orchestrator ──> Provider ──> LLM        .zork file ──> Game Engine ──> Player
-                             │                         │              │              │
-                             │         ┌───────────────┘              │              ├── Command Parser
-                             │         │                              │              ├── DSL Interpreter
-                             ▼         ▼                              │              ├── State Manager
-                        Pass 1: World Concept                         │              └── Output Formatter
-                        Pass 2: Room Graph                            │                       │
-                        Pass 3: Locks & Gates                         │                       ▼
-                        Pass 4: Items                                 │              [Optional Narrator]
-                        Pass 5: NPCs                                  │                  (LLM layer,
-                        Pass 6: Puzzles                               │                   read-only)
-                        Pass 7: Commands (DSL)                        │
-                        Pass 8: Lore                                  │
-                        Pass 9: Validation                            │
-                             │                                        │
-                             └────── writes to ──────────────────────>│
+```text
+Prompt -> CLI -> Orchestrator -> Provider -> LLM -> .zork database -> Game Engine -> Player
 ```
 
-## 2. Component Responsibilities
+Current generation flow:
 
-### 2.1 CLI (`click` + `rich`)
+1. Concept
+2. Rooms
+3. Locks
+4. Items
+5. NPCs
+6. Interactions
+7. Puzzles
+8. Commands
+9. Quests
+10. Triggers
+11. Validation
 
-The user-facing entry point. Subcommands include:
+## 2. Major Components
 
-- `anyzork generate <prompt>` -- run the generation pipeline, produce a `.zork` file
-- `anyzork play <file.zork>` -- launch the game engine against an existing file
-- `anyzork info <file.zork>` -- inspect metadata (rooms, items, seed, provider used)
+### 2.1 CLI
 
-The CLI handles argument parsing, provider selection (via flags or config), progress display during generation (rich progress bars per pass), and the REPL loop during play. It owns no game logic.
+The entry point is [anyzork/cli.py](/Users/jaden/Developer/anyzork/anyzork/cli.py).
 
-### 2.2 Config (`pydantic-settings`)
+Current commands:
 
-Configuration is layered: defaults < config file < environment variables < CLI flags. All env vars use the `ANYZORK_` prefix.
+- `anyzork play <file.zork>`
+- `anyzork generate [prompt]`
+- `anyzork init`
+- `anyzork config`
+- `anyzork list`
 
-Key settings:
-- `ANYZORK_PROVIDER` -- which LLM provider to use (`claude`, `openai`, `gemini`)
-- `ANYZORK_API_KEY` -- API key for the selected provider
-- `ANYZORK_MODEL` -- model override (e.g., `claude-sonnet-4-20250514`, `gpt-4o`)
-- `ANYZORK_SEED` -- seed for reproducible generation
-- `ANYZORK_NARRATOR` -- enable/disable narrator mode during play (`true`/`false`)
-- `ANYZORK_OUTPUT` -- output path for generated `.zork` files
+The CLI handles argument parsing, provider overrides, generation UX, and launching the runtime engine.
 
-Pydantic validates all config at startup and fails fast with clear error messages (e.g., "ANYZORK_API_KEY is required when using the 'claude' provider").
+### 2.2 Config
+
+Configuration lives in [anyzork/config.py](/Users/jaden/Developer/anyzork/anyzork/config.py) and uses `pydantic-settings`.
+
+Sources, from lowest to highest priority:
+
+1. Defaults
+2. `~/.anyzork/config.toml`
+3. `.env`
+4. Environment variables
+5. CLI overrides
+
+Supported providers today are `claude`, `openai`, and `gemini`.
 
 ### 2.3 Database Layer
 
-A thin abstraction over SQLite that provides:
+The database wrapper lives in [anyzork/db/schema.py](/Users/jaden/Developer/anyzork/anyzork/db/schema.py). SQLite is both the world format and the save format.
 
-- **Schema management** -- creates tables on new `.zork` files, verifies schema version on existing ones
-- **Typed accessors** -- `get_room(id)`, `get_items_in_room(room_id)`, `get_commands_for_verb(verb)`, etc.
-- **Write methods for generation** -- `insert_room()`, `insert_item()`, `insert_command()`, each with validation
-- **Player state operations** -- `get_player_state()`, `update_player_position()`, `add_to_inventory()`, `set_flag()`
-- **Transaction boundaries** -- each generation pass runs inside a single transaction; if it fails, the pass can be retried without corrupting earlier work
-
-The database layer never interprets game logic. It is a persistence boundary: data in, data out.
-
-The `.zork` file schema includes (at minimum):
+Important tables:
 
 | Table | Purpose |
-|-------|---------|
-| `meta` | Game title, description, seed, provider, model, schema version, generation timestamp |
-| `rooms` | id, name, description, initial_description, visited flag |
-| `exits` | source_room, direction, target_room, locked flag, lock_id |
-| `items` | id, name, description, room_id (or null if in inventory), portable flag, hidden flag |
-| `npcs` | id, name, description, room_id, dialogue JSON |
-| `commands` | id, verb, pattern, preconditions JSON, effects JSON, description |
-| `lore` | id, tier (surface/hidden/deep), content, trigger, room_id or item_id |
-| `player_state` | current_room, inventory (as item refs), health, score, moves, flags JSON |
-| `locks` | id, type (key/puzzle/npc), item_id or puzzle_id, unlocked flag |
+|---|---|
+| `metadata` | Title, prompt, seed, intro/win text, score caps, win/lose conditions |
+| `rooms`, `exits`, `locks` | Spatial graph and gating |
+| `items` | World objects, containers, item states, quantities |
+| `npcs`, `dialogue_nodes`, `dialogue_options` | NPC placement and branching dialogue |
+| `puzzles` | Puzzle definitions and completion state |
+| `commands` | DSL rules for player-initiated actions |
+| `flags` | Shared world-state glue |
+| `quests`, `quest_objectives` | Player-facing goals and progress tracking |
+| `interaction_responses` | Category/tag-based item-on-target responses |
+| `triggers` | Reactive rules fired by emitted events |
+| `player`, `score_entries`, `visited_rooms` | Runtime state |
 
-Foreign keys enforce referential integrity: every exit references two rooms, every item references a room (or null), every lock references an item or puzzle.
+`GameDB` provides the single persistence API used by the engine, generator, and CLI.
 
-### 2.4 Game Engine
+### 2.4 Runtime Engine
 
-The deterministic runtime. It runs a REPL loop:
+The runtime entry point is [anyzork/engine/game.py](/Users/jaden/Developer/anyzork/anyzork/engine/game.py).
 
-1. **Read** -- accept player input (e.g., `go north`, `take lantern`, `use key on door`)
-2. **Parse** -- tokenize and match against known command patterns
-3. **Evaluate** -- find matching commands in the database, check preconditions against current state
-4. **Apply** -- execute effects (move player, add/remove items, set flags, unlock exits, print text, add score)
-5. **Output** -- compose the response (room description, action result, status changes)
+The engine loop is deterministic:
 
-The engine does not contain game content. It is a generic interpreter for the data and DSL rules stored in the `.zork` file. Swap the file, and you have a completely different game.
+1. Read player input
+2. Resolve built-in verbs or DSL commands
+3. Check preconditions against database state
+4. Apply effects
+5. Emit events and evaluate matching triggers
+6. Tick quest state
+7. Check win/lose conditions
+8. Render output
 
-Built-in commands that exist regardless of the `.zork` content:
-- `look` -- redisplay current room
-- `inventory` / `i` -- list carried items
-- `go <direction>` / cardinal shortcuts (`n`, `s`, `e`, `w`, `u`, `d`)
-- `examine <target>` -- detailed description of item/NPC/feature
-- `help` -- list available verbs
-- `save` / `load` -- copy/restore the `.zork` file
-- `quit`
+Built-in commands include `look`, `inventory`, `quests`, `help`, `save`, `quit`, movement shortcuts, container verbs, dialogue verbs, and item-state helpers such as `turn on`.
 
-### 2.5 Command DSL Interpreter
+### 2.5 Command DSL
 
-The heart of the game logic system. Each command row in the database is a structured rule:
+The command interpreter lives in [anyzork/engine/commands.py](/Users/jaden/Developer/anyzork/anyzork/engine/commands.py). It evaluates structured rules stored in `commands`.
 
-```json
-{
-  "verb": "use",
-  "pattern": "use {item} on {target}",
-  "preconditions": [
-    {"type": "player_has", "item": "rusty_key"},
-    {"type": "player_in", "room": "dungeon_entrance"},
-    {"type": "flag_not_set", "flag": "dungeon_door_unlocked"}
-  ],
-  "effects": [
-    {"type": "remove_item", "item": "rusty_key"},
-    {"type": "set_flag", "flag": "dungeon_door_unlocked"},
-    {"type": "unlock_exit", "room": "dungeon_entrance", "direction": "north"},
-    {"type": "print", "text": "The rusty key crumbles as the lock gives way. The door groans open."},
-    {"type": "add_score", "points": 10}
-  ]
-}
-```
+Current precondition families include:
 
-**Precondition types** the interpreter understands:
-- `player_has` -- player carries the named item
-- `player_in` -- player is in the named room
-- `flag_set` / `flag_not_set` -- a game flag is or isn't set
-- `item_in_room` -- a specific item exists in a specific room
-- `npc_in_room` -- a specific NPC is in a specific room
-- `exit_locked` / `exit_unlocked` -- an exit's lock state
+- room and inventory checks
+- flag checks
+- lock and puzzle checks
+- NPC and item presence checks
+- container and quantity checks
 
-**Effect types** the interpreter can apply:
-- `print` -- display text to the player
-- `add_item` / `remove_item` -- modify inventory
-- `move_item` -- move an item to a room
-- `set_flag` / `clear_flag` -- toggle game flags
-- `unlock_exit` / `lock_exit` -- change exit lock state
-- `move_player` -- teleport the player to a room
-- `add_score` -- increase score
-- `reveal_item` -- unhide a hidden item
-- `update_description` -- change a room or item description (for state changes like "the door is now open")
+Current effect families include:
 
-This is deliberately a closed set. The LLM cannot invent new effect types -- it can only compose from the vocabulary above. This makes the system safe (no arbitrary code execution) and predictable (every possible state change is enumerable).
+- moving or removing items
+- setting flags
+- unlocking locks and revealing exits
+- moving the player
+- spawning items
+- health and score changes
+- solving puzzles
+- discovering quests
+- container and quantity operations
+- item toggle-state updates
 
-Pattern matching uses `{placeholders}` that bind to player input. `use {item} on {target}` matches "use key on door" with `item=key`, `target=door`. The interpreter resolves these bindings against the database to find the actual item and target entities before checking preconditions.
+The authoritative effect/precondition contract is documented in [docs/dsl/command-spec.md](/Users/jaden/Developer/anyzork/docs/dsl/command-spec.md).
 
-When multiple commands match the same input, the interpreter picks the one whose preconditions are all satisfied. If none match, the player gets a contextual failure message. If multiple match (ambiguity), the most specific pattern wins (most preconditions).
+### 2.6 Quest and Trigger Systems
 
-### 2.6 Narrator
+Two higher-level deterministic layers sit on top of the command DSL:
 
-An optional, read-only LLM layer that sits between the engine output and the player display.
+- Quests: player-facing tracking built from flags and objectives
+- Triggers: reactive mechanics fired by events like `room_enter`, `flag_set`, `dialogue_node`, `item_taken`, and `item_dropped`
 
-**Input to narrator:** The raw engine output (structured data -- room name, description, items present, action results, exits, player status).
-
-**Output from narrator:** Prose that conveys the same information with atmosphere and personality.
-
-**What the narrator cannot do:**
-- Mutate game state (it has no write access to the database)
-- Add items, rooms, or exits that don't exist
-- Change the outcome of a command
-- Override precondition failures
-
-The narrator receives context about the game's theme, tone, and the current room's lore tier to stay stylistically consistent. It operates on a per-turn basis (no conversation memory beyond the current turn's context window) to prevent drift.
-
-Implementation: a single LLM call per player turn. The prompt includes the game's theme, the current room context, and the deterministic output to be flavored. This uses the same provider abstraction as generation, so the narrator can use a different (possibly cheaper/faster) model than the generator.
-
-If the narrator call fails (network error, rate limit, timeout), the engine's deterministic output is shown directly. The game never blocks on narrator availability.
+Quests do not gate actions directly. They observe state and present progress. Triggers let the world react without requiring the player to type a command.
 
 ### 2.7 Generator Orchestrator
 
-Manages the multi-pass generation pipeline. Responsibilities:
+The generation entry point is [anyzork/generator/orchestrator.py](/Users/jaden/Developer/anyzork/anyzork/generator/orchestrator.py).
 
-1. **Pass sequencing** -- execute passes in dependency order (rooms before exits before locks before items)
-2. **Context assembly** -- for each pass, pull the relevant slice of the database built so far and include it in the LLM prompt
-3. **Prompt construction** -- each pass has a specialized system prompt that constrains the LLM to produce the right shape of output
-4. **Response parsing** -- extract structured data from LLM output (JSON blocks), validate against expected schema
-5. **Database writing** -- insert parsed data into the `.zork` file within a transaction
-6. **Error handling** -- if a pass fails (bad output, validation error, API error), retry that pass without losing earlier work
-7. **Progress reporting** -- emit events the CLI can display as progress bars
+Responsibilities:
 
-The orchestrator does not talk to LLMs directly. It calls the provider abstraction.
-
-**Pass detail:**
-
-| Pass | Input Context | Output | Validation |
-|------|---------------|--------|------------|
-| 1. World Concept | User prompt | Theme, tone, scale, title, setting description | Schema conformance |
-| 2. Room Graph | World concept | Room list with names, descriptions, spatial relationships | Connected graph (no orphan rooms), reasonable count for scale |
-| 3. Locks & Gates | Room graph | Lock definitions on specific exits | Every lock has a solution path, no softlocks |
-| 4. Items | Rooms + locks | Item list with locations, properties | Key items exist for all locks, no items in nonexistent rooms |
-| 5. NPCs | Rooms + items | NPC list with dialogue trees, locations | NPCs in valid rooms, dialogue references valid items/rooms |
-| 6. Puzzles | Full world state | Multi-step puzzle definitions | Puzzles are solvable given available items and connections |
-| 7. Commands | Full world state | DSL command rules | All precondition/effect references resolve, verbs are consistent |
-| 8. Lore | Full world state | Tiered lore entries | Lore attached to valid rooms/items, three tiers populated |
-| 9. Validation | Complete database | Error list (or empty) | Cross-referential integrity check across all tables |
-
-Pass 9 is special: it reads the entire database and checks for inconsistencies. If it finds problems (an exit to a nonexistent room, a command referencing a missing item), it reports them. The orchestrator can then re-run the relevant pass with the error context included in the prompt.
+- build the right context for each pass
+- invoke the configured provider
+- validate pass outputs structurally
+- write results into the database
+- retry only the failed pass
+- run deterministic validation at the end
 
 ### 2.8 Provider Abstraction
 
-A unified interface that hides the differences between API providers.
-
-```
-Provider (abstract)
-├── ClaudeProvider      -- Anthropic Messages API
-├── OpenAIProvider      -- OpenAI Chat Completions API
-└── GeminiProvider      -- Google GenAI API
-```
-
-**The interface every provider implements:**
-
-- `generate(system_prompt, user_prompt, schema) -> structured_output` -- send a prompt, get back structured data conforming to the given schema
-- `narrate(context, engine_output) -> prose` -- flavor deterministic output with prose (used by narrator mode)
-- `supports_seed() -> bool` -- whether the provider/model supports deterministic seeding
-- `configure(seed, temperature, max_tokens)` -- set generation parameters
-
-All providers make HTTP calls with structured output / tool-use features where available (Claude's tool use, OpenAI's function calling / structured outputs, Gemini's controlled generation). They require the user to set an API key.
-
-The provider abstraction also handles:
-- **Rate limiting** -- backoff and retry on 429 responses
-- **Timeout** -- configurable per-call timeout with sensible defaults
-- **Cost tracking** -- log token counts and estimated cost per pass (for API providers)
-- **Seed forwarding** -- pass the seed to the LLM's seed/temperature parameters when supported
+Providers implement a shared interface in [anyzork/generator/providers/base.py](/Users/jaden/Developer/anyzork/anyzork/generator/providers/base.py). Generation and narrator mode both rely on that abstraction, so the rest of the system does not care whether the backend is Claude, OpenAI, or Gemini.
 
-## 3. Data Flow
+### 2.9 Narrator
 
-### 3.1 Generation Flow
+Narrator mode lives in [anyzork/engine/narrator.py](/Users/jaden/Developer/anyzork/anyzork/engine/narrator.py). It is read-only presentation polish layered on top of deterministic output.
 
-```
-User runs: anyzork generate "a haunted lighthouse on a foggy coast"
+The narrator may restyle text, but it may not:
 
-1. CLI parses arguments, loads config
-2. CLI creates empty .zork file at output path
-3. Database layer initializes schema (CREATE TABLE statements)
-4. Orchestrator begins pass sequence:
+- mutate the database
+- invent rooms, exits, items, or quest state
+- override command success or failure
 
-   Pass 1 (World Concept):
-     - Orchestrator builds prompt: system="You are designing a text adventure world..." user="a haunted lighthouse on a foggy coast"
-     - Provider sends to LLM, receives: {title: "The Beacon", tone: "gothic horror", scale: "medium (15-25 rooms)", ...}
-     - Orchestrator validates response shape, writes to meta table
+If narrator mode fails, the engine falls back to plain deterministic output.
 
-   Pass 2 (Room Graph):
-     - Orchestrator reads meta from DB, builds prompt with world concept as context
-     - Provider sends to LLM, receives: [{id: "lighthouse_base", name: "Base of the Lighthouse", ...}, ...]
-     - Orchestrator validates (connected graph?), writes to rooms + exits tables
+## 3. Generation Architecture
 
-   ...passes 3-8 follow the same pattern...
+Each pass consumes only the data it actually needs. That keeps prompts smaller and lets the orchestrator retry a broken pass without re-running the entire world.
 
-   Pass 9 (Validation):
-     - Orchestrator reads entire DB
-     - Provider sends to LLM: "Here is the complete game world. Find inconsistencies."
-     - If errors found, orchestrator re-runs affected passes with error context
-     - If clean, generation is complete
+Current pass dependencies:
 
-5. CLI reports success: "Generated 'The Beacon' -- 22 rooms, 47 items, 12 puzzles. Saved to the_beacon.zork"
-```
+| Pass | Reads |
+|---|---|
+| `concept` | prompt only |
+| `rooms` | concept |
+| `locks` | concept, rooms |
+| `items` | concept, rooms, locks |
+| `npcs` | concept, rooms, items, locks |
+| `interactions` | concept, rooms, items, npcs |
+| `puzzles` | concept, rooms, items, npcs, locks |
+| `commands` | concept, rooms, locks, items, npcs, puzzles, interactions |
+| `quests` | concept, rooms, locks, items, npcs, puzzles, commands |
+| `triggers` | concept, rooms, locks, items, npcs, puzzles, commands, quests |
+| `validation` | entire database |
 
-### 3.2 Runtime Flow
+## 4. Runtime State Model
 
-```
-User runs: anyzork play the_beacon.zork
+The `.zork` file is also the save:
 
-1. CLI opens .zork file, database layer verifies schema version
-2. Engine loads initial state (starting room, empty inventory, score 0)
-3. Engine displays opening text + starting room description
-4. REPL loop:
+- world data is immutable in shape after generation
+- runtime tables track player state, visited rooms, score, quest status, and one-shot execution state
+- saving is just persisting the SQLite file
 
-   Player types: "take lantern"
-   a. Parser tokenizes: verb="take", args=["lantern"]
-   b. Engine queries DB: items in current room matching "lantern"
-   c. Engine finds built-in "take" handler, checks item is portable
-   d. Engine applies: move item from room to inventory
-   e. Engine composes output: "Taken."
-   f. [Narrator mode]: LLM call with output → "You lift the brass lantern from its hook. It's heavier than it looks, and the glass is fogged with age."
-   g. Display to player
+This means the engine never needs a separate save serializer.
 
-   Player types: "use key on door"
-   a. Parser tokenizes: verb="use", args=["key", "on", "door"]
-   b. Engine queries DB: commands with verb="use" matching pattern "use {item} on {target}"
-   c. Engine binds: item="key" → resolves to "rusty_key", target="door" → resolves to "dungeon_door"
-   d. Engine checks preconditions: player_has("rusty_key")? yes. player_in("dungeon_entrance")? yes. flag_not_set("dungeon_door_unlocked")? yes.
-   e. Engine applies effects in order: remove rusty_key, set flag, unlock exit, print text, add 10 to score
-   f. Display result
+## 5. Validation Philosophy
 
-5. On "quit": engine writes final state to player_state table, closes DB
-```
+Validation is split across two layers:
 
-### 3.3 Narrator Flow (detail)
+1. Pass-local validation: JSON shape, obvious required references, and local sanity checks.
+2. Final deterministic validation: whole-world consistency across rooms, locks, commands, quests, triggers, and score metadata.
 
-```
-Engine output (structured):
-{
-  "room": "lighthouse_base",
-  "room_name": "Base of the Lighthouse",
-  "description": "A circular stone room. A spiral staircase leads up. A heavy wooden door is to the south.",
-  "items": ["brass_lantern", "waterlogged_journal"],
-  "exits": {"up": "lighthouse_stairs", "south": "cliff_path"},
-  "action_result": null
-}
-
-Narrator prompt:
-  System: "You are a gothic horror narrator for a text adventure called 'The Beacon'. Your prose is atmospheric and terse. You describe exactly what the engine tells you -- no more, no less. Do not add items, exits, or information not present in the engine output."
-  User: [engine output above] + [room lore context] + [recent action context]
-
-Narrator output:
-  "The lighthouse's base is a tomb of cold stone, curved walls weeping with condensation. A spiral staircase corkscrews upward into darkness. To the south, a door of salt-warped oak stands slightly ajar, letting in the moan of wind off the cliffs. A brass lantern sits on a ledge, its glass clouded. Beside it, a journal bloated with seawater."
-
-The engine verifies: does the narrator output reference the same exits and items? If it fabricates an exit ("a passage to the east"), the engine strips that line or falls back to raw output. This is a safety net, not a common case.
-```
-
-## 4. The Command DSL In Depth
-
-### 4.1 Design Philosophy
-
-The command DSL is the bridge between LLM creativity and deterministic execution. It answers the question: "How does the LLM specify game logic without writing code?"
-
-The answer is a closed vocabulary of preconditions and effects. The LLM composes rules from this vocabulary. The engine interprets them. The vocabulary is fixed at build time -- the LLM cannot extend it.
-
-This is safer than generated code (no eval, no injection, no arbitrary filesystem access) and more reliable than natural language instructions (no ambiguity, no interpretation drift).
-
-### 4.2 Pattern Matching
-
-Command patterns use `{placeholder}` syntax:
-
-| Pattern | Matches | Bindings |
-|---------|---------|----------|
-| `take {item}` | "take lantern" | item=lantern |
-| `use {item} on {target}` | "use key on door" | item=key, target=door |
-| `give {item} to {npc}` | "give coin to merchant" | item=coin, npc=merchant |
-| `talk to {npc}` | "talk to ghost" | npc=ghost |
-| `push {item}` | "push statue" | item=statue |
-
-Bindings are resolved against the database: `item=lantern` is matched to the item row where `name="lantern"` or any alias. Resolution considers the current room first, then inventory, then fails with "You don't see that here."
-
-### 4.3 Precondition Evaluation
-
-All preconditions must be true for the command to fire. Evaluation is short-circuit: the first failing precondition stops evaluation and produces a contextual failure message.
-
-The failure message can be customized per command. If the LLM provides a `fail_message` field, that text is shown. Otherwise, the engine generates a generic message based on the failing precondition type ("You don't have the rusty key." / "You can't do that here.").
-
-### 4.4 Effect Execution
-
-Effects are applied in order. This matters -- `remove_item` before `print` means the item is gone by the time the message displays. The orchestrator's prompt instructs the LLM to order effects logically.
-
-Effects are atomic within a command: if any effect fails to apply (e.g., trying to remove an item the player doesn't have due to a precondition bug), the entire command rolls back. This uses SQLite's transaction support.
-
-## 5. Save/Load, Export, and Seeds
-
-### 5.1 Save and Load
-
-The `.zork` file is the save file. The `player_state` table captures everything needed to resume:
-- Current room
-- Inventory (list of item IDs)
-- Score
-- Move count
-- Flags (JSON object of all set flags)
-- Health (if the game uses it)
-
-"Saving" is a no-op during play -- state is written to the DB after every command. "Save" as a player action copies the `.zork` file to a user-specified path. "Load" replaces the current file with a saved copy.
-
-Multiple save slots are just multiple copies of the file.
-
-### 5.2 Export and Sharing
-
-A `.zork` file is a self-contained SQLite database. It includes:
-- All world data (rooms, items, NPCs, commands, lore)
-- Player state (can be reset to initial state via a `reset` command)
-- Generation metadata (prompt, seed, provider, model, timestamp)
-
-Share it however you want. The recipient just needs AnyZork installed to play it.
-
-### 5.3 Seed System
-
-When the user provides a seed (`--seed 42`), it is:
-1. Stored in the `.zork` meta table
-2. Passed to the LLM provider's seed/temperature parameters (where supported)
-3. Used to make generation deterministic: same prompt + same seed + same provider/model = same world
-
-Not all providers support seeding equally. The system documents this per-provider.
-
-## 6. Error Boundaries
-
-### 6.1 Generation Failures
-
-Each generation pass can fail in several ways:
-
-| Failure | Response |
-|---------|----------|
-| **API error** (network, auth, rate limit) | Retry with exponential backoff. After N retries, abort with clear error message. |
-| **Malformed output** (LLM returns invalid JSON) | Retry the pass with a tighter prompt ("Your previous response was not valid JSON. Return only a JSON array..."). Up to 3 retries per pass. |
-| **Schema violation** (output doesn't match expected structure) | Retry with the schema error included in the prompt ("Missing required field 'name' in room object"). |
-| **Validation failure** (pass output is internally inconsistent) | Retry with the validation errors as context. |
-| **Cross-pass inconsistency** (pass 9 catches problems) | Re-run the specific pass that produced the bad data, with the error context. |
-
-Because each pass writes within a transaction, a failed pass does not corrupt the database. The orchestrator can roll back a pass and retry it, or skip it and report a partial generation.
-
-If generation fails unrecoverably, the partially-generated `.zork` file is kept (not deleted) so the user can inspect it or attempt to resume generation later.
-
-### 6.2 Runtime Failures
-
-The deterministic engine has very few failure modes:
-
-| Failure | Response |
-|---------|----------|
-| **Corrupt `.zork` file** | Detected at load time via schema version check and integrity pragma. Clear error, refuse to load. |
-| **Missing command match** | "I don't understand that." (not a crash, just a no-op.) |
-| **Narrator API failure** | Fall back to raw deterministic output. Game continues. |
-| **Impossible state** (precondition passes but effect fails) | Transaction rollback for that command. Log the error. Display generic failure message. |
-
-### 6.3 Validation Pass Detail
-
-Pass 9 checks:
-
-- **Spatial integrity**: every exit's target room exists. Every exit has a reverse (or is explicitly one-way). The room graph is connected (no unreachable rooms).
-- **Lock solvability**: every locked exit has a corresponding key item, puzzle solution, or NPC interaction that can unlock it. The solution is reachable before the lock (no chicken-and-egg).
-- **Item consistency**: every item referenced in a command exists in the items table. No item is referenced as a key for a lock that doesn't exist.
-- **Command completeness**: the game is winnable. There exists a path from the starting room to the end state that satisfies all required puzzles.
-- **NPC validity**: NPCs are in rooms that exist. Dialogue doesn't reference nonexistent items or rooms.
-- **Lore coverage**: lore entries reference valid rooms or items. All three tiers (surface, hidden, deep) are populated.
-
-## 7. Module Dependency Direction
-
-```
-CLI
- └── Config
- └── Generator Orchestrator
-      └── Provider Abstraction
-      │    ├── ClaudeProvider
-      │    ├── OpenAIProvider
-      │    └── GeminiProvider
-      └── Database Layer
- └── Game Engine
-      ├── Command Parser
-      ├── DSL Interpreter
-      ├── State Manager
-      └── Output Formatter
-           └── Narrator (optional)
-                └── Provider Abstraction
-      └── Database Layer
-```
-
-Dependencies flow downward. The database layer and provider abstraction are leaf dependencies shared between the generation and runtime paths. The game engine never imports from the orchestrator and vice versa -- they share only the database schema.
-
-## 8. Key Design Invariants
-
-These are properties the system must always maintain:
-
-1. **The engine never calls an LLM** (except narrator, which is read-only and optional).
-2. **The `.zork` file is always a valid SQLite database** with referential integrity enforced by foreign keys.
-3. **The DSL vocabulary is closed.** The LLM picks from a fixed set of precondition and effect types. The engine does not eval or exec anything.
-4. **Each generation pass is independently retryable.** Transaction boundaries ensure partial passes don't corrupt the database.
-5. **Narrator output never mutates state.** The narrator has no write path to the database.
-6. **Provider choice is invisible to the orchestrator and engine.** They call the same interface regardless of which LLM is behind it.
-7. **A `.zork` file is fully self-contained.** No external references, no network calls needed to play.
+The validator is there to catch wiring mistakes, not to compensate for an undefined data model.

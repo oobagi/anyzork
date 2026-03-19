@@ -161,34 +161,29 @@ When set, the engine prints this message when a one-shot command's pattern match
 
 **Estimated savings**: 2 commands eliminated. More importantly, this prevents the LLM from having to generate "already done" pairs for every one-shot command in every game. In a larger game with 30 one-shot actions, that is 30 fewer commands.
 
-### 3.4 Pattern: Read {item} (examine with lore)
+### 3.4 Pattern: Read {item} (examine with optional read text)
 
 **Affected commands**: #9, #25, #26
 
-**Current behavior**: The LLM generates `read {target}` commands that: print a message, discover lore, set a flag, and award score. Each is a one-shot DSL command.
+**Current behavior**: The LLM generates `read {target}` commands that print text, sometimes set flags, and sometimes award score. Each is a one-shot DSL command.
 
-**What the engine already does**: The built-in `examine` verb already triggers lore discovery when the examined item has associated lore entries (game.py lines 714-734). The lore table has `item_id`, `delivery_method`, and `required_flags` fields. The engine checks all of these during examine.
+**What the engine already does**: The built-in `examine` verb already resolves room and inventory items cleanly. Items also have a `read_description` field for cases where "read" should surface different text than ordinary examination.
 
 **The gap**: `read` is not mapped to `examine`. The engine treats `read {item}` as an unknown verb and falls through to DSL resolution.
 
 **Recommendation**: Map `read` as a synonym for `examine` in the engine's built-in verb handling. When the player types `read bloody note`, the engine runs `_handle_examine("bloody note", room_id)`.
 
-For items that should show different text when read vs. examined (e.g., a book's examine_description says "A leather-bound journal" but reading it reveals the contents), add an optional `read_description` field to the items table.
+For items that should show different text when read vs. examined (e.g., a book's `examine_description` says "A leather-bound journal" but reading it reveals the contents), use the existing `read_description` field on the items table.
 
 ```sql
 ALTER TABLE items ADD COLUMN read_description TEXT;
 ```
 
-Engine logic: when the verb is `read`, check `read_description` first. If present, display it. If absent, fall through to `examine_description`. In both cases, trigger lore discovery as the existing examine handler already does.
+Engine logic: when the verb is `read`, check `read_description` first. If present, display it. If absent, fall through to `examine_description`.
 
-**Score on read**: The lore table already has a `score_value` field. The examine handler already awards score for lore discoveries (lines 731-734). No change needed.
+**Score on read**: If a readable item should award score or progress a quest, that should happen through an explicit command effect, quest flag, or trigger rather than a hidden lore system.
 
-**Flag on read**: The `note_read` flag in the test game is used by other commands to gate content (e.g., telling the player where the truck keys are). This flag-setting on read cannot be handled by the lore discovery system alone. Two options:
-
-- **Option A**: Add a `set_flags` JSON field to the lore table. When lore is discovered, the engine sets these flags automatically. This is already how dialogue works (`dialogue.set_flags`).
-- **Option B**: Keep `read` commands in the DSL when flag-setting is needed, but only for those cases.
-
-**Recommendation**: Option A. It is consistent with dialogue and costs one schema column.
+**Flag on read**: The `note_read` flag in the test game is used by other commands to gate content. That should stay in the DSL or move to a trigger, because read-driven flag setting is world-specific game logic.
 
 **Estimated savings**: 3 commands eliminated (the three `read` commands). In larger games with many readable items, this could eliminate 5-10 commands.
 
@@ -218,11 +213,11 @@ The engine already has `is_consumed_on_use` on the items table -- it just is not
 
 **Estimated savings**: 2 commands eliminated per game. In games with many consumables (potions, food, ammo), this could save 5-10 commands.
 
-### 3.6 Pattern: Ask NPC About {topic} (with lore/flags)
+### 3.6 Pattern: Ask NPC About {topic} (with flags/score)
 
 **Affected commands**: #27, #28
 
-**Current behavior**: The LLM generates DSL commands for `ask {npc} about {topic}` that check NPC presence, check flags, set flags, discover lore, and print dialogue.
+**Current behavior**: The LLM generates DSL commands for `ask {npc} about {topic}` that check NPC presence, check flags, set flags, and print dialogue.
 
 **What the engine already does**: The built-in `ask` verb (game.py lines 304-313) already handles `ask {npc} about {topic}`. It calls `_handle_ask`, which:
 1. Finds the NPC in the room.
@@ -230,24 +225,19 @@ The engine already has `is_consumed_on_use` on the items table -- it just is not
 3. Picks the highest-priority undelivered dialogue whose required flags are met.
 4. Prints it and sets any `set_flags` from the dialogue entry.
 
-**The gap**: The dialogue system does not trigger lore discovery or award score. The DSL commands for `ask_maria_zombies` and `ask_maria_station` do three things the built-in does not:
-1. `discover_lore` -- discover a lore entry.
-2. `add_score` -- award points.
-3. `set_flag` -- set a knowledge flag (though `set_flags` on dialogue already handles this).
+**The gap**: The dialogue system does not directly award score. The DSL commands for `ask_maria_zombies` and `ask_maria_station` mainly add `add_score`, while `set_flag` is already covered by dialogue fields.
 
-**Recommendation**: Extend the dialogue table to support lore discovery and score awards.
+**Recommendation**: Extend dialogue delivery with optional score support if this pattern remains common.
 
 ```sql
-ALTER TABLE dialogue ADD COLUMN lore_id TEXT REFERENCES lore(id);
 ALTER TABLE dialogue ADD COLUMN score_value INTEGER DEFAULT 0;
 ```
 
 When a dialogue line is delivered:
-1. If `lore_id` is set and the lore has not been discovered, discover it.
-2. If `score_value > 0`, award that many points.
-3. Set any flags from `set_flags` (already implemented).
+1. If `score_value > 0`, award that many points.
+2. Set any flags from `set_flags` (already implemented).
 
-This makes the dialogue system fully self-contained for the common "ask NPC, learn lore, get points" pattern.
+This makes the dialogue system more self-contained for the common "ask NPC, learn something important, get points" pattern.
 
 **Estimated savings**: 2 commands eliminated. In games with 5+ NPC topic interactions, this could save 5-15 commands.
 
@@ -486,9 +476,8 @@ In every case, the custom message is a single string field on an entity the LLM 
 1. Add `done_message` and `synonyms` to the commands table.
 2. Add `read_description`, `use_effect`, `use_message`, `use_score` to the items table.
 3. Add `key_item_id`, `unlock_message`, `consume_key` to the items table (for containers).
-4. Add `lore_id`, `score_value` to the dialogue table.
-5. Add `set_flags` to the lore table.
-6. None of these changes break existing games -- all new columns have defaults.
+4. Add `score_value` to the dialogue table.
+5. None of these changes break existing games -- all new columns have defaults.
 
 ### Phase 2: Engine Behavior
 1. Map `read` to examine with `read_description` fallback.
@@ -497,7 +486,7 @@ In every case, the custom message is a single string field on an entity the LLM 
 4. Extend `_try_unlock` to handle container locks.
 5. Implement `done_message` for executed one-shot commands.
 6. Implement synonym pattern matching.
-7. Add `lore_id` and `score_value` handling to dialogue delivery.
+7. Add `score_value` handling to dialogue delivery.
 
 ### Phase 3: Dispatch Reorder
 1. Move DSL resolution before built-in interaction verbs.

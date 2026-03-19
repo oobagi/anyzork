@@ -38,7 +38,7 @@ class BaseProvider(ABC):
         ...
 ```
 
-The generation orchestrator never talks to Claude, OpenAI, or Gemini directly. It holds a `BaseProvider` reference and calls `generate_structured()` for each pass (rooms, exits, locks, items, NPCs, puzzles, commands, lore). The provider is responsible for translating that call into whatever its backend expects and parsing the response back into a Python dict.
+The generation orchestrator never talks to Claude, OpenAI, or Gemini directly. It holds a `BaseProvider` reference and calls `generate_structured()` for each pass (concept, rooms, locks, items, NPCs, interactions, puzzles, commands, quests, triggers). The provider is responsible for translating that call into whatever its backend expects and parsing the response back into a Python dict.
 
 ### Why This Matters
 

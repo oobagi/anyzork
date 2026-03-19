@@ -1,14 +1,15 @@
 """Multi-pass generation orchestrator.
 
-Coordinates the nine-pass pipeline that turns a user prompt into a
-populated ``.zork`` SQLite database.  Each pass is a separate module
-under ``anyzork.generator.passes``; the orchestrator sequences them,
-assembles context, handles retries, and reports progress.
+Coordinates the current ten-pass pipeline that turns a user prompt into a
+populated ``.zork`` SQLite database. Each pass is a separate module under
+``anyzork.generator.passes``; the orchestrator sequences them, assembles
+context, handles retries, and reports progress.
 """
 
 from __future__ import annotations
 
 import logging
+import random
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -18,6 +19,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from anyzork.db.schema import GameDB
 from anyzork.generator.providers import create_provider
 from anyzork.generator.providers.base import GenerationContext, ProviderError
+from anyzork.generator.validator import validate_game
 
 if TYPE_CHECKING:
     from anyzork.config import Config
@@ -38,9 +40,11 @@ _PASSES: list[tuple[str, str]] = [
     ("locks", "anyzork.generator.passes.locks"),
     ("items", "anyzork.generator.passes.items"),
     ("npcs", "anyzork.generator.passes.npcs"),
+    ("interactions", "anyzork.generator.passes.interactions"),
     ("puzzles", "anyzork.generator.passes.puzzles"),
     ("commands", "anyzork.generator.passes.commands"),
     ("quests", "anyzork.generator.passes.quests"),
+    ("triggers", "anyzork.generator.passes.triggers"),
 ]
 
 
@@ -69,9 +73,11 @@ def _build_context(pass_name: str, results: dict[str, dict]) -> dict:
         "locks": ["concept", "rooms"],
         "items": ["concept", "rooms", "locks"],
         "npcs": ["concept", "rooms", "items", "locks"],
+        "interactions": ["concept", "rooms", "items", "npcs"],
         "puzzles": ["concept", "rooms", "items", "npcs", "locks"],
-        "commands": ["concept", "rooms", "locks", "items", "npcs", "puzzles"],
+        "commands": ["concept", "rooms", "locks", "items", "npcs", "puzzles", "interactions"],
         "quests": ["concept", "rooms", "locks", "items", "npcs", "puzzles", "commands"],
+        "triggers": ["concept", "rooms", "locks", "items", "npcs", "puzzles", "commands", "quests"],
     }
 
     for dep in deps.get(pass_name, []):
@@ -87,144 +93,16 @@ def _build_context(pass_name: str, results: dict[str, dict]) -> dict:
 
 
 def _run_validation(db: GameDB) -> list[str]:
-    """Pass 9 — deterministic cross-referential integrity checks.
+    """Final validation step — deterministic cross-referential integrity checks.
 
-    Returns a list of error strings (empty means the world is valid).
+    Delegates to the real ``validate_game`` in ``anyzork.generator.validator``
+    and converts the structured ``ValidationError`` results into plain
+    strings for display.
+
+    Returns a list of error/warning strings (empty means the world is valid).
     """
-    errors: list[str] = []
-
-    # --- Spatial integrity ---
-    rooms = db.get_all_rooms()
-    room_ids = {r["id"] for r in rooms}
-
-    if not rooms:
-        errors.append("No rooms in the database.")
-        return errors
-
-    start_rooms = [r for r in rooms if r.get("is_start")]
-    if not start_rooms:
-        errors.append("No room is marked as the start room (is_start = 1).")
-
-    # Check all exits reference valid rooms.
-    for room in rooms:
-        for exit_row in db.get_all_exits_from(room["id"]):
-            if exit_row["to_room_id"] not in room_ids:
-                errors.append(
-                    f"Exit from {room['id']} direction={exit_row['direction']} "
-                    f"targets non-existent room {exit_row['to_room_id']!r}."
-                )
-
-    # --- Reachability (BFS from start room) ---
-    if start_rooms:
-        visited: set[str] = set()
-        queue = [start_rooms[0]["id"]]
-        while queue:
-            current = queue.pop(0)
-            if current in visited:
-                continue
-            visited.add(current)
-            for exit_row in db.get_all_exits_from(current):
-                if exit_row["to_room_id"] not in visited:
-                    queue.append(exit_row["to_room_id"])
-        unreachable = room_ids - visited
-        if unreachable:
-            errors.append(f"Unreachable rooms (not connected to start): {sorted(unreachable)}")
-
-    # --- Item consistency ---
-    all_item_rows = db._fetchall("SELECT * FROM items")
-    container_item_ids = {
-        row["id"] for row in all_item_rows if row.get("is_container")
-    }
-    for item in all_item_rows:
-        if item["room_id"] and item["room_id"] not in room_ids:
-            errors.append(
-                f"Item {item['id']!r} references non-existent room {item['room_id']!r}."
-            )
-        # Container integrity checks
-        cid = item.get("container_id")
-        if cid is not None:
-            if cid not in container_item_ids:
-                errors.append(
-                    f"Item {item['id']!r} has container_id={cid!r} "
-                    f"which is not a valid container."
-                )
-            if item.get("is_container"):
-                errors.append(
-                    f"Container {item['id']!r} is nested inside another container "
-                    f"(container_id={cid!r}). Nesting is not supported."
-                )
-            if item["room_id"] is not None:
-                errors.append(
-                    f"Item {item['id']!r} has both room_id and container_id set."
-                )
-        if item.get("is_container") and item.get("is_locked") and not item.get("lock_message"):
-            errors.append(
-                f"Locked container {item['id']!r} is missing lock_message."
-            )
-
-    # --- NPC validity ---
-    for npc in db._fetchall("SELECT * FROM npcs"):
-        if npc["room_id"] not in room_ids:
-            errors.append(
-                f"NPC {npc['id']!r} is in non-existent room {npc['room_id']!r}."
-            )
-
-    # --- Command reference checks ---
-    all_items = {row["id"] for row in db._fetchall("SELECT id FROM items")}
-    all_npcs = {row["id"] for row in db._fetchall("SELECT id FROM npcs")}
-    for cmd in db.get_all_commands():
-        ctx = cmd.get("context_room_ids")
-        if ctx:
-            import json as _json
-            try:
-                ctx_list = _json.loads(ctx) if isinstance(ctx, str) else ctx
-            except (_json.JSONDecodeError, TypeError):
-                ctx_list = []
-            for rid in ctx_list:
-                if rid not in room_ids:
-                    errors.append(
-                        f"Command {cmd['id']!r} references non-existent room "
-                        f"{rid!r} in context_room_ids."
-                    )
-
-    # --- Quest coverage ---
-    quest_rows = db._fetchall("SELECT * FROM quests")
-    main_quests = [q for q in quest_rows if q["quest_type"] == "main"]
-    if not main_quests:
-        errors.append("No main quest found. Every game must have exactly one main quest.")
-    elif len(main_quests) > 1:
-        errors.append(
-            f"Multiple main quests found: {[q['id'] for q in main_quests]}. "
-            f"Exactly one is required."
-        )
-
-    all_flags = {r["id"] for r in db._fetchall("SELECT id FROM flags")}
-    for quest in quest_rows:
-        if quest["discovery_flag"] and quest["discovery_flag"] not in all_flags:
-            errors.append(
-                f"Quest {quest['id']!r} discovery_flag {quest['discovery_flag']!r} "
-                f"does not exist in flags table."
-            )
-        if quest["completion_flag"] not in all_flags:
-            errors.append(
-                f"Quest {quest['id']!r} completion_flag {quest['completion_flag']!r} "
-                f"does not exist in flags table."
-            )
-        objectives = db._fetchall(
-            "SELECT * FROM quest_objectives WHERE quest_id = ?", (quest["id"],)
-        )
-        if not any(not o["is_optional"] for o in objectives):
-            errors.append(
-                f"Quest {quest['id']!r} has no required (non-optional) objectives."
-            )
-        for obj in objectives:
-            if obj["completion_flag"] not in all_flags:
-                errors.append(
-                    f"Quest objective {obj['id']!r} completion_flag "
-                    f"{obj['completion_flag']!r} does not exist in flags table."
-                )
-
-    return errors
+    results = validate_game(db)
+    return [str(r) for r in results]
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +110,13 @@ def _run_validation(db: GameDB) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def generate_game(prompt: str, config: Config, output_path: Path) -> Path:
+def generate_game(
+    prompt: str,
+    config: Config,
+    output_path: Path,
+    *,
+    realism: str = "medium",
+) -> Path:
     """Run the full generation pipeline and produce a ``.zork`` file.
 
     Args:
@@ -255,6 +139,12 @@ def generate_game(prompt: str, config: Config, output_path: Path) -> Path:
     if output_path.exists():
         output_path.unlink()
 
+    # --- Seed resolution ---
+    # If no seed was provided, generate a random one so every run is
+    # reproducible after the fact (the seed is stored in metadata).
+    seed = config.seed if config.seed is not None else random.randint(0, 2**31 - 1)
+    console.print(f"[dim]Seed:[/] {seed}")
+
     # --- Provider setup ---
     provider = create_provider(config)
     console.print(
@@ -268,7 +158,7 @@ def generate_game(prompt: str, config: Config, output_path: Path) -> Path:
         game_name="Generating...",
         author="AnyZork",
         prompt=prompt,
-        seed=str(config.seed) if config.seed is not None else None,
+        seed=str(seed),
     )
 
     # --- Multi-pass generation ---
@@ -283,7 +173,7 @@ def generate_game(prompt: str, config: Config, output_path: Path) -> Path:
         TimeElapsedColumn(),
         console=console,
     ) as progress:
-        total_passes = len(_PASSES) + 1  # +1 for validation
+        total_passes = len(_PASSES) + 1  # +1 for deterministic validation
         main_task = progress.add_task("Generating world...", total=total_passes)
 
         for pass_name, module_path in _PASSES:
@@ -292,6 +182,8 @@ def generate_game(prompt: str, config: Config, output_path: Path) -> Path:
             run_pass = _import_pass(module_path)
             context = _build_context(pass_name, results)
             context["prompt"] = prompt
+            context["seed"] = seed
+            context["realism"] = realism
 
             last_error: Exception | None = None
             for attempt in range(1, config.max_retries + 1):
@@ -323,7 +215,7 @@ def generate_game(prompt: str, config: Config, output_path: Path) -> Path:
 
             progress.advance(main_task)
 
-        # --- Pass 9: Validation (deterministic, no LLM) ---
+        # --- Final validation step (deterministic, no LLM) ---
         progress.update(main_task, description="Pass: validation")
         validation_errors = _run_validation(db)
         if validation_errors:

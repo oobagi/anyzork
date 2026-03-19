@@ -1,4 +1,4 @@
-"""Pass 9: Validation — deterministic post-generation integrity checks.
+"""Final validation step — deterministic post-generation integrity checks.
 
 This module runs after all LLM generation passes have populated the .zork
 database.  It performs structural and logical checks to catch
@@ -40,6 +40,11 @@ VALID_PRECONDITION_TYPES: frozenset[str] = frozenset(
         "lock_unlocked",
         "puzzle_solved",
         "health_above",
+        "container_open",
+        "item_in_container",
+        "not_item_in_container",
+        "container_has_contents",
+        "container_empty",
     }
 )
 
@@ -57,6 +62,9 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "solve_puzzle",
         "discover_quest",
         "print",
+        "open_container",
+        "move_item_to_container",
+        "take_item_from_container",
     }
 )
 
@@ -439,6 +447,7 @@ def _check_items(db: GameDB) -> list[ValidationError]:
     room_set = _room_ids(db)
 
     seen_ids: set[str] = set()
+    item_map: dict[str, dict] = {}
     for item in items:
         # Duplicate IDs (shouldn't happen due to PRIMARY KEY, but check anyway).
         if item["id"] in seen_ids:
@@ -450,6 +459,7 @@ def _check_items(db: GameDB) -> list[ValidationError]:
                 )
             )
         seen_ids.add(item["id"])
+        item_map[item["id"]] = item
 
         # room_id validity (NULL = in inventory, which is fine).
         rid = item.get("room_id")
@@ -464,7 +474,6 @@ def _check_items(db: GameDB) -> list[ValidationError]:
 
     # Key items referenced by locks must be takeable.
     locks = _all_locks(db)
-    item_map = {i["id"]: i for i in items}
     for lock in locks:
         if lock["lock_type"] == "key":
             key_id = lock.get("key_item_id")
@@ -477,6 +486,83 @@ def _check_items(db: GameDB) -> list[ValidationError]:
                             f"Key item '{key_id}' (for lock {lock['id']}) must be takeable.",
                         )
                     )
+
+    # --- Container nesting validation ---
+    for item in items:
+        cid = item.get("container_id")
+        if cid is None:
+            continue
+
+        # container_id must reference a valid container (is_container = 1).
+        if cid not in item_map:
+            errors.append(
+                ValidationError(
+                    "error",
+                    "item",
+                    f"Item '{item['id']}' has container_id='{cid}' which "
+                    f"does not reference an existing item.",
+                )
+            )
+            continue
+        parent = item_map[cid]
+        if not parent.get("is_container"):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "item",
+                    f"Item '{item['id']}' has container_id='{cid}' but "
+                    f"'{cid}' is not a container (is_container=0).",
+                )
+            )
+
+        # Whitelist check: if the parent has accepts_items, this item
+        # must appear in the whitelist.
+        accepts_raw = parent.get("accepts_items")
+        if accepts_raw is not None:
+            try:
+                whitelist = (
+                    json.loads(accepts_raw)
+                    if isinstance(accepts_raw, str)
+                    else accepts_raw
+                )
+            except (json.JSONDecodeError, TypeError):
+                whitelist = None
+            if isinstance(whitelist, list) and item["id"] not in whitelist:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "item",
+                        f"Item '{item['id']}' is inside container '{cid}' "
+                        f"but is not in the container's accepts_items "
+                        f"whitelist {whitelist}.",
+                    )
+                )
+
+    # Cycle detection: walk each container_id chain and verify no item
+    # appears twice (which would indicate a cycle).
+    for item in items:
+        if item.get("container_id") is None:
+            continue
+        visited: set[str] = set()
+        current_id: str | None = item["id"]
+        while current_id is not None:
+            if current_id in visited:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "item",
+                        f"Container cycle detected involving item "
+                        f"'{item['id']}': chain revisits '{current_id}'.",
+                    )
+                )
+                break
+            visited.add(current_id)
+            current_item = item_map.get(current_id)
+            current_id = (
+                current_item.get("container_id")
+                if current_item is not None
+                else None
+            )
 
     return errors
 

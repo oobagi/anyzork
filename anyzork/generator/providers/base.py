@@ -29,6 +29,7 @@ class GenerationContext:
 class NarratorContext:
     """Context supplied when requesting freeform narrator prose."""
 
+    system_prompt: str = ""
     theme: str = ""
     tone: str = ""
     room_lore: str = ""

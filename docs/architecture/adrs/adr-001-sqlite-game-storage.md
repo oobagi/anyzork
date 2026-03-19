@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-AnyZork generates complete text adventure games from LLM output and then runs them with a deterministic engine. We need a storage format for the generated game world -- rooms, exits, items, NPCs, commands (DSL rules), lore, and mutable player state.
+AnyZork generates complete text adventure games from LLM output and then runs them with a deterministic engine. We need a storage format for the generated game world -- rooms, exits, items, NPCs, commands (DSL rules), quests, triggers, and mutable player state.
 
 The storage format affects nearly every part of the system:
 
@@ -85,9 +85,9 @@ Specifically:
 - **One file = one game.** The `.zork` extension is just convention; the file is a standard SQLite database that any SQLite client can open.
 - **Schema enforced by SQLite.** Tables, column types, NOT NULL constraints, and FOREIGN KEY constraints are declared in SQL and enforced by the database engine. An exit cannot reference a nonexistent room.
 - **Transactions for generation passes.** Each generation pass runs inside `BEGIN ... COMMIT`. If a pass fails, `ROLLBACK` restores the database to its state before that pass. No custom crash-recovery logic needed.
-- **WAL mode for narrator.** During play with narrator mode enabled, the engine writes player state while the narrator reads room/lore data. SQLite's WAL (Write-Ahead Logging) mode allows concurrent readers and a single writer without blocking.
+- **WAL mode for narrator.** During play with narrator mode enabled, the engine writes player state while the narrator reads world data. SQLite's WAL (Write-Ahead Logging) mode allows concurrent readers and a single writer without blocking.
 - **Indexed access.** We create indexes on the columns we query most: items by room, commands by verb, exits by source room. Lookups are O(log n) via B-tree, not O(n) via scan.
-- **Player state in the same file.** The `player_state` table lives alongside the world data. "Saving" is free -- state is persisted after every command. "Loading a save" is copying a file.
+- **Player state in the same file.** The runtime tables (`player`, `score_entries`, `visited_rooms`, and execution flags on commands/triggers) live alongside the world data. "Saving" is free -- state is persisted after every command. "Loading a save" is copying a file.
 - **Inspectable.** Developers and curious players can open a `.zork` file with `sqlite3` or any database browser and see the entire game world. This is valuable for debugging generation issues and for community modding.
 
 ## Consequences

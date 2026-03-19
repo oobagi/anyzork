@@ -91,6 +91,11 @@ COMMANDS_SCHEMA: dict[str, Any] = {
                                         "puzzle_solved",
                                         "health_above",
                                         "container_open",
+                                        "item_in_container",
+                                        "not_item_in_container",
+                                        "container_has_contents",
+                                        "container_empty",
+                                        "has_quantity",
                                     ],
                                 },
                             },
@@ -120,6 +125,10 @@ COMMANDS_SCHEMA: dict[str, Any] = {
                                         "print",
                                         "open_container",
                                         "move_item_to_container",
+                                        "take_item_from_container",
+                                        "consume_quantity",
+                                        "restore_quantity",
+                                        "set_toggle_state",
                                     ],
                                 },
                             },
@@ -284,10 +293,14 @@ The engine handles these verbs with built-in logic:
   DO NOT generate "read" commands — set `read_description` on items instead.
 - **open** — basic open interaction (including auto-unlock if player has key)
 - **unlock** — tries to unlock exits/containers using key_item_id from schema
-- **use {{item}} on {{target}}** for key-on-lock — if a lock or container has
-  `key_item_id` set, the engine handles "use key on door" automatically.
-  DO NOT generate "use key on lock" commands — the locks table and items
-  table `key_item_id` field handle this.
+- **use {{item}} on {{target}}** — the engine handles this built-in. It first
+  tries key-on-lock (if the target has `key_item_id`), then falls back to
+  put-in-container (treats "use X on Y" as "put X in Y").
+  DO NOT generate "use" commands — keys are handled via `key_item_id` and
+  container interactions are handled via the built-in `put in` logic.
+- **put {{item}} in {{container}}** — places an item into a container. The engine
+  validates whitelists (`accepts_items`) and cycle detection automatically.
+  DO NOT generate "put" commands for basic container insertion.
 - **talk to** / **speak to** — triggers NPC dialogue system
 - **ask ... about** — triggers NPC topic dialogue with flag-gated responses.
   DO NOT generate "ask NPC about topic" commands — use dialogue table entries.
@@ -306,9 +319,7 @@ on the original one-shot command.
 ### GAME-SPECIFIC VERBS — YOUR FOCUS
 
 Generate commands for these kinds of interactions:
-- `use {{item}} on {{target}}` — key on lock, tool on object, item on puzzle
 - `combine {{item}} with {{item2}}` — merge two inventory items
-- `read {{target}}` — read inscriptions, books, notes, signs
 - `pull {{target}}` — pull levers, chains, handles
 - `push {{target}}` — push buttons, statues, blocks
 - `give {{item}} to {{npc}}` — hand items to NPCs for quests
@@ -319,6 +330,30 @@ Generate commands for these kinds of interactions:
 - `climb {{target}}` — ropes, ladders, walls
 - `turn {{target}}` — dials, wheels, keys in locks
 - `insert {{item}} in {{target}}` — placing objects into receptacles
+
+**Container nesting commands:**
+When the world contains nested containers (gun/magazine/ammo,
+backpack/pouch/gem), generate DSL commands for assembly and disassembly
+verbs:
+- `load {{target}}` — alias for putting the right item into the target
+  container. Use `move_item_to_container` effect.
+- `unload {{target}}` — alias for removing an item from a container. Use
+  `take_item_from_container` effect.
+
+Use these precondition types to gate nesting commands:
+- `item_in_container` — check that an item IS inside a specific container
+- `not_item_in_container` — check that an item is NOT inside a container
+  (prevent double-loading)
+- `container_has_contents` — check that a container is non-empty
+- `container_empty` — check that a container is empty
+
+**Placement puzzles**: When the world design requires placing an item at a
+specific location (putting a crystal on an altar, placing an offering in a
+shrine), generate commands using the `put`, `place`, or `use` verbs with high
+priority (10+). The engine tries DSL commands before built-in handlers for
+these verbs. Preconditions should include both `has_item` and `in_room`. For
+critical-path placements, generate commands for at least two verb variants so
+the player's phrasing doesn't block them.
 
 ### Precondition Types Reference
 
@@ -333,6 +368,10 @@ Generate commands for these kinds of interactions:
 | `lock_unlocked` | `lock` | Lock is unlocked |
 | `puzzle_solved` | `puzzle` | Puzzle is solved |
 | `health_above` | `threshold` | Player health > threshold |
+| `item_in_container` | `item`, `container` | Item is inside a specific container |
+| `not_item_in_container` | `item`, `container` | Item is NOT inside a container |
+| `container_has_contents` | `container` | Container is non-empty |
+| `container_empty` | `container` | Container is empty |
 
 ### Effect Types Reference
 
@@ -352,10 +391,15 @@ Generate commands for these kinds of interactions:
 | `print` | `message` | Display text. Supports `{{slot}}` refs |
 | `open_container` | `container` | Set container is_locked=0 and is_open=1 |
 | `move_item_to_container` | `item`, `container` | Move item into a container |
+| `take_item_from_container` | `item`, `container` | Remove item from a container |
+| `consume_quantity` | `item`, `amount` | Reduce item quantity by `amount` |
+| `restore_quantity` | `item`, `amount` | Increase item quantity by `amount` (capped at max). Optional `source` field |
+| `set_toggle_state` | `item`, `state` | Set an item's toggle_state to a specific value (e.g., "off", "on") |
 
 ### Additional Precondition Type
 
 | `container_open` | `container` | Container is open (or has no lid) |
+| `has_quantity` | `item`, `min` | Item has at least `min` quantity remaining |
 
 ### Container Unlock Commands
 
@@ -363,6 +407,26 @@ Locked containers with `key_item_id` set are handled automatically by the
 engine — do NOT generate DSL commands for those. Only generate DSL commands
 for locked containers that require non-key interactions (e.g., solving a
 puzzle, using a tool in a non-standard way).
+
+### Quantity and State Commands
+
+Use the new precondition and effect types for item dynamics:
+
+- `has_quantity` precondition: gate commands on items with limited uses.
+  E.g., a gun command requires `{{"type": "has_quantity", "item": "ammo", "min": 1}}`.
+- `consume_quantity` effect: reduce an item's quantity after use.
+  E.g., firing a gun: `{{"type": "consume_quantity", "item": "ammo", "amount": 1}}`.
+- `restore_quantity` effect: refill an item's quantity (reload, recharge).
+  E.g., reloading: `{{"type": "restore_quantity", "item": "magazine", "amount": 10}}`.
+  Optional `source` field consumes from another item.
+- `set_toggle_state` effect: change an item's toggle state as a side effect.
+  E.g., a puzzle that extinguishes all lanterns:
+  `{{"type": "set_toggle_state", "item": "brass_lantern", "state": "off"}}`.
+
+**IMPORTANT**: Broad "use item on target" interactions are handled by the
+interaction matrix, NOT by DSL commands. Only generate DSL commands for
+interactions that change game state (solve puzzles, unlock things, advance
+quests). The interaction matrix handles flavor text for casual interactions.
 
 ### Command Coverage Requirements
 
@@ -486,6 +550,11 @@ VALID_PRECONDITION_TYPES = {
     "puzzle_solved",
     "health_above",
     "container_open",
+    "item_in_container",
+    "not_item_in_container",
+    "container_has_contents",
+    "container_empty",
+    "has_quantity",
 }
 
 VALID_EFFECT_TYPES = {
@@ -503,6 +572,10 @@ VALID_EFFECT_TYPES = {
     "print",
     "open_container",
     "move_item_to_container",
+    "take_item_from_container",
+    "consume_quantity",
+    "restore_quantity",
+    "set_toggle_state",
 }
 
 
