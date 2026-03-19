@@ -43,31 +43,12 @@ class NarratorGameContext:
 # ---------------------------------------------------------------------------
 
 _SYSTEM_TEMPLATE = """\
-You are the narrator of a text adventure game called "{title}".
+Narrator for "{title}". {tone} tone, {era} era, {setting}.
 
-Theme: {theme}
-Tone: {tone}
-Era: {era}
-Setting: {setting}
-
-Your role:
-- Transform the engine's factual output into atmospheric prose that matches \
-the game's tone.
-- Describe exactly what the engine tells you. Do not add rooms, exits, items, \
-NPCs, or information not present in the engine output.
-- Do not mention items or exits by mechanical name (e.g., "brass_lantern"). Use \
-their display names naturally in prose.
-- Do not contradict the engine output. If the engine says a door is locked, \
-describe it as locked. If the engine says you took the lantern, confirm it.
-- Keep responses concise. Two to four sentences for room descriptions. One to \
-two sentences for action results. Never write more than a short paragraph.
-- Do not include mechanical information in your prose (score, HP, move count). \
-That is displayed separately.
-- Do not suggest what the player should do next.
-
-Vocabulary preferences: {vocabulary_csv}
-
-Respond with ONLY the narrated prose. No markdown, no headers, no meta-commentary.\
+Rules: Rewrite the engine output as 1-3 sentences of atmospheric prose. \
+Do NOT add items, exits, NPCs, or info not in the engine output. \
+Do NOT contradict the engine. Do NOT suggest player actions. \
+Do NOT use markdown. Keep it SHORT.\
 """
 
 
@@ -86,6 +67,7 @@ class Narrator:
         self._db = db
         self._recent_actions: deque[str] = deque(maxlen=MAX_RECENT_ACTIONS)
         self._room_cache: dict[str, tuple[str, str]] = {}
+        self._action_cache: dict[str, str] = {}
         self._failure_count: int = 0
         self._game_ctx = self._load_game_context()
         self._system_prompt = self._build_system_prompt()
@@ -119,14 +101,11 @@ class Narrator:
     def _build_system_prompt(self) -> str:
         """Construct the session-stable system prompt from game identity."""
         ctx = self._game_ctx
-        vocab_csv = ", ".join(ctx.vocabulary_hints) if ctx.vocabulary_hints else "none"
         return _SYSTEM_TEMPLATE.format(
             title=ctx.title,
-            theme=ctx.theme,
-            tone=ctx.tone,
-            era=ctx.era,
-            setting=ctx.setting,
-            vocabulary_csv=vocab_csv,
+            tone=ctx.tone or "neutral",
+            era=ctx.era or "unspecified",
+            setting=ctx.setting or "unspecified",
         )
 
     # ---------------------------------------------------------------- public API
@@ -157,14 +136,10 @@ class Narrator:
         visit_label = "first visit" if first_visit else "revisit"
 
         prompt = (
-            f"Current room: {room_name}\n"
-            f"Room description: {description}\n\n"
-            f"Engine output to narrate:\n"
-            f"TYPE: room_enter ({visit_label})\n"
-            f"DESCRIPTION: {description}\n"
-            f"ITEMS PRESENT: {items_text}\n"
-            f"NPCS PRESENT: {npcs_text}\n\n"
-            f"Recent context:\n{self._format_recent_actions()}"
+            f"Room: {room_name} ({visit_label})\n"
+            f"{description}\n"
+            f"Items: {items_text}\n"
+            f"NPCs: {npcs_text}"
         )
 
         prose = self._call_provider(prompt)
@@ -177,7 +152,8 @@ class Narrator:
     ) -> str | None:
         """Narrate an action result. Returns prose or None on failure/skip.
 
-        Also records the action in the history buffer.
+        Caches results by verb + target + message content so repeated actions
+        (take/drop the same item) don't re-call the LLM.
         """
         combined = " ".join(messages)
 
@@ -186,16 +162,21 @@ class Narrator:
             self._record_action(verb, target, combined)
             return None
 
+        # Check action cache.
+        cache_key = hashlib.md5(
+            f"{verb}:{target}:{combined}".encode()
+        ).hexdigest()
+        cached = self._action_cache.get(cache_key)
+        if cached:
+            self._record_action(verb, target, combined)
+            return cached
+
         target_text = f" {target}" if target else ""
-        prompt = (
-            f"Engine output to narrate:\n"
-            f"TYPE: action_result\n"
-            f"ACTION: {verb}{target_text}\n"
-            f"RESULT: {combined}\n\n"
-            f"Recent context:\n{self._format_recent_actions()}"
-        )
+        prompt = f"{verb}{target_text}: {combined}"
 
         prose = self._call_provider(prompt)
+        if prose:
+            self._action_cache[cache_key] = prose
         self._record_action(verb, target, combined)
         return prose
 
@@ -215,7 +196,7 @@ class Narrator:
             theme=self._game_ctx.theme,
             tone=self._game_ctx.tone,
             temperature=0.9,
-            max_tokens=512,
+            max_tokens=200,
         )
         try:
             result = self._provider.generate_text(
