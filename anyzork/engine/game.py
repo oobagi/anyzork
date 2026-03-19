@@ -156,6 +156,15 @@ class GameEngine:
             max_score = meta.get("max_score", 0)
             if max_score:
                 info_parts.append(f"Max score: {max_score}")
+            # Show active CLI flags.
+            if self._narrator_requested:
+                narrator_info = "Narrator: on"
+                if self._narrator_provider_override:
+                    narrator_info += f" ({self._narrator_provider_override}"
+                    if self._narrator_model_override:
+                        narrator_info += f"/{self._narrator_model_override}"
+                    narrator_info += ")"
+                info_parts.append(narrator_info)
             if info_parts:
                 self.console.print(
                     "  " + "[dim]  |  [/dim]".join(f"[dim]{p}[/dim]" for p in info_parts)
@@ -182,8 +191,7 @@ class GameEngine:
         # Show shortcut bar once after the very first room display.
         if not self._shown_shortcut_bar:
             self.console.print(
-                f"  [{STYLE_COMMAND}]I[/][dim]nventory  [{STYLE_COMMAND}]J[/][dim]ournal  "
-                f"[{STYLE_COMMAND}]L[/][dim]ook  [{STYLE_COMMAND}]H[/][dim]elp[/]"
+                "  [dim]\\[I]nventory  \\[J]ournal  \\[L]ook  \\[H]elp[/]"
             )
             self._shown_shortcut_bar = True
 
@@ -604,14 +612,15 @@ class GameEngine:
         # Attempt narration if the narrator is active.
         display_body = body
         if self._narrator is not None:
-            narrated = self._narrator.narrate_room(
-                room_id=room_id,
-                room_name=room["name"],
-                description=body,
-                items=items,
-                npcs=npcs,
-                first_visit=first_visit,
-            )
+            with self.console.status("[dim italic]the narrator contemplates...[/]", spinner="dots"):
+                narrated = self._narrator.narrate_room(
+                    room_id=room_id,
+                    room_name=room["name"],
+                    description=body,
+                    items=items,
+                    npcs=npcs,
+                    first_visit=first_visit,
+                )
             if narrated:
                 display_body = narrated
             elif self._narrator._failure_count == 1:
@@ -2150,7 +2159,8 @@ class GameEngine:
         """
         if self._narrator is None or not messages:
             return messages
-        narrated = self._narrator.narrate_action(verb, target, messages)
+        with self.console.status("[dim italic]narrating...[/]", spinner="dots"):
+            narrated = self._narrator.narrate_action(verb, target, messages)
         if narrated:
             return [narrated]
         return messages
