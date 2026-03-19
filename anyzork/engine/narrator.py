@@ -252,8 +252,13 @@ class Narrator:
         items: list[dict],
         npcs: list[dict],
     ) -> str:
-        """Hash room state to detect changes for cache invalidation."""
+        """Hash room state to detect changes for cache invalidation.
+
+        Uses room_id + item names + NPC names. Deliberately excludes the
+        description text because it changes between first visit (long) and
+        revisit (short) even when the room state hasn't changed.
+        """
         item_names = sorted(i.get("name", "") for i in items)
         npc_names = sorted(n.get("name", "") for n in npcs)
-        raw = f"{room_id}:{description}:{item_names}:{npc_names}"
+        raw = f"{room_id}:{item_names}:{npc_names}"
         return hashlib.md5(raw.encode()).hexdigest()
