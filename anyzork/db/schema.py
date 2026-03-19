@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import json as _json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from anyzork import __version__
 
 # ---------------------------------------------------------------------------
 # Schema SQL
@@ -151,7 +153,8 @@ CREATE TABLE IF NOT EXISTS npcs (
     default_dialogue  TEXT    NOT NULL,
     hp                INTEGER,
     damage            INTEGER,
-    category          TEXT    -- NPC category tag for interaction matrix: "character", "merchant", "hostile"
+    category          TEXT    -- NPC category tag for interaction matrix:
+                                -- "character", "merchant", "hostile"
 );
 
 CREATE INDEX IF NOT EXISTS idx_npcs_room_id ON npcs(room_id);
@@ -335,15 +338,20 @@ CREATE TABLE IF NOT EXISTS interaction_responses (
     score_change    INTEGER NOT NULL DEFAULT 0,  -- Score adjustment
     flag_to_set     TEXT                -- Optional flag to set on interaction
 );
-CREATE INDEX IF NOT EXISTS idx_interactions_tag_cat ON interaction_responses(item_tag, target_category);
+CREATE INDEX IF NOT EXISTS idx_interactions_tag_cat
+    ON interaction_responses(item_tag, target_category);
 
 -- -------------------------------------------------------
 -- triggers: reactive rules that fire on game events
 -- -------------------------------------------------------
 CREATE TABLE IF NOT EXISTS triggers (
     id              TEXT PRIMARY KEY,
-    event_type      TEXT    NOT NULL,       -- room_enter | flag_set | dialogue_node | item_taken | item_dropped | npc_killed
-    event_data      TEXT    NOT NULL DEFAULT '{}',  -- JSON: partial match against emitted event data
+    event_type      TEXT    NOT NULL,       -- room_enter | flag_set | dialogue_node
+                                            -- | item_taken | item_dropped
+                                            -- | npc_killed
+    event_data      TEXT    NOT NULL DEFAULT '{}',
+                                            -- JSON: partial match against
+                                            -- emitted event data
     preconditions   TEXT    NOT NULL DEFAULT '[]',  -- JSON array, same format as DSL commands
     effects         TEXT    NOT NULL DEFAULT '[]',  -- JSON array, same format as DSL commands
     message         TEXT,                           -- Optional text to display when trigger fires
@@ -380,7 +388,9 @@ class GameDB:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self._conn = sqlite3.connect(str(self.path))
-        self._conn.execute("PRAGMA journal_mode=WAL")
+        # Keep save files self-contained and avoid WAL sidecar-file issues
+        # during local CLI play and fixture rebuilds.
+        self._conn.execute("PRAGMA journal_mode=DELETE")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.row_factory = sqlite3.Row
 
@@ -411,13 +421,14 @@ class GameDB:
                  max_score, win_conditions, lose_conditions,
                  intro_text, win_text, lose_text,
                  region_count, room_count)
-            VALUES (1, ?, ?, ?, '1.0', ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 game_name,
                 prompt,
                 seed,
-                datetime.now(timezone.utc).isoformat(),
+                __version__,
+                datetime.now(UTC).isoformat(),
                 max_score,
                 win_conditions,
                 lose_conditions,
@@ -439,7 +450,7 @@ class GameDB:
         self._conn.commit()
         self._conn.close()
 
-    def __enter__(self) -> "GameDB":
+    def __enter__(self) -> GameDB:
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
@@ -473,7 +484,7 @@ class GameDB:
         if key not in valid:
             raise KeyError(f"Unknown metadata key: {key!r}")
         row = self._conn.execute(
-            f"SELECT {key} FROM metadata WHERE id = 1"  # noqa: S608 — key validated above
+            f"SELECT {key} FROM metadata WHERE id = 1"
         ).fetchone()
         return row[key] if row else None
 
@@ -488,7 +499,7 @@ class GameDB:
         if key not in valid:
             raise KeyError(f"Unknown metadata key: {key!r}")
         self._mutate(
-            f"UPDATE metadata SET {key} = ? WHERE id = 1", (value,)  # noqa: S608
+            f"UPDATE metadata SET {key} = ? WHERE id = 1", (value,)
         )
 
     def get_all_meta(self) -> dict | None:
@@ -571,7 +582,9 @@ class GameDB:
         """
         if location_type == "inventory":
             return self._fetchall(
-                "SELECT * FROM items WHERE room_id IS NULL AND container_id IS NULL AND is_visible = 1"
+                "SELECT * FROM items "
+                "WHERE room_id IS NULL AND container_id IS NULL "
+                "AND is_visible = 1"
             )
         # Default: room — exclude items that live inside a container.
         return self._fetchall(
@@ -607,7 +620,9 @@ class GameDB:
         # container search / take-from mechanics.
         if location_type == "inventory":
             candidates = self._fetchall(
-                "SELECT * FROM items WHERE room_id IS NULL AND container_id IS NULL AND is_visible = 1"
+                "SELECT * FROM items "
+                "WHERE room_id IS NULL AND container_id IS NULL "
+                "AND is_visible = 1"
             )
         else:
             candidates = self._fetchall(
@@ -658,11 +673,15 @@ class GameDB:
         """
         if location_type == "inventory":
             self._mutate(
-                "UPDATE items SET room_id = NULL, container_id = NULL WHERE id = ?", (item_id,)
+                "UPDATE items SET room_id = NULL, container_id = NULL "
+                "WHERE id = ?",
+                (item_id,),
             )
         else:
             self._mutate(
-                "UPDATE items SET room_id = ?, container_id = NULL WHERE id = ?", (location_id, item_id)
+                "UPDATE items SET room_id = ?, container_id = NULL "
+                "WHERE id = ?",
+                (location_id, item_id),
             )
 
     def remove_item(self, item_id: str) -> None:
@@ -682,21 +701,36 @@ class GameDB:
             (item_id,),
         )
 
-    def spawn_item(self, item_id: str, location_type: str = "room", location_id: str | None = None) -> None:
+    def spawn_item(
+        self,
+        item_id: str,
+        location_type: str = "room",
+        location_id: str | None = None,
+    ) -> None:
         """Make a hidden item visible and optionally set its location.
 
         If ``location_type`` is ``"inventory"``, sets ``room_id`` to ``NULL``.
         If ``location_type`` is ``"room"`` and ``location_id`` is provided,
         moves the item to that room.
+        If ``location_type`` is ``"container"``, places the item inside the
+        container and clears ``room_id``.
         """
         if location_type == "inventory":
             self._mutate(
-                "UPDATE items SET is_visible = 1, room_id = NULL WHERE id = ?",
+                "UPDATE items SET is_visible = 1, room_id = NULL, container_id = NULL "
+                "WHERE id = ?",
                 (item_id,),
+            )
+        elif location_type == "container" and location_id is not None:
+            self._mutate(
+                "UPDATE items SET is_visible = 1, room_id = NULL, container_id = ? "
+                "WHERE id = ?",
+                (location_id, item_id),
             )
         elif location_id is not None:
             self._mutate(
-                "UPDATE items SET is_visible = 1, room_id = ? WHERE id = ?",
+                "UPDATE items SET is_visible = 1, room_id = ?, container_id = NULL "
+                "WHERE id = ?",
                 (location_id, item_id),
             )
         else:
@@ -983,7 +1017,7 @@ class GameDB:
             return
         sets = ", ".join(f"{k} = ?" for k in kwargs)
         vals = tuple(kwargs.values())
-        self._mutate(f"UPDATE player SET {sets} WHERE id = 1", vals)  # noqa: S608
+        self._mutate(f"UPDATE player SET {sets} WHERE id = 1", vals)
 
     def init_player(self, start_room_id: str, hp: int = 100, max_hp: int = 100) -> None:
         """Insert the initial player row.  Idempotent (uses INSERT OR REPLACE)."""
@@ -1182,7 +1216,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO quests ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO quests ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1191,7 +1225,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO quest_objectives ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO quest_objectives ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1286,7 +1320,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO rooms ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO rooms ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1295,7 +1329,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO exits ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO exits ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1304,7 +1338,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO items ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO items ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1313,7 +1347,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO npcs ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO npcs ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1322,7 +1356,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO dialogue_nodes ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO dialogue_nodes ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1331,7 +1365,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO dialogue_options ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO dialogue_options ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1340,7 +1374,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO locks ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO locks ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1349,7 +1383,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO puzzles ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO puzzles ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1373,7 +1407,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO commands ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO commands ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1382,7 +1416,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO flags ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO flags ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1606,7 +1640,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO interaction_responses ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO interaction_responses ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 
@@ -1617,7 +1651,7 @@ class GameDB:
         cols = ", ".join(fields.keys())
         placeholders = ", ".join("?" for _ in fields)
         self._mutate(
-            f"INSERT INTO triggers ({cols}) VALUES ({placeholders})",  # noqa: S608
+            f"INSERT INTO triggers ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
         )
 

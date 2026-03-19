@@ -345,7 +345,7 @@ def _validate_reachability(
     start_id = start_rooms[0]["id"]
 
     # For each key-type lock, BFS from start excluding that lock's exit
-    key_locks = [l for l in locks if l.get("lock_type") == "key"]
+    key_locks = [lock for lock in locks if lock.get("lock_type") == "key"]
 
     for lock in key_locks:
         target_exit_id = lock.get("target_exit_id", "")

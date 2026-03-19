@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 from rich.console import Console
@@ -431,7 +432,11 @@ class GameEngine:
                         item_name = " ".join(tokens[1:on_idx])
                         target_name = " ".join(tokens[on_idx + 1:])
                         # Try key-on-lock first.
-                        handled = self._handle_use_on(item_name, target_name, player["current_room_id"])
+                        handled = self._handle_use_on(
+                            item_name,
+                            target_name,
+                            player["current_room_id"],
+                        )
                         if handled:
                             self._tick()
                             continue
@@ -533,6 +538,30 @@ class GameEngine:
             text = pattern.sub(f"[{style}]{name}[/]", text)
         return text
 
+    @staticmethod
+    def _format_natural_list(names: list[str]) -> str:
+        """Format a short list of names as natural-language prose."""
+        if not names:
+            return ""
+        if len(names) == 1:
+            return names[0]
+        if len(names) == 2:
+            return f"{names[0]} and {names[1]}"
+        return f"{', '.join(names[:-1])}, and {names[-1]}"
+
+    @classmethod
+    def _build_scene_prose(cls, items: list[dict], npcs: list[dict]) -> str:
+        """Return natural prose for fallback room items and present NPCs."""
+        additions: list[str] = []
+        if items:
+            item_names = cls._format_natural_list([it["name"] for it in items])
+            additions.append(f"You notice {item_names} here.")
+        if npcs:
+            npc_names = cls._format_natural_list([npc["name"] for npc in npcs])
+            verb = "is" if len(npcs) == 1 else "are"
+            additions.append(f"{npc_names} {verb} here.")
+        return " ".join(additions)
+
     def _is_room_lit(self, room: dict) -> bool:
         """Return ``True`` if the room is visible to the player.
 
@@ -542,9 +571,7 @@ class GameEngine:
         """
         if not room.get("is_dark"):
             return True
-        if self.db.get_active_light_sources():
-            return True
-        return False
+        return bool(self.db.get_active_light_sources())
 
     def display_room(self, room_id: str, *, force_full: bool = False) -> None:
         """Render a room to the console.
@@ -602,8 +629,8 @@ class GameEngine:
             parts.append(room.get("short_description") or room["description"])
 
         # Append dynamic item prose: items with a room_description blend
-        # into the room body text.  Items without one go in the "You see:"
-        # list below the panel.
+        # into the room body text. Items without prose get a simple scene
+        # note inside the panel below.
         items = self.db.get_items_in("room", room_id)
         prose_items: list[str] = []
         list_items: list[dict] = []
@@ -657,6 +684,10 @@ class GameEngine:
                     style=STYLE_SYSTEM,
                 )
 
+        scene_prose = self._build_scene_prose(list_items, npcs)
+        if scene_prose:
+            display_body = "\n\n".join([display_body, scene_prose])
+
         # Highlight interactable names in the room body.
         all_npcs = self.db.get_npcs_in(room_id)
         display_body = self._highlight_interactables(display_body, items, all_npcs)
@@ -691,16 +722,6 @@ class GameEngine:
             self.console.print(
                 "[bold]Exits:[/] " + "  |  ".join(exit_strs)
             )
-
-        # Items in room (only those without room_description).
-        if list_items:
-            item_names = ", ".join(f"[{STYLE_ITEM}]{it['name']}[/]" for it in list_items)
-            self.console.print(f"[bold]You see:[/] {item_names}")
-
-        # NPCs present (already fetched above for the narrator).
-        if npcs:
-            npc_names = ", ".join(f"[{STYLE_NPC}]{npc['name']}[/]" for npc in npcs)
-            self.console.print(f"[bold]Present:[/] {npc_names}")
 
     # ------------------------------------------------------------------
     # Movement
@@ -819,7 +840,8 @@ class GameEngine:
             f"  [{c}]inventory[/] (i)      — show what you're carrying\n"
             f"  [{c}]score[/]              — show your score and stats\n"
             f"  [{c}]quests[/] (j)          — view your quest log\n"
-            f"  [{c}]narrator on[/]/[{c}]off[/]    — toggle narrator mode (currently {narrator_status})\n"
+            f"  [{c}]narrator on[/]/[{c}]off[/]    — toggle narrator mode "
+            f"(currently {narrator_status})\n"
             f"  [{c}]save[/]               — how saving works\n"
             f"  [{c}]help[/]               — this message\n"
             f"  [{c}]quit[/] / [{c}]exit[/]        — leave the game\n"
@@ -828,7 +850,8 @@ class GameEngine:
             f"  [{c}]take[/] / [{c}]get[/] / [{c}]pick up[/] {{item}}  — pick up an item\n"
             f"  [{c}]take[/] {{item}} [{c}]from[/] {{container}}  — take from a container\n"
             f"  [{c}]drop[/] {{item}}        — drop an item from inventory\n"
-            f"  [{c}]examine[/] / [{c}]x[/] / [{c}]look at[/] {{thing}}  — examine something closely\n"
+            f"  [{c}]examine[/] / [{c}]x[/] / [{c}]look at[/] {{thing}}  "
+            "— examine something closely\n"
             f"  [{c}]read[/] {{item}}        — read a document or inscription\n"
             f"  [{c}]open[/] {{thing}}       — open a container or locked exit\n"
             f"  [{c}]unlock[/] {{thing}}     — try to unlock something locked\n"
@@ -982,7 +1005,7 @@ class GameEngine:
     # ------------------------------------------------------------------
 
     def _find_accessible_item(self, name: str, current_room_id: str) -> dict | None:
-        """Find an item by name, searching room, inventory, and one level into accessible containers.
+        """Find an item by name across visible rooms, inventory, and open containers.
 
         Search order:
         1. Room items.
@@ -1185,7 +1208,7 @@ class GameEngine:
         # 1. Try matching against direction name (including aliases).
         for lock in locks:
             direction = lock.get("direction", "").lower()
-            if direction == canonical or direction == target_lower:
+            if direction in (canonical, target_lower):
                 self._try_unlock(lock)
                 return
 
@@ -1229,7 +1252,7 @@ class GameEngine:
         locks = db.get_locks_in_room(current_room_id)
         for lock in locks:
             direction = lock.get("direction", "").lower()
-            if direction == canonical or direction == target_lower:
+            if direction in (canonical, target_lower):
                 self._try_unlock(lock)
                 return
 
@@ -1283,7 +1306,7 @@ class GameEngine:
 
             if has_key:
                 # Unlock it.
-                result = db.unlock(lock["id"])
+                db.unlock(lock["id"])
                 if lock.get("consume_key"):
                     db.remove_item(key_item_id)
                 msg = lock.get("unlock_message", "")
@@ -1333,7 +1356,7 @@ class GameEngine:
             # Check if target matches the direction or lock description.
             direction = lock.get("direction", "").lower()
             lock_desc = (lock.get("description") or "").lower()
-            if direction == canonical or direction == target_lower or target_lower in lock_desc:
+            if direction in (canonical, target_lower) or target_lower in lock_desc:
                 # Unlock the exit.
                 db.unlock(lock["id"])
                 if lock.get("consume_key"):
@@ -1366,15 +1389,22 @@ class GameEngine:
 
         # --- Try locked containers in the room ---
         container = db.find_item_by_name(target_name, "room", current_room_id)
-        if container is not None and container.get("is_container") and container.get("is_locked"):
-            if container.get("key_item_id") == inv_item["id"]:
-                # Unlock and open the container.
-                db.open_container(container["id"])
-                if container.get("consume_key"):
-                    db.remove_item(inv_item["id"])
-                msg = container.get("unlock_message") or f"You unlock the {container['name']}."
-                self.console.print(msg, style=STYLE_SUCCESS)
-                return True
+        if (
+            container is not None
+            and container.get("is_container")
+            and container.get("is_locked")
+            and container.get("key_item_id") == inv_item["id"]
+        ):
+            # Unlock and open the container.
+            db.open_container(container["id"])
+            if container.get("consume_key"):
+                db.remove_item(inv_item["id"])
+            msg = (
+                container.get("unlock_message")
+                or f"You unlock the {container['name']}."
+            )
+            self.console.print(msg, style=STYLE_SUCCESS)
+            return True
 
         return False
 
@@ -1544,10 +1574,8 @@ class GameEngine:
         states = ["off", "on"]
         raw_states = item.get("toggle_states")
         if raw_states:
-            try:
+            with suppress(json.JSONDecodeError, TypeError):
                 states = json.loads(raw_states)
-            except (json.JSONDecodeError, TypeError):
-                pass
 
         if current_state in states:
             idx = states.index(current_state)
@@ -1581,10 +1609,8 @@ class GameEngine:
         if room and room.get("is_dark"):
             tags: list[str] = []
             if item.get("item_tags"):
-                try:
+                with suppress(json.JSONDecodeError, TypeError):
                     tags = json.loads(item["item_tags"])
-                except (json.JSONDecodeError, TypeError):
-                    pass
             if "light_source" in tags:
                 if new_state == "on":
                     self.display_room(current_room_id, force_full=True)
@@ -1649,10 +1675,8 @@ class GameEngine:
         if room and room.get("is_dark"):
             tags: list[str] = []
             if item.get("item_tags"):
-                try:
+                with suppress(json.JSONDecodeError, TypeError):
                     tags = json.loads(item["item_tags"])
-                except (json.JSONDecodeError, TypeError):
-                    pass
             if "light_source" in tags:
                 if target_state == "on":
                     self.display_room(current_room_id, force_full=True)
@@ -1678,10 +1702,8 @@ class GameEngine:
         tags: list[str] = []
         raw_tags = inv_item.get("item_tags")
         if raw_tags:
-            try:
+            with suppress(json.JSONDecodeError, TypeError):
                 tags = json.loads(raw_tags)
-            except (json.JSONDecodeError, TypeError):
-                pass
         if not tags:
             return False
 
@@ -2079,7 +2101,11 @@ class GameEngine:
 
             # Check preconditions.
             try:
-                preconditions = json.loads(trigger["preconditions"]) if trigger["preconditions"] else []
+                preconditions = (
+                    json.loads(trigger["preconditions"])
+                    if trigger["preconditions"]
+                    else []
+                )
             except (json.JSONDecodeError, TypeError):
                 preconditions = []
 
@@ -2234,13 +2260,16 @@ class GameEngine:
 
                     # Award bonus score for completed optional objectives.
                     for obj in objectives:
-                        if obj["is_optional"] and db.has_flag(obj["completion_flag"]):
-                            if obj["bonus_score"] > 0:
-                                db.add_score_entry(
-                                    f"quest_bonus:{obj['id']}",
-                                    obj["bonus_score"],
-                                    move_num,
-                                )
+                        if (
+                            obj["is_optional"]
+                            and db.has_flag(obj["completion_flag"])
+                            and obj["bonus_score"] > 0
+                        ):
+                            db.add_score_entry(
+                                f"quest_bonus:{obj['id']}",
+                                obj["bonus_score"],
+                                move_num,
+                            )
 
                     # Print quest completion notification.
                     total_bonus = sum(

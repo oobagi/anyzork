@@ -29,12 +29,71 @@ from typing import Any
 
 from anyzork.db.schema import GameDB
 from anyzork.generator.providers.base import BaseProvider, GenerationContext
+from anyzork.generator.validator import (
+    ValidationError,
+    _validate_rule_effects,
+    _validate_rule_preconditions,
+)
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # JSON schema the LLM must conform to
 # ---------------------------------------------------------------------------
+
+COMMAND_INTENTS_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["intents"],
+    "properties": {
+        "intents": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "id",
+                    "verb",
+                    "pattern",
+                    "purpose",
+                    "trigger_conditions",
+                    "outcome_steps",
+                    "success_message",
+                    "failure_message",
+                    "priority",
+                    "one_shot",
+                ],
+                "properties": {
+                    "id": {"type": "string"},
+                    "verb": {"type": "string"},
+                    "pattern": {"type": "string"},
+                    "purpose": {
+                        "type": "string",
+                        "description": "One-sentence summary of what this interaction does.",
+                    },
+                    "trigger_conditions": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Human-readable conditions that must be true.",
+                    },
+                    "outcome_steps": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Human-readable ordered outcomes when the command succeeds.",
+                    },
+                    "success_message": {"type": "string"},
+                    "failure_message": {"type": "string"},
+                    "priority": {"type": "integer"},
+                    "one_shot": {"type": "integer", "enum": [0, 1]},
+                    "context_room_ids": {
+                        "type": ["array", "null"],
+                        "items": {"type": "string"},
+                    },
+                    "done_message": {"type": "string"},
+                },
+            },
+        }
+    },
+}
+
 
 COMMANDS_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -96,6 +155,7 @@ COMMANDS_SCHEMA: dict[str, Any] = {
                                         "container_has_contents",
                                         "container_empty",
                                         "has_quantity",
+                                        "toggle_state",
                                     ],
                                 },
                             },
@@ -121,7 +181,6 @@ COMMANDS_SCHEMA: dict[str, Any] = {
                                         "add_score",
                                         "reveal_exit",
                                         "solve_puzzle",
-                                        "discover_quest",
                                         "print",
                                         "open_container",
                                         "move_item_to_container",
@@ -239,6 +298,32 @@ def _build_prompt(context: dict) -> str:
         indent=2,
     ) if exits else "[]"
 
+    retry_guidance = ""
+    last_error = context.get("_last_error")
+    if last_error:
+        retry_guidance = f"""
+
+## Previous Attempt Failed
+Your previous command draft was rejected with these validation errors:
+{last_error}
+
+Fix those exact issues in this new draft.
+
+Critical repair rules:
+- Do NOT invent IDs. Only use IDs listed in Rooms, Exits, Items, NPCs, Locks, and Puzzles.
+- `toggle_state` is a PRECONDITION. `set_toggle_state` is an EFFECT.
+- `not_flag` is a PRECONDITION only. To clear a flag, use
+  `{{"type": "set_flag", "flag": "some_flag", "value": false}}`.
+- To take an item out of a container, use `take_item_from_container`.
+  Do NOT use `move_item` with a container in `from`.
+- To place an item into a container, use `move_item_to_container`.
+  Do NOT use `move_item` with a container in `to`.
+- `unlock` must reference a lock ID from the Locks list, never an exit ID
+  or a container/item ID.
+- Commands that only provide special text, such as an `examine` override,
+  are allowed to have an empty `effects` array.
+"""
+
     return f"""\
 You are the command systems designer for a Zork-style text adventure engine.
 Your job is to generate the DSL command rules that wire every interactable
@@ -264,6 +349,7 @@ entity in the game together.
 
 ## Puzzles
 {puzzles_summary}
+{retry_guidance}
 
 ## The Command DSL — CRITICAL REFERENCE
 
@@ -355,6 +441,12 @@ these verbs. Preconditions should include both `has_item` and `in_room`. For
 critical-path placements, generate commands for at least two verb variants so
 the player's phrasing doesn't block them.
 
+**Container transfer rules**:
+- Moving an item from inventory/current room into a container uses
+  `move_item_to_container`.
+- Taking an item out of a container uses `take_item_from_container`.
+- Do NOT use `move_item` when either side of the move is a container.
+
 ### Precondition Types Reference
 
 | Type | Required Fields | Description |
@@ -372,12 +464,13 @@ the player's phrasing doesn't block them.
 | `not_item_in_container` | `item`, `container` | Item is NOT inside a container |
 | `container_has_contents` | `container` | Container is non-empty |
 | `container_empty` | `container` | Container is empty |
+| `toggle_state` | `item`, `state` | Item has a specific toggle state |
 
 ### Effect Types Reference
 
 | Type | Required Fields | Description |
 |------|----------------|-------------|
-| `move_item` | `item`, `from`, `to` | Move item between locations. `"_inventory"`, `"_current"`, or room ID |
+| `move_item` | `item`, `from`, `to` | Move item between locations. Inventory/current room/room ID |
 | `remove_item` | `item` | Permanently destroy item |
 | `set_flag` | `flag` | Set a world flag. Optional `value` (default true) |
 | `unlock` | `lock` | Unlock a lock |
@@ -387,14 +480,13 @@ the player's phrasing doesn't block them.
 | `add_score` | `points` | Add score points |
 | `reveal_exit` | `exit` | Make hidden exit visible |
 | `solve_puzzle` | `puzzle` | Mark puzzle as solved |
-| `discover_quest` | `quest` | Set quest's discovery flag to trigger discovery |
 | `print` | `message` | Display text. Supports `{{slot}}` refs |
 | `open_container` | `container` | Set container is_locked=0 and is_open=1 |
 | `move_item_to_container` | `item`, `container` | Move item into a container |
 | `take_item_from_container` | `item`, `container` | Remove item from a container |
 | `consume_quantity` | `item`, `amount` | Reduce item quantity by `amount` |
-| `restore_quantity` | `item`, `amount` | Increase item quantity by `amount` (capped at max). Optional `source` field |
-| `set_toggle_state` | `item`, `state` | Set an item's toggle_state to a specific value (e.g., "off", "on") |
+| `restore_quantity` | `item`, `amount` | Increase quantity. Optional `source` field |
+| `set_toggle_state` | `item`, `state` | Set an item's toggle_state to a specific value |
 
 ### Additional Precondition Type
 
@@ -422,6 +514,12 @@ Use the new precondition and effect types for item dynamics:
 - `set_toggle_state` effect: change an item's toggle state as a side effect.
   E.g., a puzzle that extinguishes all lanterns:
   `{{"type": "set_toggle_state", "item": "brass_lantern", "state": "off"}}`.
+- `toggle_state` precondition: check whether an item is currently `"on"`,
+  `"off"`, or another specific state before a command can fire.
+- To clear a flag, use `{{"type": "set_flag", "flag": "some_flag", "value": false}}`.
+  `not_flag` is a precondition type only, never an effect.
+- `unlock` only accepts IDs from the Locks list. If you need to directly
+  open a container, use `open_container` with the container's item ID.
 
 **IMPORTANT**: Broad "use item on target" interactions are handled by the
 interaction matrix, NOT by DSL commands. Only generate DSL commands for
@@ -489,9 +587,9 @@ existing entity, the reference will be dropped.
 
 ### Flags
 
-Also generate a `flags` array listing ALL flags referenced by your commands
-(in preconditions or effects), with descriptions.  All flags initialize to
-`"false"`.
+Also generate a `flags` array listing all NEW flags referenced by your commands
+(in preconditions or effects) that do not already exist in prior-pass data.
+Do not repeat flags that already exist. All new flags initialize to `"false"`.
 
 ## Output Format
 
@@ -499,23 +597,24 @@ Also generate a `flags` array listing ALL flags referenced by your commands
 {{
   "commands": [
     {{
-      "id": "use_rusty_key_on_dungeon_door",
-      "verb": "use",
-      "pattern": "use {{item}} on {{target}}",
+      "id": "pull_rusty_chain",
+      "verb": "pull",
+      "pattern": "pull {{target}}",
       "preconditions": [
         {{"type": "in_room", "room": "dungeon_entrance"}},
-        {{"type": "has_item", "item": "rusty_key"}},
-        {{"type": "not_flag", "flag": "dungeon_door_opened"}}
+        {{"type": "not_flag", "flag": "secret_door_revealed"}}
       ],
       "effects": [
-        {{"type": "remove_item", "item": "rusty_key"}},
-        {{"type": "unlock", "lock": "dungeon_door_lock"}},
-        {{"type": "set_flag", "flag": "dungeon_door_opened"}},
+        {{"type": "reveal_exit", "exit": "dungeon_secret_passage"}},
+        {{"type": "set_flag", "flag": "secret_door_revealed"}},
         {{"type": "add_score", "points": 10}},
-        {{"type": "print", "message": "The key turns with a grinding screech..."}}
+        {{
+          "type": "print",
+          "message": "The chain grinds through old gears, and a hidden passage yawns open."
+        }}
       ],
       "success_message": "",
-      "failure_message": "You need the right key for this door.",
+      "failure_message": "You tug the chain, but nothing else happens.",
       "priority": 10,
       "one_shot": 1,
       "context_room_ids": ["dungeon_entrance"]
@@ -523,8 +622,8 @@ Also generate a `flags` array listing ALL flags referenced by your commands
   ],
   "flags": [
     {{
-      "id": "dungeon_door_opened",
-      "description": "Set when the player unlocks the dungeon door with the rusty key."
+      "id": "secret_door_revealed",
+      "description": "Set when the player reveals the hidden dungeon passage."
     }}
   ]
 }}
@@ -533,6 +632,137 @@ Also generate a `flags` array listing ALL flags referenced by your commands
 Generate commands for EVERY interactable entity and EVERY puzzle step.
 Be thorough — a missing command means the player cannot progress.
 """
+
+
+def _build_intents_prompt(context: dict) -> str:
+    """Construct the first-stage prompt for interaction intents."""
+    concept = context.get("concept", {})
+    rooms = context.get("rooms", [])
+    items = context.get("items", [])
+    npcs = context.get("npcs", [])
+    locks = context.get("locks", [])
+    puzzles = context.get("puzzles", [])
+    exits = context.get("exits", [])
+
+    rooms_summary = json.dumps(
+        [{"id": r["id"], "name": r["name"], "region": r["region"]} for r in rooms],
+        indent=2,
+    )
+    exits_summary = json.dumps(
+        [
+            {
+                "id": e["id"],
+                "from_room_id": e.get("from_room_id"),
+                "to_room_id": e.get("to_room_id"),
+                "direction": e.get("direction"),
+                "is_locked": e.get("is_locked", 0),
+                "is_hidden": e.get("is_hidden", 0),
+            }
+            for e in exits
+        ],
+        indent=2,
+    ) if exits else "[]"
+    items_summary = json.dumps(items, indent=2)
+    npcs_summary = json.dumps(npcs, indent=2)
+    locks_summary = json.dumps(locks, indent=2) if locks else "[]"
+    puzzles_summary = json.dumps(puzzles, indent=2) if puzzles else "[]"
+
+    return f"""\
+You are designing interaction intents for a Zork-style text adventure.
+Do NOT write strict DSL rules yet. First decide what bespoke interactions
+the world needs so a later compiler can translate them into AnyZork's DSL.
+
+## World Concept
+{json.dumps(concept, indent=2)}
+
+## Rooms
+{rooms_summary}
+
+## Exits
+{exits_summary}
+
+## Items
+{items_summary}
+
+## NPCs
+{npcs_summary}
+
+## Locks
+{locks_summary}
+
+## Puzzles
+{puzzles_summary}
+
+## Your Task
+
+Produce a concise interaction-intent list for the UNIQUE commands this world
+needs beyond built-in engine behavior.
+
+Built-in behavior already handles:
+- take / get
+- drop
+- examine / look at / inspect
+- read
+- open
+- unlock
+- use {{item}} on {{target}} for standard key-on-lock and put-in-container
+- put {{item}} in {{container}}
+- talk to / speak to
+- ask NPC about topic
+
+So your intent list should focus on bespoke state-changing interactions and
+special observation overrides, such as:
+- puzzle steps
+- hidden mechanism interactions
+- NPC handoff/show interactions tied to progress
+- light/extinguish or other stateful item interactions
+- custom examine overrides that reveal clues or special text
+- placement/assembly/disassembly interactions that matter to progression
+
+For each intent:
+- describe the purpose in plain English
+- list trigger conditions in plain English
+- list ordered outcome steps in plain English
+- use exact world IDs whenever you mention a concrete entity
+- do NOT invent new rooms, items, NPCs, locks, exits, or puzzles
+- if an interaction would reveal, create, combine, or hand over an item later,
+  that item must already exist in the Items list above
+- commands are not allowed to mint brand-new items like combined objects or
+  hidden rewards unless those items already exist in the generated item set
+- if an idea depends on a brand-new item that does not exist, rewrite it as a
+  flag change, text reveal, or an interaction with an existing item instead
+- keep `failure_message` specific and helpful
+- use `one_shot = 1` only for permanent changes
+- commands that are just custom text overrides may have no world-state outcome
+
+Generate intents for every critical puzzle step and important bespoke
+interaction, but avoid trivial duplicates.
+"""
+
+
+def _build_compile_prompt(context: dict, intents: list[dict]) -> str:
+    """Construct the second-stage prompt that compiles intents into DSL."""
+    base_prompt = _build_prompt(context)
+    intents_section = (
+        "## Interaction Intents To Compile\n"
+        f"{json.dumps(intents, indent=2)}\n\n"
+        "Compile these intents into valid AnyZork DSL rules without losing "
+        "their meaning. Do not redesign the interaction list or invent extra "
+        "commands unless needed to express one of these intents in valid DSL.\n\n"
+    )
+    base_prompt = base_prompt.replace(
+        "You are the command systems designer for a Zork-style text adventure engine.\n"
+        "Your job is to generate the DSL command rules that wire every interactable\n"
+        "entity in the game together.",
+        "You are compiling interaction intents into AnyZork's strict command DSL.\n"
+        "Preserve the authored intent faithfully, but the output must be valid DSL.",
+        1,
+    )
+    return base_prompt.replace(
+        "## The Command DSL — CRITICAL REFERENCE\n\n",
+        f"{intents_section}## The Command DSL — CRITICAL REFERENCE\n\n",
+        1,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +785,7 @@ VALID_PRECONDITION_TYPES = {
     "container_has_contents",
     "container_empty",
     "has_quantity",
+    "toggle_state",
 }
 
 VALID_EFFECT_TYPES = {
@@ -568,7 +799,6 @@ VALID_EFFECT_TYPES = {
     "add_score",
     "reveal_exit",
     "solve_puzzle",
-    "discover_quest",
     "print",
     "open_container",
     "move_item_to_container",
@@ -579,82 +809,199 @@ VALID_EFFECT_TYPES = {
 }
 
 
+def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
+    """Normalize common provider aliases to canonical DSL constants."""
+    location_aliases = {
+        "inventory": "_inventory",
+        "current": "_current",
+        "current_room": "_current",
+        "null": "_current",
+        "none": "_current",
+    }
+    lock_by_exit_id = {
+        lock["target_exit_id"]: lock["id"]
+        for lock in context.get("locks", [])
+        if lock.get("target_exit_id") and lock.get("id")
+    }
+    container_ids = {
+        item["id"]
+        for item in context.get("items", [])
+        if item.get("is_container")
+    }
+
+    for cmd in commands:
+        for pre in cmd.get("preconditions", []):
+            if pre.get("type") == "set_toggle_state":
+                pre["type"] = "toggle_state"
+
+        for eff in cmd.get("effects", []):
+            eff_type = eff.get("type")
+            if eff_type == "not_flag":
+                eff["type"] = "set_flag"
+                eff["value"] = False
+                eff_type = "set_flag"
+
+            if eff_type == "spawn_item":
+                location = eff.get("location")
+                if isinstance(location, str):
+                    key = location.strip().lower()
+                    eff["location"] = location_aliases.get(key, location)
+            elif eff_type == "move_item":
+                for loc_key in ("from", "to"):
+                    location = eff.get(loc_key)
+                    if isinstance(location, str):
+                        key = location.strip().lower()
+                        eff[loc_key] = location_aliases.get(key, location)
+
+                from_loc = eff.get("from")
+                to_loc = eff.get("to")
+                if from_loc in container_ids and to_loc == "_inventory":
+                    eff["type"] = "take_item_from_container"
+                    eff.pop("from", None)
+                    eff.pop("to", None)
+                elif to_loc in container_ids and from_loc in {"_inventory", "_current"}:
+                    eff["type"] = "move_item_to_container"
+                    eff.pop("from", None)
+                    eff.pop("to", None)
+            elif eff_type == "unlock":
+                target = eff.get("lock")
+                if target in lock_by_exit_id:
+                    eff["lock"] = lock_by_exit_id[target]
+                elif target in container_ids:
+                    eff["type"] = "open_container"
+                    eff["container"] = target
+                    eff.pop("lock", None)
+
+
 def _validate_commands(
     commands: list[dict], flags: list[dict], context: dict
 ) -> list[str]:
     """Return a list of validation error strings (empty = valid)."""
-    errors: list[str] = []
     room_ids = {r["id"] for r in context.get("rooms", [])}
     item_ids = {i["id"] for i in context.get("items", [])}
     npc_ids = {n["id"] for n in context.get("npcs", [])}
-    lock_ids = {lk["id"] for lk in context.get("locks", [])}
+    lock_ids = {lock["id"] for lock in context.get("locks", [])}
+    exit_ids = {e["id"] for e in context.get("exits", [])}
     puzzle_ids = {p["id"] for p in context.get("puzzles", [])}
-
+    quest_ids = {q["id"] for q in context.get("quests", [])}
+    flag_ids = {f["id"] for f in context.get("flags", [])}
     seen_ids: set[str] = set()
+    errors: list[str] = []
 
-    for cmd in commands:
-        cid = cmd.get("id", "<missing>")
-
-        # Unique ID
-        if cid in seen_ids:
-            errors.append(f"Duplicate command id: {cid}")
-        seen_ids.add(cid)
-
-        # Verb present
-        if not cmd.get("verb"):
-            errors.append(f"Command {cid} missing verb")
-
-        # Pattern starts with verb
-        pattern = cmd.get("pattern", "")
-        verb = cmd.get("verb", "")
-        if pattern and verb and not pattern.lower().startswith(verb.lower()):
-            errors.append(
-                f"Command {cid} pattern '{pattern}' does not start with verb '{verb}'"
-            )
-
-        # Context room reference(s)
-        ctx_rooms = cmd.get("context_room_ids")
-        if ctx_rooms:
-            if isinstance(ctx_rooms, list):
-                for r in ctx_rooms:
-                    if r not in room_ids:
-                        errors.append(
-                            f"Command {cid} references unknown room in context_room_ids: {r}"
-                        )
-            elif isinstance(ctx_rooms, str) and ctx_rooms not in room_ids:
-                # Legacy single-string form
-                errors.append(
-                    f"Command {cid} references unknown context_room_ids: {ctx_rooms}"
-                )
-
-        # Validate precondition types
-        for pre in cmd.get("preconditions", []):
-            ptype = pre.get("type", "")
-            if ptype not in VALID_PRECONDITION_TYPES:
-                errors.append(
-                    f"Command {cid} has invalid precondition type: {ptype}"
-                )
-
-        # Validate effect types
-        effects = cmd.get("effects", [])
-        if not effects:
-            errors.append(f"Command {cid} has no effects")
-        for eff in effects:
-            etype = eff.get("type", "")
-            if etype not in VALID_EFFECT_TYPES:
-                errors.append(f"Command {cid} has invalid effect type: {etype}")
-
-        # Success/failure messages
-        if not cmd.get("failure_message"):
-            errors.append(f"Command {cid} missing failure_message")
-
-    # Validate flags
+    # Include newly generated flags so commands can reference them in the same pass.
     seen_flag_ids: set[str] = set()
     for flag in flags:
         fid = flag.get("id", "<missing>")
         if fid in seen_flag_ids:
             errors.append(f"Duplicate flag id: {fid}")
         seen_flag_ids.add(fid)
+    flag_ids.update(seen_flag_ids)
+
+    for cmd in commands:
+        errors.extend(
+            _validate_single_command(
+                cmd,
+                room_ids=room_ids,
+                item_ids=item_ids,
+                npc_ids=npc_ids,
+                lock_ids=lock_ids,
+                exit_ids=exit_ids,
+                puzzle_ids=puzzle_ids,
+                quest_ids=quest_ids,
+                flag_ids=flag_ids,
+                seen_ids=seen_ids,
+            )
+        )
+
+    return errors
+
+
+def _validate_single_command(
+    cmd: dict,
+    *,
+    room_ids: set[str],
+    item_ids: set[str],
+    npc_ids: set[str],
+    lock_ids: set[str],
+    exit_ids: set[str],
+    puzzle_ids: set[str],
+    quest_ids: set[str],
+    flag_ids: set[str],
+    seen_ids: set[str],
+) -> list[str]:
+    """Return validation errors for a single command."""
+    errors: list[str] = []
+    cid = cmd.get("id", "<missing>")
+
+    if cid in seen_ids:
+        errors.append(f"Duplicate command id: {cid}")
+    seen_ids.add(cid)
+
+    if not cmd.get("verb"):
+        errors.append(f"Command {cid} missing verb")
+
+    pattern = cmd.get("pattern", "")
+    verb = cmd.get("verb", "")
+    if pattern and verb and not pattern.lower().startswith(verb.lower()):
+        errors.append(
+            f"Command {cid} pattern '{pattern}' does not start with verb '{verb}'"
+        )
+
+    ctx_rooms = cmd.get("context_room_ids")
+    if ctx_rooms:
+        if isinstance(ctx_rooms, list):
+            for room_id in ctx_rooms:
+                if room_id not in room_ids:
+                    errors.append(
+                        f"Command {cid} references unknown room in context_room_ids: {room_id}"
+                    )
+        elif isinstance(ctx_rooms, str) and ctx_rooms not in room_ids:
+            errors.append(
+                f"Command {cid} references unknown context_room_ids: {ctx_rooms}"
+            )
+
+    reference_findings: list[ValidationError] = []
+    _validate_rule_preconditions(
+        label=f"Command {cid}",
+        category="command",
+        preconds=cmd.get("preconditions", []),
+        room_set=room_ids,
+        item_set=item_ids,
+        npc_set=npc_ids,
+        lock_set=lock_ids,
+        puzzle_set=puzzle_ids,
+        flag_set=flag_ids,
+        errors=reference_findings,
+    )
+    _validate_rule_effects(
+        label=f"Command {cid}",
+        category="command",
+        effects=cmd.get("effects", []),
+        room_set=room_ids,
+        item_set=item_ids,
+        lock_set=lock_ids,
+        exit_set=exit_ids,
+        puzzle_set=puzzle_ids,
+        quest_set=quest_ids,
+        flag_set=flag_ids,
+        errors=reference_findings,
+    )
+    errors.extend(
+        finding.message
+        for finding in reference_findings
+        if (
+            finding.severity == "error"
+            or "precondition has_item references unknown item" in finding.message
+            or "effect move_item references unknown item" in finding.message
+            or "effect move_item from=" in finding.message
+            or "effect move_item to=" in finding.message
+            or "effect spawn_item references unknown item" in finding.message
+            or "effect spawn_item location" in finding.message
+        )
+    )
+
+    if not cmd.get("failure_message"):
+        errors.append(f"Command {cid} missing failure_message")
 
     return errors
 
@@ -762,23 +1109,42 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
 
     logger.info("Pass 7: Generating commands...")
 
-    prompt = _build_prompt(context)
-    gen_ctx = GenerationContext(
-        existing_data={},
+    intents = context.get("_command_intents")
+    if intents is None:
+        intents_prompt = _build_intents_prompt(context)
+        intents_ctx = GenerationContext(
+            existing_data={},
+            seed=context.get("seed"),
+            temperature=0.8,
+            max_tokens=16_384,
+        )
+        intents_result = provider.generate_structured(
+            intents_prompt,
+            COMMAND_INTENTS_SCHEMA,
+            intents_ctx,
+        )
+        intents = intents_result.get("intents", [])
+        context["_command_intents"] = intents
+
+    compile_prompt = _build_compile_prompt(context, intents)
+    compile_ctx = GenerationContext(
+        existing_data={"intents": intents},
         seed=context.get("seed"),
-        temperature=0.7,
+        temperature=0.4,
         max_tokens=32_768,
     )
 
-    result = provider.generate_structured(prompt, COMMANDS_SCHEMA, gen_ctx)
+    result = provider.generate_structured(compile_prompt, COMMANDS_SCHEMA, compile_ctx)
     commands: list[dict] = result.get("commands", [])
     flags: list[dict] = result.get("flags", [])
+
+    _normalize_command_aliases(commands, context)
 
     # Validate
     errors = _validate_commands(commands, flags, context)
     if errors:
-        for err in errors:
-            logger.warning("Command validation: %s", err)
+        preview = "; ".join(errors[:8])
+        raise ValueError(f"Command validation failed: {preview}")
 
     # Insert flags first (commands may reference them)
     _insert_flags(db, flags)

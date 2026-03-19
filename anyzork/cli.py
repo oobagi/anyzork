@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import click
 from rich.console import Console
 
 from anyzork import __version__
+from anyzork.config import (
+    _DEFAULT_MODELS,
+    _PROVIDER_TO_KEY_TYPE,
+    CONFIG_FILE,
+    Config,
+    LLMProvider,
+    load_config_file,
+    save_config_file,
+)
 
 console = Console()
 
@@ -37,7 +47,6 @@ def play(zork_file: Path, narrator: bool, provider: str | None, model: str | Non
     narrator_enabled = narrator
     if not narrator_enabled:
         try:
-            from anyzork.config import Config
             cfg = Config()
             narrator_enabled = cfg.narrator_enabled
         except Exception:
@@ -120,9 +129,6 @@ def generate(
       anyzork generate --list-presets    List available presets
     """
     import re
-    import sys
-
-    from anyzork.config import Config, LLMProvider
 
     # ── List presets and exit ──────────────────────────────────────────
     if list_presets:
@@ -219,8 +225,6 @@ def _resolve_prompt(
 
     Returns the prompt string, or None if the user quit.
     """
-    import sys
-
     from anyzork.wizard import run_wizard
     from anyzork.wizard.assembler import assemble_prompt
     from anyzork.wizard.presets import load_preset
@@ -263,17 +267,8 @@ def _resolve_prompt(
 @cli.command()
 def init() -> None:
     """Interactive setup wizard — configure your LLM provider and API key."""
-    import sys
 
     from rich.panel import Panel
-
-    from anyzork.config import (
-        CONFIG_FILE,
-        _DEFAULT_MODELS,
-        _PROVIDER_TO_KEY_TYPE,
-        LLMProvider,
-        save_config_file,
-    )
 
     # ── Welcome ──────────────────────────────────────────────────────
     console.print()
@@ -371,16 +366,12 @@ def init() -> None:
 
 
 def _test_provider_connection(
-    provider: "LLMProvider",
+    provider: LLMProvider,
     api_key: str,
     console: Console,
 ) -> None:
     """Try a minimal API call to verify the key works."""
-    import sys
-
     from rich.status import Status
-
-    from anyzork.config import LLMProvider
 
     with Status("[bold]Testing connection...", console=console, spinner="dots"):
         try:
@@ -432,7 +423,6 @@ def _test_provider_connection(
 @cli.command("config")
 def show_config() -> None:
     """Show current AnyZork configuration and where values come from."""
-    from anyzork.config import CONFIG_FILE, Config
 
     try:
         cfg = Config()
@@ -466,11 +456,9 @@ def show_config() -> None:
     console.print()
 
 
-def _get_key_source(cfg: "Config") -> str:
+def _get_key_source(cfg: Config) -> str:
     """Determine where the active API key is coming from."""
     import os
-
-    from anyzork.config import _PROVIDER_TO_KEY_TYPE, load_config_file
 
     # Check ANYZORK_-prefixed env var.
     key_type = _PROVIDER_TO_KEY_TYPE.get(cfg.provider, "")

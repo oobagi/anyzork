@@ -98,7 +98,10 @@ NPCS_SCHEMA: dict[str, Any] = {
                     },
                     "damage": {
                         "type": ["integer", "null"],
-                        "description": "Damage per attack for combat NPCs, null for non-combatants.",
+                        "description": (
+                            "Damage per attack for combat NPCs, null for "
+                            "non-combatants."
+                        ),
                     },
                     "category": {
                         "type": ["string", "null"],

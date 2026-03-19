@@ -1,7 +1,7 @@
 """Pass 9: Quests -- Generate player-facing objectives with trackable progress.
 
-Reads everything from prior passes, then prompts the LLM to generate quests that organize the player's experience into
-clear objectives.
+Reads everything from prior passes, then prompts the LLM to generate
+quests that organize the player's experience into clear objectives.
 
 Every game has exactly one main quest (the win condition) and 2-4 side
 quests that reward exploration. Quest objectives reference existing flags
@@ -317,7 +317,16 @@ def _validate_quests(quests: list[dict], flags_data: list[dict], context: dict) 
 
     # Build a set of all known flags (existing + new from this pass).
     existing_flags = {f["id"] for f in context.get("flags", [])}
-    new_flags = {f["id"] for f in flags_data}
+    seen_new_flag_ids: set[str] = set()
+    for flag in flags_data:
+        fid = flag.get("id", "<missing>")
+        if fid in seen_new_flag_ids:
+            errors.append(f"Duplicate quest flag id: {fid}")
+        seen_new_flag_ids.add(fid)
+        if fid in existing_flags:
+            errors.append(f"Quest flag id '{fid}' conflicts with an existing flag.")
+
+    new_flags = seen_new_flag_ids
     all_flags = existing_flags | new_flags
 
     seen_quest_ids: set[str] = set()
@@ -444,11 +453,18 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
     # Validate.
     errors = _validate_quests(quests, flags_data, context)
     if errors:
-        for err in errors:
-            logger.warning("Quest validation: %s", err)
+        preview = "; ".join(errors[:8])
+        raise ValueError(f"Quest validation failed: {preview}")
 
     # Insert into DB.
     _insert_quests(db, quests, flags_data)
+
+    main_quests = [q for q in quests if q.get("quest_type") == "main"]
+    if len(main_quests) == 1 and main_quests[0].get("completion_flag"):
+        db.set_meta(
+            "win_conditions",
+            json.dumps([main_quests[0]["completion_flag"]]),
+        )
 
     # Build pass-specific data for downstream consumers.
     quest_summary = [
