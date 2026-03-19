@@ -44,6 +44,7 @@ _PASSES: list[tuple[str, str]] = [
     ("puzzles", "anyzork.generator.passes.puzzles"),
     ("commands", "anyzork.generator.passes.commands"),
     ("quests", "anyzork.generator.passes.quests"),
+    ("triggers", "anyzork.generator.passes.triggers"),
 ]
 
 
@@ -76,6 +77,7 @@ def _build_context(pass_name: str, results: dict[str, dict]) -> dict:
         "puzzles": ["concept", "rooms", "items", "npcs", "locks"],
         "commands": ["concept", "rooms", "locks", "items", "npcs", "puzzles", "interactions"],
         "quests": ["concept", "rooms", "locks", "items", "npcs", "puzzles", "commands"],
+        "triggers": ["concept", "rooms", "locks", "items", "npcs", "puzzles", "commands", "quests"],
     }
 
     for dep in deps.get(pass_name, []):
