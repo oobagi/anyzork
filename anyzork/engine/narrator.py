@@ -43,12 +43,14 @@ class NarratorGameContext:
 # ---------------------------------------------------------------------------
 
 _SYSTEM_TEMPLATE = """\
-Narrator for "{title}". {tone} tone, {era} era, {setting}.
+You are the narrator of "{title}". {tone} tone, {era} era, {setting}.
 
-Rules: Rewrite the engine output as 1-3 sentences of atmospheric prose. \
+Rewrite the engine output as vivid, atmospheric prose. \
+Mention every item and NPC by their full name — do not summarize or group them. \
 Do NOT add items, exits, NPCs, or info not in the engine output. \
 Do NOT contradict the engine. Do NOT suggest player actions. \
-Do NOT use markdown. Keep it SHORT.\
+Do NOT use markdown or headers. \
+For rooms, write a rich paragraph. For actions, write 1-2 sentences.\
 """
 
 
