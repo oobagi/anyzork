@@ -1,1953 +1,1562 @@
-# The Proving Grounds -- Comprehensive Engine Test World
+# The Gun Range -- Nested Container Test World
 
-> A military training facility that systematically exercises every AnyZork engine capability in one playable game. Themed as an underground weapons testing and combat certification compound. Also serves as the design spec for the gun/magazine/ammo system.
-
----
-
-## 1. Design Goals
-
-### What problem this solves
-
-The existing zombie test game (`build_test_game.py`) covers rooms, exits, items, containers, locks, NPCs, dialogue, puzzles, quests, and commands. But it was designed organically around a story, not as a systematic feature coverage map. Features were tested incidentally, not deliberately. This test world exists to guarantee that every engine capability has at least one explicit test case, with a known expected behavior.
-
-### What this adds beyond the zombie game
-
-1. **Gun/magazine/ammo system** -- a multi-step weapon assembly chain that stress-tests container and flag mechanics.
-2. **Every direction** -- the zombie game uses only east/west/south/down/north/up. This world uses all six in deliberate test cases.
-3. **Every container variant** -- locked with key (auto-unlock), locked without key (DSL unlock), closed with lid, always-open (no lid), items inside containers, put item in container.
-4. **Every precondition type** -- `in_room`, `has_item`, `has_flag`, `not_flag`, `item_in_room`, `npc_in_room`, `lock_unlocked`, `puzzle_solved`, `health_above`, `container_open`.
-5. **Every effect type** -- `move_item`, `remove_item`, `set_flag`, `unlock`, `move_player`, `spawn_item`, `change_health`, `add_score`, `reveal_exit`, `solve_puzzle`, `discover_quest`, `print`, `open_container`, `move_item_to_container`.
-6. **Dialogue tree with inventory-gated option** -- the zombie game has this, but this world creates a cleaner isolated test case.
-7. **All item categories** -- key, weapon, document, consumable, plus a new "ammo" and "container" usage.
-8. **Custom verbs** -- pull, push, flip, load (not just use/take/drop).
-9. **Score from multiple sources** -- puzzles, quests, commands.
-10. **Both win and lose conditions** -- flag-based win, HP-based lose.
-
-### What this does NOT do
-
-- **Test combat system.** The combat system design (combat-system.md) is not yet implemented. This world prepares for it (hostile NPC data, weapon with damage_bonus) but does not rely on combat verbs.
-- **Test narrator mode.** Narrator mode is an optional LLM overlay and cannot be tested deterministically.
-- **Test generation pipeline.** This is a hand-built world, not a generated one.
+> A compact military gun range that exercises the nested container system, weapon assembly/disassembly, cross-loading rejection, and all core engine features. 4 rooms, 2 weapon systems, 1 NPC, 1 quest, 1 locked exit, 2 locked containers.
 
 ---
 
-## 2. Gun / Magazine / Ammo System Design
+## 1. Overview
 
-### 2.1 Design Decision: Flags, Not Nested Containers
+### Theme
 
-The engine supports containers (items inside items), but not containers inside containers. A gun holding a magazine holding ammo would require two levels of nesting. The engine's `container_id` field is flat -- an item references one container. There is no recursive resolution.
+A military proving ground. The player is a recruit who must assemble two weapon systems, qualify at the firing range, and earn clearance to leave. The aesthetic is concrete, steel, fluorescent lighting, and spent brass.
 
-**Decision:** Use flags to track weapon assembly state. This is simpler, more readable, and fully supported by the existing engine.
+### Purpose
 
-**Rationale:**
-- The player experience is identical: "load magazine" -> "load gun" -> "shoot target."
-- Flags are cheap, queryable, and visible in the flag table for debugging.
-- The DSL command system already handles flag-based preconditions and effects perfectly.
-- No schema changes required. No recursive container logic needed.
-- The container system is still exercised elsewhere in the test world -- this is not avoiding containers, just choosing the right tool for this mechanic.
+This is a hand-crafted test game that validates:
 
-### 2.2 Items
+1. **Nested containers (primary focus):** Gun holds magazine, magazine holds ammo. Two independent weapon systems that must not cross-load. Items start un-nested; the player assembles them.
+2. **Whitelist rejection:** Putting the wrong magazine in a gun, or the wrong ammo in a magazine, produces a specific rejection message.
+3. **Containment preconditions:** `item_in_container`, `not_item_in_container`, `container_has_contents`, `container_empty`.
+4. **Containment effects:** `move_item_to_container`, `take_item_from_container`.
+5. **Flat container:** A weapons locker that accepts anything (`accepts_items: null`).
+6. **Locked container:** A supply crate that requires a key to open.
+7. **Locked exit:** The range exit requires a state-based lock (qualification flags).
+8. **NPC dialogue tree:** Branching dialogue with flag-gated and item-gated options.
+9. **Quest with objectives:** Track player progress through flag-based objectives.
+10. **Custom DSL verbs:** `load`, `shoot`, `unload` with containment-aware preconditions.
+11. **Room descriptions that never mention interactable items** (items self-describe via `room_description`).
 
-| ID | Name | Category | Location | Takeable | Notes |
-|----|------|----------|----------|----------|-------|
-| `9mm_ammo` | 9mm ammo | ammo | armory_shelves (container) | yes | Box of pistol ammunition. |
-| `pistol_magazine` | pistol magazine | weapon | weapons_bench (container) | yes | Empty detachable magazine. |
-| `m9_pistol` | M9 pistol | weapon | weapons_locker (locked container) | yes | Service pistol. Requires loaded magazine to fire. |
+### What this does NOT test
 
-### 2.3 Flags
-
-| Flag ID | Set By | Meaning |
-|---------|--------|---------|
-| `magazine_loaded` | "load magazine" command | The pistol magazine contains ammo. |
-| `gun_loaded` | "load gun" command | The M9 pistol has a loaded magazine inserted. |
-| `target_destroyed` | "shoot target" command | The shooting target has been hit. |
-
-### 2.4 DSL Commands
-
-**Step 1: Load the magazine**
-
-```json
-{
-  "id": "load_magazine",
-  "verb": "load",
-  "pattern": "load {target}",
-  "preconditions": [
-    {"type": "has_item", "item": "pistol_magazine"},
-    {"type": "has_item", "item": "9mm_ammo"},
-    {"type": "not_flag", "flag": "magazine_loaded"}
-  ],
-  "effects": [
-    {"type": "remove_item", "item": "9mm_ammo"},
-    {"type": "set_flag", "flag": "magazine_loaded"},
-    {"type": "print", "message": "You slide the 9mm rounds into the magazine one by one until it clicks full. The magazine is loaded."}
-  ],
-  "success_message": "",
-  "failure_message": "You need both the magazine and ammo to do that.",
-  "priority": 10,
-  "one_shot": true,
-  "done_message": "The magazine is already loaded."
-}
-```
-
-Pattern match: "load magazine" matches `load {target}` with target = "pistol_magazine". The precondition checks `has_item` for both the magazine and ammo. The effect removes the ammo (consumed), sets the `magazine_loaded` flag, and prints feedback. One-shot prevents double-loading.
-
-Alternative pattern: "put ammo in magazine" is handled by a second command with the same effects:
-
-```json
-{
-  "id": "put_ammo_in_magazine",
-  "verb": "put",
-  "pattern": "put {item} in {target}",
-  "preconditions": [
-    {"type": "has_item", "item": "pistol_magazine"},
-    {"type": "has_item", "item": "9mm_ammo"},
-    {"type": "not_flag", "flag": "magazine_loaded"}
-  ],
-  "effects": [
-    {"type": "remove_item", "item": "9mm_ammo"},
-    {"type": "set_flag", "flag": "magazine_loaded"},
-    {"type": "print", "message": "You slide the 9mm rounds into the magazine one by one until it clicks full. The magazine is loaded."}
-  ],
-  "success_message": "",
-  "failure_message": "You need both the magazine and ammo to do that.",
-  "priority": 20,
-  "one_shot": true,
-  "done_message": "The magazine is already loaded."
-}
-```
-
-Priority 20 ensures this DSL command is tried before the built-in `put X in Y` handler (DSL is checked before built-in verbs in the engine).
-
-**Step 2: Load the gun**
-
-```json
-{
-  "id": "load_gun",
-  "verb": "load",
-  "pattern": "load {target}",
-  "preconditions": [
-    {"type": "has_item", "item": "m9_pistol"},
-    {"type": "has_item", "item": "pistol_magazine"},
-    {"type": "has_flag", "flag": "magazine_loaded"},
-    {"type": "not_flag", "flag": "gun_loaded"}
-  ],
-  "effects": [
-    {"type": "remove_item", "item": "pistol_magazine"},
-    {"type": "set_flag", "flag": "gun_loaded"},
-    {"type": "print", "message": "You slam the loaded magazine into the pistol grip. It seats with a satisfying click. The M9 is ready to fire."}
-  ],
-  "success_message": "",
-  "failure_message": "You need the pistol and a loaded magazine to do that.",
-  "priority": 5,
-  "one_shot": true,
-  "done_message": "The gun is already loaded."
-}
-```
-
-Note: priority 5 is lower than "load magazine" (priority 10). When the player types "load gun", `{target}` resolves to "m9_pistol". When they type "load magazine" and both could match, the higher-priority magazine command fires first. Once the magazine is loaded (one-shot executed), "load gun" becomes the active command.
-
-The magazine item is removed from inventory on loading into the gun -- it is now conceptually part of the gun. This prevents the player from unloading and reloading repeatedly.
-
-Alternative pattern: "put magazine in gun" follows the same structure as the ammo command.
-
-```json
-{
-  "id": "put_magazine_in_gun",
-  "verb": "put",
-  "pattern": "put {item} in {target}",
-  "preconditions": [
-    {"type": "has_item", "item": "m9_pistol"},
-    {"type": "has_item", "item": "pistol_magazine"},
-    {"type": "has_flag", "flag": "magazine_loaded"},
-    {"type": "not_flag", "flag": "gun_loaded"}
-  ],
-  "effects": [
-    {"type": "remove_item", "item": "pistol_magazine"},
-    {"type": "set_flag", "flag": "gun_loaded"},
-    {"type": "print", "message": "You slam the loaded magazine into the pistol grip. It seats with a satisfying click. The M9 is ready to fire."}
-  ],
-  "success_message": "",
-  "failure_message": "You need the pistol and a loaded magazine to do that.",
-  "priority": 20,
-  "one_shot": true,
-  "done_message": "The gun is already loaded."
-}
-```
-
-**Step 3: Shoot the target**
-
-```json
-{
-  "id": "shoot_target",
-  "verb": "shoot",
-  "pattern": "shoot {target}",
-  "preconditions": [
-    {"type": "has_item", "item": "m9_pistol"},
-    {"type": "has_flag", "flag": "gun_loaded"},
-    {"type": "in_room", "room": "firing_range"},
-    {"type": "not_flag", "flag": "target_destroyed"}
-  ],
-  "effects": [
-    {"type": "set_flag", "flag": "target_destroyed"},
-    {"type": "add_score", "points": 10},
-    {"type": "set_flag", "flag": "range_qualified"},
-    {"type": "solve_puzzle", "puzzle": "weapons_qualification"},
-    {"type": "print", "message": "You raise the M9, sight down the barrel, and squeeze the trigger. The report echoes off the concrete walls. Downrange, the silhouette target jerks and a hole appears dead center. Qualified."}
-  ],
-  "success_message": "",
-  "failure_message": "You need a loaded gun to shoot, and you need to be at the firing range.",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "The target is already destroyed. You've qualified."
-}
-```
-
-**Failure cases handled:**
-
-| Player tries | What happens |
-|---|---|
-| "shoot target" without gun | Failure: "You need a loaded gun..." |
-| "shoot target" with unloaded gun | Failure: gun_loaded flag not set |
-| "shoot target" in wrong room | Failure: in_room precondition fails |
-| "load magazine" without ammo | Failure: has_item precondition fails |
-| "load gun" with unloaded magazine | Failure: magazine_loaded flag not set |
-| "load magazine" twice | One-shot: "The magazine is already loaded." |
-| "load gun" twice | One-shot: "The gun is already loaded." |
-| "shoot target" twice | One-shot: "The target is already destroyed." |
-
-### 2.5 Future Combat Integration
-
-When the combat system is implemented:
-- The `m9_pistol` gets `damage_bonus = 12` and `category = "weapon"` (already set).
-- The player can `equip m9 pistol` to use it in combat.
-- The `gun_loaded` flag could be a precondition for the equip command (you cannot equip an unloaded gun as a weapon).
-- Shooting an NPC instead of a target would use the combat system's attack verb, not a DSL command.
-
-For this test world, "shoot target" is a puzzle-style interaction, not combat. The target is a scenery item, not an NPC.
+- Combat system (not yet implemented).
+- Narrator mode (optional LLM overlay, not deterministically testable).
+- Generation pipeline (this is hand-built).
+- Dark rooms (no `is_dark` rooms in this compact layout).
+- Hidden exits (kept out to stay compact).
 
 ---
 
-## 3. World Layout
+## 2. Room Layout
 
-### 3.1 Map
-
-```
-                    BARRACKS REGION
-                    ===============
-
-        [ready_room] --(east)--> [bunk_room] --(up)--> [observation_deck]
-             |                        |
-           (south)                  (south, hidden -- revealed by lever)
-             |                        |
-        [briefing_room]          [underground_tunnel]
-                                      |
-                                    (south)
-                                      |
-                    ARMORY REGION     |
-                    =============     |
-                                      |
-                              [armory_entrance] --(east)--> [weapons_vault]
-                                      |                         |
-                                    (down)                    (down, locked -- key lock)
-                                      |                         |
-                              [supply_closet]            [secure_storage]
-                                                              |
-                                                            (south)
-                                                              |
-                    TRAINING FIELD REGION                      |
-                    ====================                      |
-                                                              |
-                              [firing_range] <--(north)-- [training_yard]
-                                      |                         |
-                                    (west)                    (east, locked -- state lock)
-                                      |                         |
-                              [obstacle_course]          [command_bunker]
-```
-
-### 3.2 Rooms (13 rooms, 3 regions)
-
-#### Region: Barracks
-
-| ID | Name | first_visit_text | is_start | is_dark | Notes |
-|----|------|-----------------|----------|---------|-------|
-| `ready_room` | Ready Room | "The fluorescent lights flicker on as you step inside. A clipboard on the wall reads: PROVING GROUNDS -- QUALIFICATION COURSE. Your name is at the top of the list. Time to earn your marks." | yes | 0 | Start room. Tutorial area. Tests first_visit_text. |
-| `bunk_room` | Bunk Room | "Rows of metal bunks, most stripped bare. One has a footlocker at its base." | no | 0 | Contains footlocker container, key item. |
-| `observation_deck` | Observation Deck | "You climb the metal ladder through a hatch. The observation deck overlooks the entire compound through thick glass panels." | no | 0 | Tests "up" direction. Contains document item, scenery. |
-| `briefing_room` | Briefing Room | "A small room with a projector screen and folding chairs. Maps and tactical diagrams cover the walls." | no | 0 | Contains NPC (Sergeant Chen, friendly). Dialogue tree here. |
-| `underground_tunnel` | Underground Tunnel | "The passage is narrow and damp. Emergency lighting casts everything in red." | no | 0 | Hidden exit destination. Tests hidden exit reveal. |
-
-#### Region: Armory
-
-| ID | Name | first_visit_text | is_start | is_dark | Notes |
-|----|------|-----------------|----------|---------|-------|
-| `armory_entrance` | Armory Entrance | "The armory is behind a heavy blast door. Inside, racks of empty weapon mounts line the walls. Most have been cleared out." | no | 0 | Hub room. Multiple exits. |
-| `weapons_vault` | Weapons Vault | "A reinforced room with steel walls. Weapon racks, ammo crates, and workbenches fill the space." | no | 0 | Main item room. Containers with gun components. |
-| `supply_closet` | Supply Closet | "A cramped closet stuffed with crates and cleaning supplies. It smells like gun oil and bleach." | no | 0 | Tests "down" direction. Contains consumable item. |
-| `secure_storage` | Secure Storage | "A climate-controlled vault. Reinforced shelving holds labeled cases and sealed containers." | no | 0 | Locked entry (key lock). Contains locked container (DSL unlock). |
-
-#### Region: Training Field
-
-| ID | Name | first_visit_text | is_start | is_dark | Notes |
-|----|------|-----------------|----------|---------|-------|
-| `training_yard` | Training Yard | "An open concrete yard under a vaulted ceiling. Target silhouettes hang from motorized tracks. Spent brass casings crunch underfoot." | no | 0 | Hub for training area. NPC (hostile dummy placeholder). |
-| `firing_range` | Firing Range | "A long, narrow range with shooting lanes separated by concrete dividers. Paper targets hang at the far end, backlit by halogen floods." | no | 0 | Shoot target here. Tests gun system. |
-| `obstacle_course` | Obstacle Course | "A series of walls, crawl spaces, and rope climbs. A timer display on the wall reads 00:00." | no | 0 | Multi-step puzzle here. |
-| `command_bunker` | Command Bunker | "A fortified room with communications equipment, maps, and a heavy steel door marked EXIT. This is the way out." | no | 0 | Win condition room. Locked by state lock (requires flags). |
-
----
-
-## 4. Exits (26 exits -- 13 bidirectional pairs)
-
-| ID | From | To | Direction | Locked | Hidden | Notes |
-|----|------|----|-----------|--------|--------|-------|
-| `ready_to_bunk` | ready_room | bunk_room | east | no | no | Tests east. |
-| `bunk_to_ready` | bunk_room | ready_room | west | no | no | Tests west. |
-| `ready_to_briefing` | ready_room | briefing_room | south | no | no | Tests south. |
-| `briefing_to_ready` | briefing_room | ready_room | north | no | no | Tests north. |
-| `bunk_to_observation` | bunk_room | observation_deck | up | no | no | Tests up. |
-| `observation_to_bunk` | observation_deck | bunk_room | down | no | no | Tests down (one of two). |
-| `bunk_to_tunnel` | bunk_room | underground_tunnel | south | no | **yes** | Hidden exit -- revealed by "pull lever" command. |
-| `tunnel_to_bunk` | underground_tunnel | bunk_room | north | no | no | Return from hidden area. |
-| `tunnel_to_armory` | underground_tunnel | armory_entrance | south | no | no | Connects regions. |
-| `armory_to_tunnel` | armory_entrance | underground_tunnel | north | no | no | Return to barracks. |
-| `armory_to_vault` | armory_entrance | weapons_vault | east | no | no | |
-| `vault_to_armory` | weapons_vault | armory_entrance | west | no | no | |
-| `armory_to_supply` | armory_entrance | supply_closet | down | no | no | Tests second "down" direction. |
-| `supply_to_armory` | supply_closet | armory_entrance | up | no | no | Tests second "up" direction. |
-| `vault_to_secure` | weapons_vault | secure_storage | down | **yes** | no | Key lock: requires `vault_key`. consume_key=0 (reusable). |
-| `secure_to_vault` | secure_storage | weapons_vault | up | no | no | |
-| `secure_to_yard` | secure_storage | training_yard | south | no | no | Connects armory to training. |
-| `yard_to_secure` | training_yard | secure_storage | north | no | no | |
-| `yard_to_range` | training_yard | firing_range | west | no | no | |
-| `range_to_yard` | firing_range | training_yard | east | no | no | |
-| `yard_to_bunker` | training_yard | command_bunker | east | **yes** | no | State lock: requires `range_qualified` AND `course_completed` flags. |
-| `bunker_to_yard` | command_bunker | training_yard | west | no | no | |
-| `range_to_obstacle` | firing_range | obstacle_course | west | no | no | Note: this is a dead-end loop via firing_range, not a direct yard connection. Actually let me re-think this layout. |
-| `obstacle_to_range` | obstacle_course | firing_range | east | no | no | |
-
-Wait -- let me reconsider the obstacle course connections. The obstacle course should be reachable from the training yard to keep the map clean. Let me revise:
-
-**Revised exit for obstacle course:**
-
-| ID | From | To | Direction | Locked | Hidden | Notes |
-|----|------|----|-----------|--------|--------|-------|
-| `yard_to_obstacle` | training_yard | obstacle_course | south | no | no | |
-| `obstacle_to_yard` | obstacle_course | training_yard | north | no | no | |
-
-Remove `range_to_obstacle` and `obstacle_to_range`. Total: 24 exits (12 bidirectional pairs).
-
-**Final exit list: 24 exits**
+### Map
 
 ```
-ready_room:        east -> bunk_room, south -> briefing_room
-bunk_room:         west -> ready_room, up -> observation_deck, south (HIDDEN) -> underground_tunnel
-observation_deck:  down -> bunk_room
-briefing_room:     north -> ready_room
-underground_tunnel: north -> bunk_room, south -> armory_entrance
-armory_entrance:   north -> underground_tunnel, east -> weapons_vault, down -> supply_closet
-weapons_vault:     west -> armory_entrance, down (KEY LOCK) -> secure_storage
-supply_closet:     up -> armory_entrance
-secure_storage:    up -> weapons_vault, south -> training_yard
-training_yard:     north -> secure_storage, west -> firing_range, south -> obstacle_course, east (STATE LOCK) -> command_bunker
-firing_range:      east -> training_yard
-obstacle_course:   north -> training_yard
-command_bunker:    west -> training_yard
+[armory] --(east)--> [firing_range] --(north)--> [range_office]
+                          |
+                       (south, locked -- state lock)
+                          |
+                     [exit_corridor]
 ```
 
-Directions used: north (3), south (5), east (4), west (4), up (3), down (3) -- all six covered multiple times.
+### Room Definitions
 
----
-
-## 5. Locks (3 locks)
-
-### Lock 1: Key Lock -- Vault to Secure Storage
+#### Room: `armory`
 
 | Field | Value |
 |-------|-------|
-| `id` | `vault_security_lock` |
-| `lock_type` | `key` |
-| `target_exit_id` | `vault_to_secure` |
-| `key_item_id` | `vault_key` |
+| `id` | `armory` |
+| `name` | Armory |
+| `description` | A windowless concrete room lined with steel weapon racks and metal shelving. The air smells of gun oil and solvent. Fluorescent tubes buzz overhead, casting flat white light across every surface. A reinforced door leads east toward the range. |
+| `short_description` | The concrete armory. Steel racks and shelving line the walls. The range is east. |
+| `first_visit_text` | You step through the blast door and it seals behind you with a hydraulic hiss. The proving grounds qualification course begins here. Arm up, qualify, get out. |
+| `region` | gun_range |
+| `is_dark` | 0 |
+| `is_start` | 1 |
+
+**Design intent:** Starting room. The player collects all weapon components and the locker key here. Every item needed for weapon assembly is in this room, spread across containers and the floor. The room description establishes atmosphere without naming specific items -- the items announce themselves via `room_description`.
+
+**Connections:**
+- East -> `firing_range`
+
+---
+
+#### Room: `firing_range`
+
+| Field | Value |
+|-------|-------|
+| `id` | `firing_range` |
+| `name` | Firing Range |
+| `description` | A long, narrow range with shooting lanes separated by thick concrete dividers. Halogen floods illuminate paper targets hanging at the far end. Spent brass casings litter the floor. The air is heavy with the smell of burnt powder. The armory is back to the west, and a door to the north is marked RANGE OFFICE. |
+| `short_description` | The firing range. Shooting lanes stretch out ahead. West to the armory, north to the range office. A door to the south is marked EXIT. |
+| `first_visit_text` | null |
+| `region` | gun_range |
+| `is_dark` | 0 |
+| `is_start` | 0 |
+
+**Design intent:** The shoot-target room. Both weapons are fired here. The locked south exit is the win-condition gate -- the player must qualify with both weapons before the exit opens. This room also contains the paper targets as non-takeable scenery.
+
+**Connections:**
+- West -> `armory`
+- North -> `range_office`
+- South -> `exit_corridor` (locked, state lock: requires `p226_qualified` AND `ar15_qualified`)
+
+---
+
+#### Room: `range_office`
+
+| Field | Value |
+|-------|-------|
+| `id` | `range_office` |
+| `name` | Range Office |
+| `description` | A small office behind reinforced glass. A metal desk is buried under paperwork, and a corkboard on the wall is pinned with range schedules and safety violations. A coffee mug sits on the desk, still warm. |
+| `short_description` | The range office. Paperwork covers every surface. South returns to the range. |
+| `first_visit_text` | null |
+| `region` | gun_range |
+| `is_dark` | 0 |
+| `is_start` | 0 |
+
+**Design intent:** NPC room. Sergeant Chen is here. The dialogue tree and quest assignment happen in this room. Contains the supply crate key as a quest reward (given through dialogue). Also contains a locked supply crate with bonus items.
+
+**Connections:**
+- South -> `firing_range`
+
+---
+
+#### Room: `exit_corridor`
+
+| Field | Value |
+|-------|-------|
+| `id` | `exit_corridor` |
+| `name` | Exit Corridor |
+| `description` | A short corridor of bare concrete. Daylight leaks under the heavy steel door at the far end. A sign above it reads: QUALIFICATION COMPLETE -- PROCEED TO DEBRIEFING. |
+| `short_description` | The exit corridor. Daylight ahead. |
+| `first_visit_text` | You push through the door and daylight floods in. The qualification course is behind you. Well done, recruit. |
+| `region` | gun_range |
+| `is_dark` | 0 |
+| `is_start` | 0 |
+
+**Design intent:** Win-condition room. Reaching this room triggers the win condition. The `first_visit_text` serves as the victory fanfare. The room is only accessible after both qualification flags are set.
+
+**Connections:**
+- North -> `firing_range`
+
+---
+
+### Exits Table
+
+| ID | from_room_id | to_room_id | direction | is_locked | is_hidden |
+|----|-------------|------------|-----------|-----------|-----------|
+| `armory_to_range` | `armory` | `firing_range` | east | 0 | 0 |
+| `range_to_armory` | `firing_range` | `armory` | west | 0 | 0 |
+| `range_to_office` | `firing_range` | `range_office` | north | 0 | 0 |
+| `office_to_range` | `range_office` | `firing_range` | south | 0 | 0 |
+| `range_to_exit` | `firing_range` | `exit_corridor` | south | 1 | 0 |
+| `exit_to_range` | `exit_corridor` | `firing_range` | north | 0 | 0 |
+
+---
+
+## 3. Items
+
+### 3.1 Weapon System: P226 Pistol
+
+#### `p226`
+
+| Field | Value |
+|-------|-------|
+| `id` | `p226` |
+| `name` | P226 pistol |
+| `description` | A SIG Sauer P226 service pistol. Matte black finish, polymer grip. |
+| `examine_description` | A full-size SIG Sauer P226 in 9mm. The slide is clean, the bore is bright, and the grip panels show light wear from holster draw. The magazine well is empty -- it needs a P226 magazine to function. |
+| `room_description` | A P226 pistol sits on one of the weapon racks. |
+| `room_id` | `armory` |
+| `container_id` | null |
+| `is_container` | 1 |
+| `accepts_items` | `["p226_magazine"]` |
+| `reject_message` | That magazine doesn't fit the P226. |
+| `has_lid` | 0 |
+| `is_open` | 1 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | weapon |
+| `take_message` | You pick up the P226. It has good weight. |
+| `drop_message` | You set the P226 down. |
+
+#### `p226_magazine`
+
+| Field | Value |
+|-------|-------|
+| `id` | `p226_magazine` |
+| `name` | P226 magazine |
+| `description` | A 15-round detachable magazine for the P226. |
+| `examine_description` | A steel-body 15-round magazine for the SIG P226. Double-stack design. The feed lips are clean and the spring has good tension. It's empty -- you'd need 9mm ammo to load it. |
+| `room_description` | A P226 magazine rests on a metal shelf. |
+| `room_id` | `armory` |
+| `container_id` | null |
+| `is_container` | 1 |
+| `accepts_items` | `["9mm_ammo"]` |
+| `reject_message` | That ammo doesn't fit this magazine. |
+| `has_lid` | 0 |
+| `is_open` | 1 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | weapon |
+| `take_message` | You pick up the P226 magazine. |
+| `drop_message` | You set the P226 magazine down. |
+
+#### `9mm_ammo`
+
+| Field | Value |
+|-------|-------|
+| `id` | `9mm_ammo` |
+| `name` | 9mm ammo |
+| `description` | A box of 9mm full metal jacket rounds. |
+| `examine_description` | Standard 9x19mm Parabellum, full metal jacket. Brass casings, copper jackets. The box is full. These fit the P226 magazine. |
+| `room_description` | A box of 9mm ammo sits on the shelf beside the magazine. |
+| `room_id` | `armory` |
+| `container_id` | null |
+| `is_container` | 0 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 0 |
+| `is_open` | 0 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | ammo |
+| `take_message` | You pick up the box of 9mm ammo. |
+| `drop_message` | You set the 9mm ammo down. |
+
+---
+
+### 3.2 Weapon System: AR-15 Rifle
+
+#### `ar15`
+
+| Field | Value |
+|-------|-------|
+| `id` | `ar15` |
+| `name` | AR-15 rifle |
+| `description` | An AR-15 semi-automatic rifle with a black polymer stock. |
+| `examine_description` | A standard AR-15 platform in 5.56 NATO. Flat-top upper receiver, M4 profile barrel, six-position collapsible stock. The bolt carrier group is clean and lubricated. The magazine well is empty -- it needs an AR-15 magazine. |
+| `room_description` | An AR-15 rifle is propped against the weapon rack. |
+| `room_id` | null |
+| `container_id` | `weapons_locker` |
+| `is_container` | 1 |
+| `accepts_items` | `["ar15_magazine"]` |
+| `reject_message` | That magazine doesn't fit the AR-15. |
+| `has_lid` | 0 |
+| `is_open` | 1 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | weapon |
+| `take_message` | You pick up the AR-15. It's heavier than the pistol. |
+| `drop_message` | You set the AR-15 down. |
+
+**Note:** The AR-15 starts inside the `weapons_locker` container. The player must open/search the locker to find it.
+
+#### `ar15_magazine`
+
+| Field | Value |
+|-------|-------|
+| `id` | `ar15_magazine` |
+| `name` | AR-15 magazine |
+| `description` | A 30-round STANAG magazine for the AR-15. |
+| `examine_description` | A 30-round aluminum STANAG magazine. Curved body, anti-tilt follower. Standard NATO spec. It's empty -- you'd need 5.56mm ammo to load it. |
+| `room_description` | An AR-15 magazine lies on a workbench. |
+| `room_id` | `armory` |
+| `container_id` | null |
+| `is_container` | 1 |
+| `accepts_items` | `["556_ammo"]` |
+| `reject_message` | That ammo doesn't fit this magazine. |
+| `has_lid` | 0 |
+| `is_open` | 1 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | weapon |
+| `take_message` | You pick up the AR-15 magazine. |
+| `drop_message` | You set the AR-15 magazine down. |
+
+#### `556_ammo`
+
+| Field | Value |
+|-------|-------|
+| `id` | `556_ammo` |
+| `name` | 5.56mm ammo |
+| `description` | A box of 5.56x45mm NATO rounds. |
+| `examine_description` | Standard 5.56x45mm NATO, 55-grain full metal jacket. Green-tip penetrator. The box is full. These fit the AR-15 magazine. |
+| `room_description` | A box of 5.56mm ammo is stacked on a lower shelf. |
+| `room_id` | `armory` |
+| `container_id` | null |
+| `is_container` | 0 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 0 |
+| `is_open` | 0 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | ammo |
+| `take_message` | You pick up the box of 5.56mm ammo. |
+| `drop_message` | You set the 5.56mm ammo down. |
+
+---
+
+### 3.3 Containers
+
+#### `weapons_locker` (flat container, accepts anything)
+
+| Field | Value |
+|-------|-------|
+| `id` | `weapons_locker` |
+| `name` | weapons locker |
+| `description` | A tall steel weapons locker, the kind you see in every military armory. |
+| `examine_description` | A full-height steel weapons locker with a reinforced door and a heavy padlock. Standard military issue. It can hold just about anything. The padlock looks like it needs a key. |
+| `room_description` | A tall steel weapons locker stands in the corner. |
+| `room_id` | `armory` |
+| `container_id` | null |
+| `is_container` | 1 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 1 |
+| `is_open` | 0 |
+| `is_locked` | 1 |
+| `is_takeable` | 0 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | `locker_key` |
 | `consume_key` | 0 |
-| `locked_message` | "A heavy steel door with an electronic lock. The panel reads ACCESS DENIED -- SECURITY KEY REQUIRED." |
-| `unlock_message` | "You press the vault key against the panel. It beeps twice and the bolts retract with a heavy thunk. Access granted." |
+| `unlock_message` | You turn the key in the padlock. It clicks open and you swing the locker door wide. |
+| `lock_message` | The weapons locker is padlocked shut. You need a key. |
+| `open_message` | You open the weapons locker. |
+| `search_message` | null |
+| `weight` | null |
+| `category` | furniture |
 
-**Tests:** Key lock with consume_key=0 (reusable key). The player keeps the vault key after unlocking.
+**Tests exercised:**
+- Flat container with `accepts_items: null` (accepts anything)
+- Locked container with `key_item_id` (auto-unlock)
+- `has_lid: 1` -- must be opened to search
+- Contains the AR-15 (item starts with `container_id: weapons_locker`)
+- Non-takeable scenery container
 
-### Lock 2: State Lock -- Training Yard to Command Bunker
+#### `locker_key`
 
 | Field | Value |
 |-------|-------|
-| `id` | `bunker_qualification_lock` |
-| `lock_type` | `state` |
-| `target_exit_id` | `yard_to_bunker` |
-| `required_flags` | `["range_qualified", "course_completed"]` |
-| `locked_message` | "The bunker door display reads: QUALIFICATION INCOMPLETE. Requirements: Weapons Qualification [  ], Obstacle Course [  ]. Complete both to gain entry." |
-| `unlock_message` | "The bunker door display turns green: QUALIFICATION COMPLETE. The locks disengage and the heavy door swings open." |
+| `id` | `locker_key` |
+| `name` | locker key |
+| `description` | A small steel key on a ring. |
+| `examine_description` | A standard padlock key. The tag reads "WPN LOCKER -- ARM-01." It fits the weapons locker in the armory. |
+| `room_description` | A small key hangs from a hook on the wall. |
+| `room_id` | `armory` |
+| `container_id` | null |
+| `is_container` | 0 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 0 |
+| `is_open` | 0 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | key |
+| `take_message` | You take the locker key. |
+| `drop_message` | You set the key down. |
 
-**Tests:** State/flag lock requiring multiple flags.
+#### `supply_crate` (locked container, key required)
 
-### Lock 3: Key Lock -- Lobby to Apartment (from zombie game -- included for key consumption test)
+| Field | Value |
+|-------|-------|
+| `id` | `supply_crate` |
+| `name` | supply crate |
+| `description` | A heavy-duty plastic supply crate with a combination lock. |
+| `examine_description` | A Pelican-style hard case with reinforced latches and a small combination lock. A label on the side reads: SUPPLY -- SGT. CHEN. You would need the crate key from Sergeant Chen to open this. |
+| `room_description` | A locked supply crate sits under the desk. |
+| `room_id` | `range_office` |
+| `container_id` | null |
+| `is_container` | 1 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 1 |
+| `is_open` | 0 |
+| `is_locked` | 1 |
+| `is_takeable` | 0 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | `crate_key` |
+| `consume_key` | 0 |
+| `unlock_message` | The key turns and the latches pop open. |
+| `lock_message` | The supply crate is locked. You need the key from Sergeant Chen. |
+| `open_message` | You open the supply crate. |
+| `search_message` | null |
+| `weight` | null |
+| `category` | furniture |
 
-Actually, since this is a new world, let me make Lock 3 a key lock that DOES consume the key, contrasting with Lock 1:
+#### `crate_key`
 
-### Lock 3: Key Lock -- (Implicit via container) Weapons Locker
+| Field | Value |
+|-------|-------|
+| `id` | `crate_key` |
+| `name` | crate key |
+| `description` | A small key with a tag that reads "SUPPLY." |
+| `examine_description` | A small brass key. The tag reads "SUPPLY -- ARM OFFICE." It looks like it fits the supply crate in the range office. |
+| `room_description` | null |
+| `room_id` | null |
+| `container_id` | null |
+| `is_container` | 0 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 0 |
+| `is_open` | 0 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 0 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | key |
+| `take_message` | You take the crate key. |
+| `drop_message` | You set the crate key down. |
 
-This is handled as a container lock, not an exit lock. See section 6 containers.
+**Note:** The `crate_key` starts with `is_visible: 0` and `room_id: null`. It is spawned into the player's inventory by a dialogue option (Sergeant Chen gives it to the player). This tests the `spawn_item` effect through dialogue.
 
-We have 2 exit locks (one key, one state) and container locks below. This covers:
-- [x] Key lock (consume_key=0, reusable)
-- [x] State/flag lock (requires flags)
-- [x] Key lock on container (consume_key=1, consumed) -- see containers below
+#### `ear_protection`
+
+| Field | Value |
+|-------|-------|
+| `id` | `ear_protection` |
+| `name` | ear protection |
+| `description` | A pair of over-ear hearing protectors. |
+| `examine_description` | Standard-issue Peltor over-ear hearing protectors, olive drab. Required on the firing range. These have seen some use but the foam seals are still good. |
+| `room_description` | A pair of ear protection hangs from a peg inside the crate. |
+| `room_id` | null |
+| `container_id` | `supply_crate` |
+| `is_container` | 0 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 0 |
+| `is_open` | 0 |
+| `is_locked` | 0 |
+| `is_takeable` | 1 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | 1 |
+| `category` | equipment |
+| `take_message` | You take the ear protection. Safety first. |
+| `drop_message` | You set the ear protection down. |
+
+**Note:** The ear protection starts inside the locked supply crate. It is an optional bonus item -- not required for the critical path, but obtaining it from Chen via dialogue and the crate exercises the locked-container-with-key flow.
 
 ---
 
-## 6. Items (28 items)
+### 3.4 Range Items (Non-Takeable Scenery)
 
-### 6.1 Regular Items
+#### `pistol_target`
 
-| ID | Name | Category | Room/Container | Takeable | Visible | Notes |
-|----|------|----------|----------------|----------|---------|-------|
-| `clipboard` | clipboard | document | ready_room | yes | yes | Has read_description. Tests "read" verb. Has take_message. |
-| `dog_tags` | dog tags | key | footlocker (container) | yes | yes | Inside a closed container. No take_message (tests fallback "Taken."). |
-| `flashlight` | flashlight | tool | ready_room | yes | yes | Scenery that is actually takeable. Has room_description (dynamic). |
-| `wall_map` | wall map | scenery | briefing_room | **no** | yes | Scenery item (is_takeable=0). Tests "You can't take that." Has examine_description. |
-| `tactical_manual` | tactical manual | document | observation_deck | yes | yes | Has both examine_description and read_description. Tests both verbs. |
-| `vault_key` | vault key | key | briefing NPC dialogue reward | yes | no | Initially invisible. Spawned by dialogue. Tests spawn_item. |
-| `medkit` | medkit | consumable | supply_closet | yes | yes | Consumable (is_consumed_on_use=1). Tests change_health effect. |
-| `9mm_ammo` | 9mm ammo | ammo | armory_shelves (container) | yes | yes | Gun system component. Inside always-open container. |
-| `pistol_magazine` | pistol magazine | weapon | weapons_bench (container) | yes | yes | Gun system component. Inside closed container. |
-| `m9_pistol` | M9 pistol | weapon | weapons_locker (locked container) | yes | yes | Gun system component. Inside locked container. damage_bonus=12 for future combat. |
-| `locker_key` | locker key | key | bunk_room (loose) | yes | yes | Unlocks weapons_locker container. consume_key=1 (consumed on use). |
-| `training_orders` | training orders | document | armory_entrance | yes | yes | Has read_description. Provides hint about qualification requirements. |
-| `rusty_lever` | rusty lever | scenery | bunk_room | **no** | yes | Scenery. "pull lever" reveals hidden exit. Tests custom verb. |
-| `shooting_target` | shooting target | scenery | firing_range | **no** | yes | Scenery. Target for "shoot" command. Has room_description. |
-| `wall_switch` | wall switch | scenery | obstacle_course | **no** | yes | Scenery. "flip switch" is part of obstacle puzzle. |
-| `climbing_rope` | climbing rope | scenery | obstacle_course | **no** | yes | Scenery. "pull rope" or "climb rope" is part of obstacle puzzle. |
-| `completion_token` | completion token | key | command_bunker | yes | yes | Taking this and using it triggers win condition. |
-| `fuse_box` | fuse box | scenery | underground_tunnel | **no** | yes | Scenery. "use flashlight on fuse box" tests use X on Y (DSL). |
-| `emergency_rations` | emergency rations | consumable | secure_crate (container) | yes | yes | Second consumable. Tests change_health from container. |
-| `punch_card` | punch card | key | NPC gives via dialogue (spawned) | yes | no | Initially invisible. Used to solve obstacle course puzzle. |
+| Field | Value |
+|-------|-------|
+| `id` | `pistol_target` |
+| `name` | pistol target |
+| `description` | A paper silhouette target hanging from a motorized track. |
+| `examine_description` | A standard B-27 paper silhouette target, human-shaped, hanging at 25 yards. The scoring zones are clearly marked. It's unmarked -- no one has qualified yet today. |
+| `room_description` | A paper silhouette target hangs in the left lane. |
+| `room_id` | `firing_range` |
+| `container_id` | null |
+| `is_container` | 0 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 0 |
+| `is_open` | 0 |
+| `is_locked` | 0 |
+| `is_takeable` | 0 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | null |
+| `category` | scenery |
 
-### 6.2 Container Items (8 containers)
+#### `rifle_target`
 
-| ID | Name | Room | has_lid | is_open | is_locked | key_item_id | consume_key | Notes |
-|----|------|------|---------|---------|-----------|-------------|-------------|-------|
-| `footlocker` | footlocker | bunk_room | 1 | 0 | 0 | -- | -- | Closed container, unlocked. Tests "open", "search". Contains dog_tags. |
-| `armory_shelves` | armory shelves | weapons_vault | 0 | -- | 0 | -- | -- | Always-open container (has_lid=0). Tests lid-less container. Contains 9mm_ammo. |
-| `weapons_bench` | weapons bench | weapons_vault | 1 | 0 | 0 | -- | -- | Closed container. Contains pistol_magazine. |
-| `weapons_locker` | weapons locker | weapons_vault | 1 | 0 | **1** | `locker_key` | **1** | Locked container with key_item_id (auto-unlock). consume_key=1. Contains m9_pistol. |
-| `secure_crate` | secure crate | secure_storage | 1 | 0 | **1** | -- | -- | Locked container WITHOUT key_item_id. Requires DSL command to unlock ("use vault key on crate" or custom). Tests DSL container unlock. |
-| `filing_cabinet` | filing cabinet | briefing_room | 1 | 0 | 0 | -- | -- | Closed container. Tests "put X in Y". Initially empty -- player puts items in it. |
-| `ammo_can` | ammo can | supply_closet | 0 | -- | 0 | -- | -- | Always-open container. Tests second lid-less container. Contains nothing (empty on search). |
-| `equipment_rack` | equipment rack | training_yard | 0 | -- | 0 | -- | -- | Always-open container. Contains punch_card after NPC dialogue spawns it there. |
+| Field | Value |
+|-------|-------|
+| `id` | `rifle_target` |
+| `name` | rifle target |
+| `description` | A steel plate target mounted on a spring stand. |
+| `examine_description` | An AR500 steel plate, 12 inches in diameter, mounted on a heavy spring stand at 100 yards. A clean hit would make it ring and swing. It's untouched. |
+| `room_description` | A steel plate target stands at the far end of the right lane. |
+| `room_id` | `firing_range` |
+| `container_id` | null |
+| `is_container` | 0 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 0 |
+| `is_open` | 0 |
+| `is_locked` | 0 |
+| `is_takeable` | 0 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | null |
+| `category` | scenery |
 
-### 6.3 Item Details
+#### `range_safety_poster`
 
-**clipboard (read_description + take_message test)**
-
-```
-name: "clipboard"
-description: "A metal clipboard hanging from a hook by the door."
-examine_description: "A battered aluminum clipboard. The paper clipped to it is covered in typed text."
-read_description: "PROVING GROUNDS QUALIFICATION PROTOCOL\n\nAll personnel must complete the following before exit clearance:\n1. Weapons Qualification -- hit the target at the firing range\n2. Obstacle Course Completion -- finish the timed course\n\nReport to Sergeant Chen in the Briefing Room for your key assignment.\n\n-- Command"
-room_description: "A clipboard hangs from a hook by the door."
-take_message: "You unclip the clipboard from the hook. Could be useful for reference."
-category: "document"
-```
-
-**shooting_target (room_description test)**
-
-```
-name: "shooting target"
-description: "A paper silhouette target hanging from a motorized track."
-examine_description: "A standard qualification target -- human silhouette on heavy paper. The center ring is marked. It hangs about 25 meters downrange."
-room_description: "A paper silhouette target hangs at the far end of the range."
-is_takeable: 0
-```
-
-After the target is destroyed (flag set), the room_description should ideally change. Since the engine does not support conditional room_descriptions, the "shoot target" command's print message provides the narrative update.
+| Field | Value |
+|-------|-------|
+| `id` | `range_safety_poster` |
+| `name` | safety poster |
+| `description` | A faded safety poster on the wall. |
+| `examine_description` | The poster lists the four rules of firearm safety in large block letters: 1. Treat every weapon as if it is loaded. 2. Never point at anything you do not intend to destroy. 3. Keep your finger off the trigger until ready to fire. 4. Know your target and what is beyond it. Someone has written "ALSO: WEAR YOUR EARS" in marker at the bottom. |
+| `read_description` | FOUR RULES OF FIREARM SAFETY. 1. Treat every weapon as if it is loaded. 2. Never point at anything you do not intend to destroy. 3. Keep your finger off the trigger until ready to fire. 4. Know your target and what is beyond it. |
+| `room_description` | A faded safety poster is tacked to the concrete divider. |
+| `room_id` | `firing_range` |
+| `container_id` | null |
+| `is_container` | 0 |
+| `accepts_items` | null |
+| `reject_message` | null |
+| `has_lid` | 0 |
+| `is_open` | 0 |
+| `is_locked` | 0 |
+| `is_takeable` | 0 |
+| `is_visible` | 1 |
+| `is_consumed_on_use` | 0 |
+| `key_item_id` | null |
+| `weight` | null |
+| `category` | scenery |
 
 ---
 
-## 7. NPCs (3 NPCs)
+### 3.5 Item Summary Table
 
-### NPC 1: Sergeant Chen (Friendly, Dialogue Tree)
+| ID | Name | Location | is_container | accepts_items | has_lid | is_takeable | category |
+|----|------|----------|-------------|---------------|---------|-------------|----------|
+| `p226` | P226 pistol | armory (room) | 1 | `["p226_magazine"]` | 0 | 1 | weapon |
+| `p226_magazine` | P226 magazine | armory (room) | 1 | `["9mm_ammo"]` | 0 | 1 | weapon |
+| `9mm_ammo` | 9mm ammo | armory (room) | 0 | null | 0 | 1 | ammo |
+| `ar15` | AR-15 rifle | weapons_locker (container) | 1 | `["ar15_magazine"]` | 0 | 1 | weapon |
+| `ar15_magazine` | AR-15 magazine | armory (room) | 1 | `["556_ammo"]` | 0 | 1 | weapon |
+| `556_ammo` | 5.56mm ammo | armory (room) | 0 | null | 0 | 1 | ammo |
+| `weapons_locker` | weapons locker | armory (room) | 1 | null | 1 | 0 | furniture |
+| `locker_key` | locker key | armory (room) | 0 | null | 0 | 1 | key |
+| `supply_crate` | supply crate | range_office (room) | 1 | null | 1 | 0 | furniture |
+| `crate_key` | crate key | not placed (spawned) | 0 | null | 0 | 1 | key |
+| `ear_protection` | ear protection | supply_crate (container) | 0 | null | 0 | 1 | equipment |
+| `pistol_target` | pistol target | firing_range (room) | 0 | null | 0 | 0 | scenery |
+| `rifle_target` | rifle target | firing_range (room) | 0 | null | 0 | 0 | scenery |
+| `range_safety_poster` | safety poster | firing_range (room) | 0 | null | 0 | 0 | scenery |
+
+---
+
+## 4. NPCs
+
+### Sergeant Chen
 
 | Field | Value |
 |-------|-------|
 | `id` | `sgt_chen` |
 | `name` | Sergeant Chen |
-| `description` | "A stocky woman in fatigues, arms crossed. Her expression says she's seen everything and is not impressed by any of it." |
-| `examine_description` | "Sergeant Chen. Three stripes on her sleeve, a scar across her left eyebrow, and the calm patience of someone who trains people to not die. A vault key hangs from her belt." |
-| `room_id` | `briefing_room` |
+| `description` | A compact woman in fatigues leans against the desk, arms crossed. Her nametape reads CHEN. |
+| `examine_description` | Sergeant Chen is mid-thirties, wiry, with close-cropped hair and the kind of economy of movement that comes from years of training. Her sleeves are rolled to the elbow and there's a pen behind her ear. Qualification records are spread across the desk in front of her. She looks like she has been waiting for you. |
+| `room_id` | `range_office` |
 | `is_alive` | 1 |
 | `is_blocking` | 0 |
-| `default_dialogue` | "Chen looks at you. 'You here for qualification? Read the clipboard in the Ready Room. Then come talk to me.'" |
-| `hp` | NULL |
-| `damage` | NULL |
-
-**Dialogue tree:**
-
-```
-Root node (sgt_chen_root, is_root=1):
-  content: "Chen looks up from her desk. 'Qualification candidate. About time. What do you need?'"
-
-  Option 1: "I need access to the weapons vault." (always visible)
-    -> Node: sgt_chen_vault_key
-    content: "She unclips a key from her belt and tosses it to you. 'Vault key. Don't lose it. The weapons vault is through the armory -- take the tunnel south from the bunk room.'"
-    set_flags: ["talked_to_chen"]
-    effects: spawn vault_key to inventory
-
-  Option 2: "What is this place?" (always visible, excluded after first visit)
-    -> Node: sgt_chen_lore
-    content: "'The Proving Grounds. Underground qualification facility. You want out, you qualify. Weapons range and obstacle course. No shortcuts, no exceptions.'"
-    excluded_flags: ["asked_about_place"]
-    node set_flags: ["asked_about_place"]
-
-  Option 3: "I have the punch card." (requires punch_card in inventory)
-    -> Node: sgt_chen_punch_card
-    content: "'Good. That punch card validates your obstacle course completion. Feed it into the scanner at the command bunker -- that's the exit.'"
-    required_items: ["punch_card"]
-    set_flags: ["got_punch_card_hint"]
-
-  Option 4: "[Leave]" (always visible)
-    -> NULL (terminal)
-```
-
-**Tests:**
-- [x] Dialogue tree with multiple options
-- [x] excluded_flags (option disappears after selection)
-- [x] required_items (inventory-gated option -- [NEW] tag)
-- [x] set_flags from dialogue nodes and options
-- [x] NPC with default_dialogue (shown before dialogue tree is entered)
-
-**Note on vault_key spawn:** The dialogue system does not natively spawn items. The vault_key spawn is handled by a flag + command combination: the dialogue sets flag `talked_to_chen`, and a DSL command with precondition `has_flag: talked_to_chen` and `not_flag: vault_key_given` fires as a zero-priority background command on the next tick.
-
-Actually, the simpler approach: the vault_key is pre-placed in the briefing_room but with `is_visible=0`. A DSL command triggered by the `talked_to_chen` flag spawns it. But the engine does not have "automatic" commands -- commands only fire on player input.
-
-**Simplest approach that works with the engine:** Place the vault_key in the briefing_room with `is_visible=1` but give it a room_description that narratively implies Chen gave it to you. The dialogue flag `talked_to_chen` is not mechanically needed for the key -- the key is just sitting in the room. But this feels wrong narratively.
-
-**Best approach:** Use the `spawn_item` effect on a DSL command. When Chen's dialogue sets the `talked_to_chen` flag, the player needs to do SOMETHING (any action) to trigger the key appearing. We make it a one-shot command with a very broad pattern:
-
-Actually, the cleanest way: The dialogue option's `set_flags` sets `talked_to_chen`. Then a DSL command with verb "take" and pattern "take {target}" with preconditions `has_flag: talked_to_chen` and `not_flag: vault_key_given` and a `spawn_item` effect runs when the player tries to "take vault key" or similar. But this is fragile.
-
-**Cleanest working approach:** The vault_key starts in the briefing_room but `is_visible=0`. A one-shot DSL command with pattern "take vault key" (no slots), precondition `has_flag: talked_to_chen`, effects: `spawn_item(vault_key, _current)` + `set_flag(vault_key_given)` + `print("You pick up the key Chen tossed you.")`. The player must explicitly "take vault key" after the dialogue. If they haven't talked to Chen, the precondition fails.
-
-Wait, `spawn_item` makes the item visible and places it. Then the player still needs to "take" it. That is two steps. Better: use `move_item` to move it directly to inventory.
-
-```json
-{
-  "id": "take_vault_key_from_chen",
-  "verb": "take",
-  "pattern": "take {target}",
-  "preconditions": [
-    {"type": "has_flag", "flag": "talked_to_chen"},
-    {"type": "not_flag", "flag": "vault_key_given"},
-    {"type": "in_room", "room": "briefing_room"}
-  ],
-  "effects": [
-    {"type": "spawn_item", "item": "vault_key", "location": "_inventory"},
-    {"type": "set_flag", "flag": "vault_key_given"},
-    {"type": "print", "message": "You catch the key Chen tossed. It's heavier than it looks -- solid steel with a magnetic strip."}
-  ],
-  "success_message": "",
-  "failure_message": "You don't see that here.",
-  "priority": 10,
-  "one_shot": true,
-  "done_message": "You already have the vault key."
-}
-```
-
-This works cleanly. The `spawn_item` to `_inventory` creates the key directly in the player's inventory. One-shot prevents duplication.
-
-### NPC 2: Training Dummy (Hostile-ready, currently passive)
-
-| Field | Value |
-|-------|-------|
-| `id` | `training_dummy` |
-| `name` | Training Dummy |
-| `description` | "A heavy punching bag shaped vaguely like a person, hanging from a steel frame. Duct tape holds its 'arms' on." |
-| `examine_description` | "A battered training dummy. Stuffed with sand. It has taken a lot of punishment and is barely holding together. Someone has drawn an angry face on it in marker." |
-| `room_id` | `training_yard` |
-| `is_alive` | 1 |
-| `is_blocking` | 0 |
-| `default_dialogue` | "It's a training dummy. It doesn't talk." |
-| `hp` | 30 |
-| `damage` | 5 |
-
-**Tests:**
-- [x] NPC with hp/damage set (combatant-ready for future combat system)
-- [x] NPC with default_dialogue only (no dialogue tree)
-- [x] Non-blocking NPC
-
-### NPC 3: Quartermaster Voss (Friendly, default dialogue only)
-
-| Field | Value |
-|-------|-------|
-| `id` | `qm_voss` |
-| `name` | Quartermaster Voss |
-| `description` | "An older man in a grease-stained uniform, cataloguing items on a tablet behind the counter." |
-| `examine_description` | "Voss moves slowly and deliberately. His uniform has more pockets than seem possible, each one bulging with tools, pens, and unidentifiable objects. He barely looks up from his work." |
-| `room_id` | `armory_entrance` |
-| `is_alive` | 1 |
-| `is_blocking` | 0 |
-| `default_dialogue` | "Voss glances up. 'Everything you need is in the vault. Shelves for ammo, bench for mags, locker for the sidearm. You got a locker key? No? Check the bunks.' He goes back to his tablet." |
-| `hp` | NULL |
-| `damage` | NULL |
-
-**Tests:**
-- [x] NPC with default_dialogue only (no dialogue tree), different from training dummy in that this one has useful information
+| `blocked_exit_id` | null |
+| `unblock_flag` | null |
+| `default_dialogue` | Chen glances up. "You need something, recruit? Talk to me." |
+| `hp` | null |
+| `damage` | null |
 
 ---
 
-## 8. Puzzles (3 puzzles)
+### Dialogue Tree
 
-### Puzzle 1: Weapons Qualification (Easy, difficulty 1)
+The dialogue tree uses the `dialogue_nodes` / `dialogue_options` schema (branching tree, not topic-based).
+
+#### Node: `chen_root` (root node)
+
+| Field | Value |
+|-------|-------|
+| `id` | `chen_root` |
+| `npc_id` | `sgt_chen` |
+| `content` | Chen looks you over. "You're the new recruit for qualification. Here's how it works: assemble your weapons in the armory, bring them out to the range, and put rounds on target. Pistol and rifle. Both must qualify. Questions?" |
+| `set_flags` | `["talked_to_chen"]` |
+| `is_root` | 1 |
+
+**Options:**
+
+| ID | text | next_node_id | required_flags | excluded_flags | required_items | set_flags | sort_order |
+|----|------|-------------|----------------|----------------|----------------|-----------|------------|
+| `chen_opt_weapons` | "Where are the weapons?" | `chen_weapons` | null | null | null | null | 1 |
+| `chen_opt_supply` | "I need the supply crate key." | `chen_supply` | null | `["has_crate_key"]` | null | null | 2 |
+| `chen_opt_qualified_p226` | "I've qualified with the P226." | `chen_p226_done` | `["p226_qualified"]` | null | null | null | 3 |
+| `chen_opt_qualified_ar15` | "I've qualified with the AR-15." | `chen_ar15_done` | `["ar15_qualified"]` | null | null | null | 4 |
+| `chen_opt_done` | "Nothing. I'm good." | null | null | null | null | null | 5 |
+
+---
+
+#### Node: `chen_weapons`
+
+| Field | Value |
+|-------|-------|
+| `id` | `chen_weapons` |
+| `npc_id` | `sgt_chen` |
+| `content` | "Everything you need is in the armory, west of the range. Pistol and mags are on the racks and shelves. The rifle is in the weapons locker -- key should be hanging on the wall. Ammo is on the shelves too. Assemble each weapon: load the ammo into the magazine, then load the magazine into the gun. Do not mix calibers." |
+| `set_flags` | null |
+| `is_root` | 0 |
+
+**Options:**
+
+| ID | text | next_node_id | required_flags | excluded_flags | required_items | set_flags | sort_order |
+|----|------|-------------|----------------|----------------|----------------|-----------|------------|
+| `chen_weapons_back` | "Got it. What else?" | `chen_root` | null | null | null | null | 1 |
+
+---
+
+#### Node: `chen_supply`
+
+| Field | Value |
+|-------|-------|
+| `id` | `chen_supply` |
+| `npc_id` | `sgt_chen` |
+| `content` | Chen pulls a small key from her pocket and tosses it to you. "Here. There's ear protection in the crate. Not required, but your hearing will thank you." |
+| `set_flags` | `["has_crate_key"]` |
+| `is_root` | 0 |
+
+**Note:** When this node is visited, the engine sets the `has_crate_key` flag. A companion DSL command triggers on this flag to spawn the `crate_key` into inventory (see section 6, command `spawn_crate_key`).
+
+**Options:**
+
+| ID | text | next_node_id | required_flags | excluded_flags | required_items | set_flags | sort_order |
+|----|------|-------------|----------------|----------------|----------------|-----------|------------|
+| `chen_supply_back` | "Thanks. Anything else?" | `chen_root` | null | null | null | null | 1 |
+
+---
+
+#### Node: `chen_p226_done`
+
+| Field | Value |
+|-------|-------|
+| `id` | `chen_p226_done` |
+| `npc_id` | `sgt_chen` |
+| `content` | Chen checks a box on her clipboard. "P226 qual, confirmed. Good shooting. Now do the rifle." |
+| `set_flags` | null |
+| `is_root` | 0 |
+
+**Options:**
+
+| ID | text | next_node_id | required_flags | excluded_flags | required_items | set_flags | sort_order |
+|----|------|-------------|----------------|----------------|----------------|-----------|------------|
+| `chen_p226_back` | "Will do." | null | null | null | null | null | 1 |
+
+---
+
+#### Node: `chen_ar15_done`
+
+| Field | Value |
+|-------|-------|
+| `id` | `chen_ar15_done` |
+| `npc_id` | `sgt_chen` |
+| `content` | Chen checks another box. "AR-15 qual, confirmed. Nice work, recruit. If both quals are done, the exit should be unlocked. Head south from the range." |
+| `set_flags` | null |
+| `is_root` | 0 |
+
+**Options:**
+
+| ID | text | next_node_id | required_flags | excluded_flags | required_items | set_flags | sort_order |
+|----|------|-------------|----------------|----------------|----------------|-----------|------------|
+| `chen_ar15_back` | "On my way." | null | null | null | null | null | 1 |
+
+---
+
+### Dialogue Test Coverage
+
+| Feature Tested | Where |
+|---|---|
+| Root node with multiple options | `chen_root` |
+| Flag-gated option (appears after qualification) | `chen_opt_qualified_p226`, `chen_opt_qualified_ar15` |
+| Excluded-flag option (disappears after used) | `chen_opt_supply` (hidden after `has_crate_key` is set) |
+| Node sets flags | `chen_root` sets `talked_to_chen`, `chen_supply` sets `has_crate_key` |
+| Terminal option (null next_node_id) | `chen_opt_done`, `chen_p226_back`, `chen_ar15_back` |
+| Non-terminal option (loops back) | `chen_weapons_back`, `chen_supply_back` |
+| Item spawn triggered by dialogue flag | `crate_key` spawned when `has_crate_key` is set |
+
+---
+
+## 5. Quests
+
+### Quest: Weapons Qualification
 
 | Field | Value |
 |-------|-------|
 | `id` | `weapons_qualification` |
 | `name` | Weapons Qualification |
-| `description` | "Hit the target at the firing range with a loaded weapon." |
-| `room_id` | `firing_range` |
-| `is_solved` | 0 |
-| `solution_steps` | `["Find ammo, magazine, and pistol", "Load magazine with ammo", "Load pistol with magazine", "Shoot the target"]` |
-| `hint_text` | `["The ammo is on the armory shelves.", "The magazine is on the weapons bench.", "The pistol is in the weapons locker -- you need the locker key from the bunk room."]` |
-| `difficulty` | 1 |
-| `score_value` | 15 |
-| `is_optional` | 0 |
-
-**Tests:**
-- [x] Easy puzzle (difficulty 1)
-- [x] Puzzle solved by DSL command (`shoot_target` command calls `solve_puzzle`)
-- [x] Puzzle with score_value
-
-### Puzzle 2: Obstacle Course (Medium, difficulty 2)
-
-| Field | Value |
-|-------|-------|
-| `id` | `obstacle_course_challenge` |
-| `name` | Obstacle Course Challenge |
-| `description` | "Complete the obstacle course: activate the switch, then climb the rope." |
-| `room_id` | `obstacle_course` |
-| `is_solved` | 0 |
-| `solution_steps` | `["Flip the wall switch to start the timer", "Pull the climbing rope to complete the course"]` |
-| `hint_text` | `["There's a switch on the wall that starts the timer.", "The rope is your final obstacle."]` |
-| `difficulty` | 2 |
-| `score_value` | 20 |
-| `is_optional` | 0 |
-
-**Tests:**
-- [x] Medium puzzle (difficulty 2)
-- [x] Multi-step puzzle (two commands required in sequence)
-
-### Puzzle 3: Fuse Box Repair (Hard, difficulty 3, optional)
-
-| Field | Value |
-|-------|-------|
-| `id` | `fuse_box_repair` |
-| `name` | Fuse Box Repair |
-| `description` | "Repair the emergency fuse box in the underground tunnel." |
-| `room_id` | `underground_tunnel` |
-| `is_solved` | 0 |
-| `solution_steps` | `["Find the flashlight in the Ready Room", "Take it to the underground tunnel", "Use the flashlight on the fuse box"]` |
-| `hint_text` | `["You need a light source.", "The flashlight in the Ready Room would work.", "Try: use flashlight on fuse box"]` |
-| `difficulty` | 3 |
-| `score_value` | 15 |
-| `is_optional` | 1 |
-
-**Tests:**
-- [x] Hard puzzle (difficulty 3)
-- [x] Optional puzzle (is_optional=1)
-- [x] Puzzle solved by "use X on Y" DSL command
-
----
-
-## 9. Quests (3 quests)
-
-### Quest 1: Main Quest -- Prove Your Worth
-
-| Field | Value |
-|-------|-------|
-| `id` | `main_qualification` |
-| `name` | Prove Your Worth |
-| `description` | "Complete all qualification tests and exit through the command bunker." |
-| `quest_type` | `main` |
-| `status` | `undiscovered` |
-| `discovery_flag` | NULL |
-| `completion_flag` | `main_quest_complete` |
-| `score_value` | 25 |
-| `sort_order` | 0 |
-
-**Objectives:**
-
-| ID | Description | completion_flag | order | optional | bonus_score |
-|----|-------------|-----------------|-------|----------|-------------|
-| `obj_weapons_qual` | Pass the weapons qualification | `range_qualified` | 1 | 0 | 0 |
-| `obj_obstacle_course` | Complete the obstacle course | `course_completed` | 2 | 0 | 0 |
-| `obj_exit_bunker` | Exit through the command bunker | `proving_grounds_complete` | 3 | 0 | 0 |
-| `obj_fuse_repair` | Repair the tunnel fuse box | `fuse_repaired` | 4 | **1** | 10 |
-
-**Tests:**
-- [x] Main quest with multiple required objectives
-- [x] Main quest auto-discovered (discovery_flag=NULL)
-- [x] Quest with optional bonus objective (bonus_score)
-
-### Quest 2: Side Quest -- Chen's Request
-
-| Field | Value |
-|-------|-------|
-| `id` | `side_chens_request` |
-| `name` | Chen's Request |
-| `description` | "Sergeant Chen asked you to find and return the training orders document." |
-| `quest_type` | `side` |
-| `status` | `undiscovered` |
-| `discovery_flag` | `chen_gave_side_quest` |
-| `completion_flag` | `side_chen_complete` |
+| `description` | Assemble both weapon systems, qualify at the firing range with each, and exit the proving grounds. |
+| `quest_type` | main |
+| `status` | `active` |
+| `discovery_flag` | null |
+| `completion_flag` | `qualification_complete` |
 | `score_value` | 10 |
 | `sort_order` | 1 |
 
 **Objectives:**
 
-| ID | Description | completion_flag | order | optional | bonus_score |
-|----|-------------|-----------------|-------|----------|-------------|
-| `obj_find_orders` | Find the training orders | `found_training_orders` | 1 | 0 | 0 |
-| `obj_return_orders` | Return the orders to the Briefing Room | `returned_training_orders` | 2 | 0 | 0 |
+| ID | quest_id | description | completion_flag | order_index | is_optional | bonus_score |
+|----|----------|-------------|-----------------|-------------|-------------|-------------|
+| `obj_assemble_p226` | `weapons_qualification` | Assemble the P226 pistol (load magazine, load gun). | `p226_assembled` | 1 | 0 | 0 |
+| `obj_qualify_p226` | `weapons_qualification` | Qualify with the P226 at the firing range. | `p226_qualified` | 2 | 0 | 0 |
+| `obj_assemble_ar15` | `weapons_qualification` | Assemble the AR-15 rifle (load magazine, load gun). | `ar15_assembled` | 3 | 0 | 0 |
+| `obj_qualify_ar15` | `weapons_qualification` | Qualify with the AR-15 at the firing range. | `ar15_qualified` | 4 | 0 | 0 |
+| `obj_ear_protection` | `weapons_qualification` | Obtain ear protection from Sergeant Chen's supply crate. | `has_ear_protection` | 5 | 1 | 5 |
 
-**Discovery mechanism:** The `chen_gave_side_quest` flag is set by a dialogue option in Sgt. Chen's tree (added as a fifth option):
+**Objective flag sources:**
 
-```
-Option 5: "Need me to do anything else?" (visible after talked_to_chen, excluded after chen_gave_side_quest)
-  -> Node: sgt_chen_side_quest
-  content: "'Actually, yeah. There's a set of training orders that got left in the armory entrance.
-  Bring them back here. I need them for the next batch of candidates.'"
-  set_flags: ["chen_gave_side_quest"]
-```
-
-**Tests:**
-- [x] Side quest discovered via flag (discover_quest mechanism)
-- [x] Side quest with multiple objectives
-
-### Quest 3: Side Quest -- Thorough Sweep
-
-| Field | Value |
-|-------|-------|
-| `id` | `side_thorough_sweep` |
-| `name` | Thorough Sweep |
-| `description` | "Search every container in the armory for useful supplies." |
-| `quest_type` | `side` |
-| `status` | `undiscovered` |
-| `discovery_flag` | `found_training_orders` |
-| `completion_flag` | `side_sweep_complete` |
-| `score_value` | 5 |
-| `sort_order` | 2 |
-
-**Objectives:**
-
-| ID | Description | completion_flag | order | optional | bonus_score |
-|----|-------------|-----------------|-------|----------|-------------|
-| `obj_search_shelves` | Search the armory shelves | `searched_shelves` | 1 | 0 | 0 |
-| `obj_search_bench` | Search the weapons bench | `searched_bench` | 2 | 0 | 0 |
-| `obj_search_locker` | Open the weapons locker | `opened_locker` | 3 | 0 | 0 |
-| `obj_find_rations` | Find the emergency rations | `found_rations` | 4 | **1** | 5 |
-
-**Tests:**
-- [x] Side quest with optional bonus objective
-- [x] Side quest discovered by a flag set from completing another quest's objective (chained discovery)
+| Flag | Set By |
+|------|--------|
+| `p226_assembled` | `load_p226` command (when magazine inserted into gun) |
+| `p226_qualified` | `shoot_pistol_target` command |
+| `ar15_assembled` | `load_ar15` command (when magazine inserted into gun) |
+| `ar15_qualified` | `shoot_rifle_target` command |
+| `has_ear_protection` | `take_ear_protection` DSL command |
+| `qualification_complete` | Set by the state lock system when both `p226_qualified` AND `ar15_qualified` are true, which unlocks the exit |
 
 ---
 
-## 10. DSL Commands (18 commands)
+## 6. DSL Commands
 
-### 10.1 Gun System Commands (6 commands)
-
-Already detailed in Section 2.4. Summary:
-
-| ID | Verb | Pattern | Key Effect |
-|----|------|---------|------------|
-| `load_magazine` | load | load {target} | set_flag: magazine_loaded |
-| `put_ammo_in_magazine` | put | put {item} in {target} | set_flag: magazine_loaded |
-| `load_gun` | load | load {target} | set_flag: gun_loaded |
-| `put_magazine_in_gun` | put | put {item} in {target} | set_flag: gun_loaded |
-| `shoot_target` | shoot | shoot {target} | solve_puzzle, add_score, set_flag |
-| `take_vault_key_from_chen` | take | take {target} | spawn_item to inventory |
-
-### 10.2 Hidden Exit Reveal
+### 6.1 Load P226 Magazine (ammo into magazine)
 
 ```json
 {
-  "id": "pull_lever_bunk",
-  "verb": "pull",
-  "pattern": "pull {target}",
+  "id": "load_p226_magazine",
+  "verb": "load",
+  "pattern": "load {target}",
   "preconditions": [
-    {"type": "in_room", "room": "bunk_room"},
-    {"type": "not_flag", "flag": "tunnel_revealed"}
+    {"type": "has_item", "item": "p226_magazine"},
+    {"type": "has_item", "item": "9mm_ammo"},
+    {"type": "not_item_in_container", "item": "9mm_ammo", "container": "p226_magazine"}
   ],
   "effects": [
-    {"type": "reveal_exit", "exit": "bunk_to_tunnel"},
-    {"type": "set_flag", "flag": "tunnel_revealed"},
-    {"type": "print", "message": "You wrench the rusty lever down. Metal grinds against metal. Behind the last bunk, a section of wall slides aside, revealing a narrow passage leading south into darkness."}
+    {"type": "move_item_to_container", "item": "9mm_ammo", "container": "p226_magazine"},
+    {"type": "print", "message": "You press the 9mm rounds into the P226 magazine one by one. The spring tension builds with each round until the magazine is full."}
   ],
   "success_message": "",
-  "failure_message": "",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "The lever is already pulled. The passage south is open."
+  "failure_message": "You need the P226 magazine and 9mm ammo to load it.",
+  "priority": 10,
+  "one_shot": 0,
+  "done_message": "",
+  "context_room_ids": null
 }
 ```
 
-**Tests:**
-- [x] Custom verb (pull)
-- [x] reveal_exit effect
-- [x] set_flag effect
-- [x] one_shot with done_message
-- [x] Command that reveals hidden exit
+**Why `one_shot: 0`:** The `not_item_in_container` precondition naturally prevents double-loading. If the ammo is already in the magazine, the precondition fails. This is more robust than one-shot because the player can unload and reload.
 
-### 10.3 Obstacle Course Commands (2 commands, multi-step puzzle)
+---
 
-**Step 1: Flip the switch**
+### 6.2 Load AR-15 Magazine (ammo into magazine)
 
 ```json
 {
-  "id": "flip_switch_obstacle",
-  "verb": "flip",
-  "pattern": "flip {target}",
+  "id": "load_ar15_magazine",
+  "verb": "load",
+  "pattern": "load {target}",
   "preconditions": [
-    {"type": "in_room", "room": "obstacle_course"},
-    {"type": "not_flag", "flag": "timer_started"}
+    {"type": "has_item", "item": "ar15_magazine"},
+    {"type": "has_item", "item": "556_ammo"},
+    {"type": "not_item_in_container", "item": "556_ammo", "container": "ar15_magazine"}
   ],
   "effects": [
-    {"type": "set_flag", "flag": "timer_started"},
-    {"type": "print", "message": "You flip the wall switch. The timer display flashes to life: 03:00... 02:59... The course is active. A buzzer sounds and the rope drops from the ceiling."}
+    {"type": "move_item_to_container", "item": "556_ammo", "container": "ar15_magazine"},
+    {"type": "print", "message": "You push the 5.56mm rounds into the AR-15 magazine. The follower clicks down with each round. Full."}
   ],
   "success_message": "",
-  "failure_message": "",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "The timer is already running."
+  "failure_message": "You need the AR-15 magazine and 5.56mm ammo to load it.",
+  "priority": 10,
+  "one_shot": 0,
+  "done_message": "",
+  "context_room_ids": null
 }
 ```
 
-**Step 2: Climb/pull the rope**
+---
+
+### 6.3 Load P226 (magazine into gun)
 
 ```json
 {
-  "id": "climb_rope_obstacle",
-  "verb": "pull",
-  "pattern": "pull {target}",
+  "id": "load_p226",
+  "verb": "load",
+  "pattern": "load {target}",
   "preconditions": [
-    {"type": "in_room", "room": "obstacle_course"},
-    {"type": "has_flag", "flag": "timer_started"},
-    {"type": "not_flag", "flag": "course_completed"}
+    {"type": "has_item", "item": "p226"},
+    {"type": "has_item", "item": "p226_magazine"},
+    {"type": "item_in_container", "item": "9mm_ammo", "container": "p226_magazine"},
+    {"type": "not_item_in_container", "item": "p226_magazine", "container": "p226"}
   ],
   "effects": [
-    {"type": "set_flag", "flag": "course_completed"},
-    {"type": "solve_puzzle", "puzzle": "obstacle_course_challenge"},
-    {"type": "add_score", "points": 20},
-    {"type": "spawn_item", "item": "punch_card", "location": "_inventory"},
-    {"type": "print", "message": "You haul yourself up the rope hand over hand. At the top, you slap the buzzer. The timer freezes: 01:42. A slot in the wall spits out a punch card. Course complete."}
+    {"type": "move_item_to_container", "item": "p226_magazine", "container": "p226"},
+    {"type": "set_flag", "flag": "p226_assembled"},
+    {"type": "print", "message": "You slam the loaded magazine into the P226's grip. It seats with a satisfying click. The P226 is ready to fire."}
   ],
   "success_message": "",
-  "failure_message": "You need to start the timer first. Flip the wall switch.",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "You've already completed the course."
+  "failure_message": "You need the P226 and a loaded P226 magazine to do that.",
+  "priority": 5,
+  "one_shot": 0,
+  "done_message": "",
+  "context_room_ids": null
 }
 ```
 
-Also add a "climb rope" alias:
+**Priority 5 (lower than magazine load at 10):** When the player types "load P226", `{target}` resolves to `p226`. When the player types "load P226 magazine", `{target}` resolves to `p226_magazine`, and the magazine-load command at priority 10 takes precedence. Priority ordering ensures the right command fires.
+
+**Precondition `item_in_container`:** The ammo must already be in the magazine. This forces the player to load the magazine first.
+
+---
+
+### 6.4 Load AR-15 (magazine into gun)
 
 ```json
 {
-  "id": "climb_rope_obstacle",
-  "verb": "climb",
-  "pattern": "climb {target}",
+  "id": "load_ar15",
+  "verb": "load",
+  "pattern": "load {target}",
   "preconditions": [
-    {"type": "in_room", "room": "obstacle_course"},
-    {"type": "has_flag", "flag": "timer_started"},
-    {"type": "not_flag", "flag": "course_completed"}
+    {"type": "has_item", "item": "ar15"},
+    {"type": "has_item", "item": "ar15_magazine"},
+    {"type": "item_in_container", "item": "556_ammo", "container": "ar15_magazine"},
+    {"type": "not_item_in_container", "item": "ar15_magazine", "container": "ar15"}
   ],
   "effects": [
-    {"type": "set_flag", "flag": "course_completed"},
-    {"type": "solve_puzzle", "puzzle": "obstacle_course_challenge"},
-    {"type": "add_score", "points": 20},
-    {"type": "spawn_item", "item": "punch_card", "location": "_inventory"},
-    {"type": "print", "message": "You haul yourself up the rope hand over hand. At the top, you slap the buzzer. The timer freezes: 01:42. A slot in the wall spits out a punch card. Course complete."}
+    {"type": "move_item_to_container", "item": "ar15_magazine", "container": "ar15"},
+    {"type": "set_flag", "flag": "ar15_assembled"},
+    {"type": "print", "message": "You rock the loaded magazine into the AR-15's mag well and slap it home. The rifle is ready to fire."}
   ],
   "success_message": "",
-  "failure_message": "You need to start the timer first. Flip the wall switch.",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "You've already completed the course."
+  "failure_message": "You need the AR-15 and a loaded AR-15 magazine to do that.",
+  "priority": 5,
+  "one_shot": 0,
+  "done_message": "",
+  "context_room_ids": null
 }
 ```
 
-Note: This needs a different command ID. Use `climb_rope_obstacle` for the climb verb version and `pull_rope_obstacle` for the pull verb version. The effects are identical.
+---
 
-**Tests:**
-- [x] Custom verb (flip, climb)
-- [x] Multi-step puzzle (flip then pull/climb)
-- [x] has_flag precondition (timer_started required)
-- [x] spawn_item effect (punch_card)
-- [x] solve_puzzle effect
-- [x] add_score effect
-
-### 10.4 Use X on Y (DSL)
+### 6.5 Shoot Pistol Target
 
 ```json
 {
-  "id": "use_flashlight_on_fuse",
-  "verb": "use",
-  "pattern": "use {item} on {target}",
+  "id": "shoot_pistol_target",
+  "verb": "shoot",
+  "pattern": "shoot {target}",
   "preconditions": [
-    {"type": "has_item", "item": "flashlight"},
-    {"type": "in_room", "room": "underground_tunnel"},
-    {"type": "not_flag", "flag": "fuse_repaired"}
+    {"type": "has_item", "item": "p226"},
+    {"type": "item_in_container", "item": "p226_magazine", "container": "p226"},
+    {"type": "item_in_container", "item": "9mm_ammo", "container": "p226_magazine"},
+    {"type": "in_room", "room": "firing_range"},
+    {"type": "not_flag", "flag": "p226_qualified"}
   ],
   "effects": [
-    {"type": "set_flag", "flag": "fuse_repaired"},
-    {"type": "solve_puzzle", "puzzle": "fuse_box_repair"},
+    {"type": "set_flag", "flag": "p226_qualified"},
     {"type": "add_score", "points": 15},
-    {"type": "print", "message": "You shine the flashlight into the fuse box. Several fuses are blown. You swap the dead ones with spares from the box's internal tray. The emergency lights brighten from dim red to steady white. Much better."}
+    {"type": "solve_puzzle", "puzzle": "p226_qualification"},
+    {"type": "print", "message": "You raise the P226, align the sights, and squeeze. The pistol barks and bucks in your hand. Downrange, the paper target jerks -- a clean hole punched dead center mass. Pistol qualification: PASS."}
   ],
   "success_message": "",
-  "failure_message": "You need a light source to work on the fuse box.",
-  "priority": 10,
-  "one_shot": true,
-  "done_message": "The fuse box is already repaired."
-}
-```
-
-**Tests:**
-- [x] use X on Y (DSL, not built-in key-on-lock)
-- [x] add_score effect
-- [x] solve_puzzle effect
-- [x] one_shot with done_message
-
-### 10.5 Consumable Commands (2 commands)
-
-**Medkit:**
-
-```json
-{
-  "id": "use_medkit",
-  "verb": "use",
-  "pattern": "use {item}",
-  "preconditions": [
-    {"type": "has_item", "item": "medkit"}
-  ],
-  "effects": [
-    {"type": "change_health", "amount": 30},
-    {"type": "remove_item", "item": "medkit"},
-    {"type": "print", "message": "You crack open the medkit and apply the bandages and antiseptic. The sting fades to warmth. You feel better."}
-  ],
-  "success_message": "",
-  "failure_message": "You don't have a medkit.",
+  "failure_message": "You need a loaded P226 pistol and you need to be at the firing range.",
   "priority": 0,
-  "one_shot": false
+  "one_shot": 1,
+  "done_message": "You've already qualified with the P226.",
+  "context_room_ids": ["firing_range"]
 }
 ```
 
-**Emergency Rations:**
+**Tests exercised:**
+- `item_in_container` precondition: magazine must be in gun AND ammo must be in magazine
+- `in_room` precondition
+- `not_flag` precondition (prevents re-qualification)
+- `one_shot` with `done_message`
+- `add_score` effect
+- `solve_puzzle` effect
+- `context_room_ids`
+
+---
+
+### 6.6 Shoot Rifle Target
 
 ```json
 {
-  "id": "use_rations",
-  "verb": "use",
-  "pattern": "use {item}",
+  "id": "shoot_rifle_target",
+  "verb": "shoot",
+  "pattern": "shoot {target}",
   "preconditions": [
-    {"type": "has_item", "item": "emergency_rations"}
+    {"type": "has_item", "item": "ar15"},
+    {"type": "item_in_container", "item": "ar15_magazine", "container": "ar15"},
+    {"type": "item_in_container", "item": "556_ammo", "container": "ar15_magazine"},
+    {"type": "in_room", "room": "firing_range"},
+    {"type": "not_flag", "flag": "ar15_qualified"}
   ],
   "effects": [
-    {"type": "change_health", "amount": 15},
-    {"type": "remove_item", "item": "emergency_rations"},
-    {"type": "print", "message": "You tear open the ration pack and eat the compressed energy bar inside. It tastes like cardboard and salt. But it helps."}
+    {"type": "set_flag", "flag": "ar15_qualified"},
+    {"type": "add_score", "points": 15},
+    {"type": "solve_puzzle", "puzzle": "ar15_qualification"},
+    {"type": "print", "message": "You shoulder the AR-15, press your cheek to the stock, and fire. The rifle cracks sharply. A hundred yards out, the steel plate rings like a bell and swings on its stand. Rifle qualification: PASS."}
   ],
   "success_message": "",
-  "failure_message": "You don't have rations.",
+  "failure_message": "You need a loaded AR-15 rifle and you need to be at the firing range.",
   "priority": 0,
-  "one_shot": false
+  "one_shot": 1,
+  "done_message": "You've already qualified with the AR-15.",
+  "context_room_ids": ["firing_range"]
 }
 ```
 
-**Tests:**
-- [x] Consumable items (is_consumed_on_use, removed by effect)
-- [x] change_health effect
+---
 
-### 10.6 Secure Crate Unlock (DSL container unlock)
+### 6.7 Unload P226 (magazine from gun)
 
 ```json
 {
-  "id": "unlock_secure_crate",
-  "verb": "use",
-  "pattern": "use {item} on {target}",
+  "id": "unload_p226",
+  "verb": "unload",
+  "pattern": "unload {target}",
   "preconditions": [
-    {"type": "has_item", "item": "vault_key"},
-    {"type": "in_room", "room": "secure_storage"}
+    {"type": "has_item", "item": "p226"},
+    {"type": "item_in_container", "item": "p226_magazine", "container": "p226"}
   ],
   "effects": [
-    {"type": "open_container", "container": "secure_crate"},
-    {"type": "print", "message": "The vault key fits the crate's lock. You twist it and the lid pops open."}
+    {"type": "take_item_from_container", "item": "p226_magazine"},
+    {"type": "set_flag", "flag": "p226_assembled", "value": false},
+    {"type": "print", "message": "You press the magazine release and the P226 magazine drops into your hand."}
   ],
   "success_message": "",
-  "failure_message": "You don't have anything that works on that.",
-  "priority": 10,
-  "one_shot": true,
-  "done_message": "The crate is already open."
+  "failure_message": "The P226 doesn't have a magazine in it.",
+  "priority": 5,
+  "one_shot": 0,
+  "done_message": "",
+  "context_room_ids": null
 }
 ```
 
-**Tests:**
-- [x] Locked container without key_item_id (DSL unlock)
-- [x] open_container effect
-- [x] Reusing the vault_key (consume_key=0 on the exit lock, and here it is an inventory item used by DSL)
+**Tests exercised:**
+- `take_item_from_container` effect
+- Unsetting a flag with `"value": false`
+- Reversible assembly (load, unload, reload)
 
-### 10.7 Training Orders Pickup and Return
+---
 
-**Pickup (flag for quest tracking):**
+### 6.8 Unload AR-15 (magazine from gun)
 
 ```json
 {
-  "id": "take_training_orders",
+  "id": "unload_ar15",
+  "verb": "unload",
+  "pattern": "unload {target}",
+  "preconditions": [
+    {"type": "has_item", "item": "ar15"},
+    {"type": "item_in_container", "item": "ar15_magazine", "container": "ar15"}
+  ],
+  "effects": [
+    {"type": "take_item_from_container", "item": "ar15_magazine"},
+    {"type": "set_flag", "flag": "ar15_assembled", "value": false},
+    {"type": "print", "message": "You press the mag release and strip the AR-15 magazine free."}
+  ],
+  "success_message": "",
+  "failure_message": "The AR-15 doesn't have a magazine in it.",
+  "priority": 5,
+  "one_shot": 0,
+  "done_message": "",
+  "context_room_ids": null
+}
+```
+
+---
+
+### 6.9 Unload P226 Magazine (ammo from magazine)
+
+```json
+{
+  "id": "unload_p226_magazine",
+  "verb": "unload",
+  "pattern": "unload {target}",
+  "preconditions": [
+    {"type": "has_item", "item": "p226_magazine"},
+    {"type": "item_in_container", "item": "9mm_ammo", "container": "p226_magazine"}
+  ],
+  "effects": [
+    {"type": "take_item_from_container", "item": "9mm_ammo"},
+    {"type": "print", "message": "You strip the 9mm rounds from the P226 magazine. The spring pushes each one up as you pull them free."}
+  ],
+  "success_message": "",
+  "failure_message": "The P226 magazine is empty.",
+  "priority": 10,
+  "one_shot": 0,
+  "done_message": "",
+  "context_room_ids": null
+}
+```
+
+---
+
+### 6.10 Unload AR-15 Magazine (ammo from magazine)
+
+```json
+{
+  "id": "unload_ar15_magazine",
+  "verb": "unload",
+  "pattern": "unload {target}",
+  "preconditions": [
+    {"type": "has_item", "item": "ar15_magazine"},
+    {"type": "item_in_container", "item": "556_ammo", "container": "ar15_magazine"}
+  ],
+  "effects": [
+    {"type": "take_item_from_container", "item": "556_ammo"},
+    {"type": "print", "message": "You strip the 5.56mm rounds from the AR-15 magazine."}
+  ],
+  "success_message": "",
+  "failure_message": "The AR-15 magazine is empty.",
+  "priority": 10,
+  "one_shot": 0,
+  "done_message": "",
+  "context_room_ids": null
+}
+```
+
+---
+
+### 6.11 Spawn Crate Key (triggered by dialogue flag)
+
+```json
+{
+  "id": "spawn_crate_key",
+  "verb": "talk",
+  "pattern": "talk to {npc}",
+  "preconditions": [
+    {"type": "npc_in_room", "npc": "sgt_chen", "room": "_current"},
+    {"type": "has_flag", "flag": "has_crate_key"},
+    {"type": "not_flag", "flag": "crate_key_given"}
+  ],
+  "effects": [
+    {"type": "spawn_item", "item": "crate_key", "location": "_inventory"},
+    {"type": "set_flag", "flag": "crate_key_given"},
+    {"type": "print", "message": ""}
+  ],
+  "success_message": "",
+  "failure_message": "",
+  "priority": 100,
+  "one_shot": 1,
+  "done_message": "",
+  "context_room_ids": ["range_office"]
+}
+```
+
+**Design note:** This command has very high priority (100) so it fires as a side-effect when the dialogue system sets `has_crate_key`. The dialogue node `chen_supply` sets the flag, and then the next time the talk command processes, this spawns the key. In practice, the dialogue system's `set_flags` and this command may need to be coordinated -- the implementation should ensure the key appears in inventory when the dialogue node is visited. If the engine processes dialogue node flags before DSL commands, a simpler approach is to have the dialogue node's `set_flags` include a flag that triggers a post-dialogue hook to spawn the item. The implementer should choose the cleanest integration path.
+
+**Alternative (simpler):** If the engine supports spawning items directly from dialogue node effects, skip this DSL command and add a spawn effect to the `chen_supply` node. The implementer should decide based on the engine's dialogue capabilities.
+
+---
+
+### 6.12 Take Ear Protection (quest tracking)
+
+```json
+{
+  "id": "take_ear_protection",
   "verb": "take",
   "pattern": "take {target}",
   "preconditions": [
-    {"type": "item_in_room", "item": "training_orders", "room": "_current"},
-    {"type": "not_flag", "flag": "found_training_orders"}
+    {"type": "not_flag", "flag": "has_ear_protection"}
   ],
   "effects": [
-    {"type": "move_item", "item": "training_orders", "from": "_current", "to": "_inventory"},
-    {"type": "set_flag", "flag": "found_training_orders"},
-    {"type": "print", "message": "You pick up the training orders. Chen wanted these back."}
-  ],
-  "success_message": "",
-  "failure_message": "",
-  "priority": 5,
-  "one_shot": true,
-  "done_message": "You already have the training orders."
-}
-```
-
-**Return (drop in briefing room sets flag):**
-
-```json
-{
-  "id": "drop_orders_briefing",
-  "verb": "drop",
-  "pattern": "drop {target}",
-  "preconditions": [
-    {"type": "has_item", "item": "training_orders"},
-    {"type": "in_room", "room": "briefing_room"},
-    {"type": "not_flag", "flag": "returned_training_orders"}
-  ],
-  "effects": [
-    {"type": "move_item", "item": "training_orders", "from": "_inventory", "to": "_current"},
-    {"type": "set_flag", "flag": "returned_training_orders"},
-    {"type": "print", "message": "You set the training orders on Chen's desk. She nods without looking up. 'Good. Thanks.'"}
-  ],
-  "success_message": "",
-  "failure_message": "",
-  "priority": 10,
-  "one_shot": true,
-  "done_message": "You already returned the orders."
-}
-```
-
-**Tests:**
-- [x] move_item effect (to inventory, to room)
-- [x] item_in_room precondition
-- [x] Quest objective completion via flag
-
-### 10.8 Container Search Flags (for quest tracking)
-
-These are one-shot commands that fire when the player searches specific containers, setting quest-tracking flags.
-
-```json
-{
-  "id": "search_armory_shelves",
-  "verb": "search",
-  "pattern": "search {target}",
-  "preconditions": [
-    {"type": "in_room", "room": "weapons_vault"},
-    {"type": "not_flag", "flag": "searched_shelves"}
-  ],
-  "effects": [
-    {"type": "set_flag", "flag": "searched_shelves"},
-    {"type": "print", "message": "You systematically check each shelf."}
+    {"type": "set_flag", "flag": "has_ear_protection"},
+    {"type": "print", "message": ""}
   ],
   "success_message": "",
   "failure_message": "",
   "priority": 1,
-  "one_shot": true,
-  "done_message": ""
+  "one_shot": 1,
+  "done_message": "",
+  "context_room_ids": null
 }
 ```
 
-Similar commands for `search_weapons_bench` (sets `searched_bench`) and opening the weapons locker (sets `opened_locker`).
+**Design note:** Priority 1 (low) so the built-in take handler runs its normal item-pickup logic, and this DSL command fires as an additional side effect to set the quest-tracking flag. The implementer should verify that both the built-in handler and the DSL command fire, or consolidate into one path.
 
-Note: These DSL commands have priority 1 (low), so the built-in search handler runs its container logic normally, and the DSL command's `set_flag` fires as an additional side effect. Wait -- the engine checks DSL commands BEFORE built-in verbs. So if the DSL command matches and succeeds, the built-in search handler never runs.
+---
 
-**Fix:** The DSL search commands need to replicate the container search behavior OR have a different trigger. The simplest fix: use a different verb, like "inspect", or use the `container_open` precondition to gate on search having already happened.
+### 6.13 Command Summary Table
 
-**Better fix:** Don't make these DSL commands at all. Instead, have the container's `search_message` do the narrative, and set the flags via a separate mechanism. But the engine does not auto-set flags on container search.
+| ID | Verb | What It Does | Key Preconditions | Key Effects |
+|----|------|-------------|-------------------|-------------|
+| `load_p226_magazine` | load | Put 9mm ammo into P226 mag | `has_item` x2, `not_item_in_container` | `move_item_to_container` |
+| `load_ar15_magazine` | load | Put 5.56 ammo into AR-15 mag | `has_item` x2, `not_item_in_container` | `move_item_to_container` |
+| `load_p226` | load | Put P226 mag into P226 gun | `has_item` x2, `item_in_container`, `not_item_in_container` | `move_item_to_container`, `set_flag` |
+| `load_ar15` | load | Put AR-15 mag into AR-15 gun | `has_item` x2, `item_in_container`, `not_item_in_container` | `move_item_to_container`, `set_flag` |
+| `shoot_pistol_target` | shoot | Fire P226 at paper target | `has_item`, `item_in_container` x2, `in_room`, `not_flag` | `set_flag`, `add_score`, `solve_puzzle` |
+| `shoot_rifle_target` | shoot | Fire AR-15 at steel target | `has_item`, `item_in_container` x2, `in_room`, `not_flag` | `set_flag`, `add_score`, `solve_puzzle` |
+| `unload_p226` | unload | Eject P226 mag from gun | `has_item`, `item_in_container` | `take_item_from_container`, `set_flag(false)` |
+| `unload_ar15` | unload | Eject AR-15 mag from gun | `has_item`, `item_in_container` | `take_item_from_container`, `set_flag(false)` |
+| `unload_p226_magazine` | unload | Strip ammo from P226 mag | `has_item`, `item_in_container` | `take_item_from_container` |
+| `unload_ar15_magazine` | unload | Strip ammo from AR-15 mag | `has_item`, `item_in_container` | `take_item_from_container` |
+| `spawn_crate_key` | talk | Spawn crate key after dialogue | `has_flag`, `not_flag` | `spawn_item`, `set_flag` |
+| `take_ear_protection` | take | Track quest objective | `not_flag` | `set_flag` |
 
-**Working solution:** Make these "look in" commands with the `print` effect only, and have the flag set as an additional effect. The DSL command fires, prints its message AND the container contents, and sets the flag. But the DSL command's print would duplicate the built-in search output.
+---
 
-**Simplest working solution:** Don't track container searches via DSL commands. Instead, track them via item pickups. When the player takes the 9mm_ammo from the shelves, that implicitly means they searched the shelves. Rethink the quest objectives:
+### 6.14 Precondition and Effect Coverage
 
-- `obj_search_shelves` -> completion_flag `searched_shelves` -> set when player takes 9mm_ammo (add flag to the take command or ammo's take behavior)
-- `obj_search_bench` -> completion_flag `searched_bench` -> set when player takes pistol_magazine
-- `obj_search_locker` -> completion_flag `opened_locker` -> set when player opens weapons_locker (via key)
+**Precondition types exercised:**
 
-For the take-based flags, we add DSL commands:
+| Precondition Type | Used In |
+|---|---|
+| `has_item` | All load/unload/shoot commands |
+| `in_room` | Shoot commands |
+| `has_flag` | `spawn_crate_key` |
+| `not_flag` | Shoot commands, `spawn_crate_key`, `take_ear_protection` |
+| `item_in_container` | Load-gun commands, shoot commands, unload commands |
+| `not_item_in_container` | Load-magazine commands, load-gun commands |
+| `npc_in_room` | `spawn_crate_key` |
 
-```json
-{
-  "id": "take_ammo_flag",
-  "verb": "take",
-  "pattern": "take {target}",
-  "preconditions": [
-    {"type": "item_in_room", "item": "9mm_ammo", "room": "weapons_vault"},
-    {"type": "not_flag", "flag": "searched_shelves"}
-  ],
-  "effects": [
-    {"type": "move_item", "item": "9mm_ammo", "from": "_current", "to": "_inventory"},
-    {"type": "set_flag", "flag": "searched_shelves"}
-  ],
-  "success_message": "You grab the box of 9mm ammo from the shelf.",
-  "failure_message": "",
-  "priority": 5,
-  "one_shot": true,
-  "done_message": ""
-}
-```
+**Effect types exercised:**
 
-Wait, but the ammo is inside a container (armory_shelves), not directly in the room. The `item_in_room` precondition won't work because the item's room_id is NULL (it has container_id set instead). And the `take from container` built-in handler runs after DSL.
+| Effect Type | Used In |
+|---|---|
+| `move_item_to_container` | All load commands |
+| `take_item_from_container` | All unload commands |
+| `set_flag` | Load-gun commands, shoot commands, `spawn_crate_key`, `take_ear_protection` |
+| `set_flag` (value: false) | Unload-gun commands |
+| `add_score` | Shoot commands |
+| `solve_puzzle` | Shoot commands |
+| `spawn_item` | `spawn_crate_key` |
+| `print` | All commands |
 
-This is getting complicated. Let me simplify the quest objectives:
+**Not exercised by DSL (handled by built-in engine verbs):**
 
-**Revised approach for "Thorough Sweep" quest:**
+| Feature | How Tested |
+|---|---|
+| `move_item` | Built-in take/drop |
+| `unlock` (exit lock) | State-based lock auto-unlocks on flag |
+| Container `key_item_id` auto-unlock | Built-in open/unlock on `weapons_locker` and `supply_crate` |
 
-Instead of tracking individual searches, track item acquisitions via flags that are set by existing commands. The gun system commands already set flags. We just need the quest objectives to reference those flags:
+---
 
-| ID | Description | completion_flag | order | optional | bonus_score |
-|----|-------------|-----------------|-------|----------|-------------|
-| `obj_get_ammo` | Find the ammunition | `magazine_loaded` | 1 | 0 | 0 |
-| `obj_get_mag` | Find and load the magazine | `magazine_loaded` | 1 | 0 | 0 |
+## 7. Locks
 
-Hmm, that collapses the quest. Let me rethink.
-
-**Final revised "Thorough Sweep" quest -- simpler and more testable:**
-
-| ID | Description | completion_flag | order | optional | bonus_score |
-|----|-------------|-----------------|-------|----------|-------------|
-| `obj_get_pistol` | Retrieve the M9 pistol from the weapons locker | `has_pistol` | 1 | 0 | 0 |
-| `obj_get_medkit` | Find the medkit in the supply closet | `has_medkit` | 2 | 0 | 0 |
-| `obj_find_rations` | Find the emergency rations in secure storage | `found_rations` | 3 | **1** | 5 |
-
-The flags `has_pistol`, `has_medkit`, and `found_rations` are set by DSL take commands for those specific items.
-
-```json
-{
-  "id": "take_pistol_flag",
-  "verb": "take",
-  "pattern": "take {target}",
-  "preconditions": [
-    {"type": "not_flag", "flag": "has_pistol"}
-  ],
-  "effects": [
-    {"type": "set_flag", "flag": "has_pistol"}
-  ],
-  "success_message": "",
-  "failure_message": "",
-  "priority": 1,
-  "one_shot": true,
-  "done_message": ""
-}
-```
-
-No -- this would fire on ANY "take X" input. The precondition does not check WHAT is being taken.
-
-**The real problem:** The DSL command system does not have a way to say "when the player takes a specific item." The `take` verb is built-in and does not fire DSL commands. DSL commands with verb "take" are checked BEFORE the built-in take handler, and if they match and succeed, the built-in handler never runs. If they match and fail, the built-in handler never runs either (the DSL failure message is shown).
-
-**Working solution for tracking item pickups via flags:** Do not use DSL commands. Instead, set the item's `take_message` to include the narrative, and add a separate DSL command with a different verb that the player would naturally use right after picking up the item. This is fragile.
-
-**Actually working solution:** Use the items themselves as quest completion trackers. The quest objectives can be:
-- completion_flag = `has_pistol` -> set by the `load_gun` command (which requires having the pistol)
-- completion_flag = `magazine_loaded` -> set by the `load_magazine` command
-
-But this couples the quest to the gun system rather than the sweep.
-
-**Let me step back and simplify.** The Thorough Sweep quest was designed to test chained quest discovery and optional bonus objectives. It does not need to track container searches specifically. Redefine:
-
-### Quest 3 (Revised): Side Quest -- Thorough Sweep
+### 7.1 Exit Lock: Range Exit
 
 | Field | Value |
 |-------|-------|
-| `id` | `side_thorough_sweep` |
-| `name` | Thorough Sweep |
-| `description` | "Gather all weapon components from the armory: ammo, magazine, and pistol." |
-| `quest_type` | `side` |
-| `status` | `undiscovered` |
-| `discovery_flag` | `found_training_orders` |
-| `completion_flag` | `side_sweep_complete` |
-| `score_value` | 5 |
-| `sort_order` | 2 |
+| `id` | `range_exit_lock` |
+| `lock_type` | state |
+| `target_exit_id` | `range_to_exit` |
+| `key_item_id` | null |
+| `puzzle_id` | null |
+| `combination` | null |
+| `required_flags` | `["p226_qualified", "ar15_qualified"]` |
+| `locked_message` | The exit door is sealed. A panel beside it reads: QUALIFICATION INCOMPLETE. Both pistol and rifle quals are required. |
+| `unlock_message` | The panel beside the exit door flashes green: QUALIFICATION COMPLETE. The lock disengages with a heavy clunk. |
+| `is_locked` | 1 |
+| `consume_key` | 0 |
 
-**Objectives:**
+**Test coverage:** State-based lock requiring multiple flags. Auto-unlocks when the engine detects both `p226_qualified` and `ar15_qualified` are set.
 
-| ID | Description | completion_flag | order | optional | bonus_score |
-|----|-------------|-----------------|-------|----------|-------------|
-| `obj_load_mag` | Load the magazine with ammo | `magazine_loaded` | 1 | 0 | 0 |
-| `obj_load_gun` | Load the pistol with the magazine | `gun_loaded` | 2 | 0 | 0 |
-| `obj_find_rations` | Find and use the emergency rations | `used_rations` | 3 | **1** | 5 |
+### 7.2 Container Lock: Weapons Locker
 
-The `magazine_loaded` and `gun_loaded` flags are already set by the gun system commands. The `used_rations` flag is set by the `use_rations` command (add `set_flag: used_rations` to that command's effects).
+The weapons locker is locked via the item's own `is_locked` / `key_item_id` fields (see item definition in section 3.3). This is the built-in container lock system, not the exit lock table.
 
-This cleanly reuses existing flags and requires no new tracking commands.
+| Feature | Value |
+|---|---|
+| Container | `weapons_locker` |
+| `is_locked` | 1 |
+| `key_item_id` | `locker_key` |
+| `consume_key` | 0 |
+| `lock_message` | The weapons locker is padlocked shut. You need a key. |
+| `unlock_message` | You turn the key in the padlock. It clicks open and you swing the locker door wide. |
 
-**Tests:**
-- [x] Side quest with optional bonus objective
-- [x] Quest discovered by a flag set from completing another quest's objective
-- [x] Objectives that reuse flags from other systems
+### 7.3 Container Lock: Supply Crate
 
----
-
-## 11. Win/Lose Conditions
-
-### Win Condition
-
-**Win flag:** `proving_grounds_complete`
-
-Set by a DSL command in the command_bunker:
-
-```json
-{
-  "id": "use_punch_card_bunker",
-  "verb": "use",
-  "pattern": "use {item}",
-  "preconditions": [
-    {"type": "has_item", "item": "punch_card"},
-    {"type": "in_room", "room": "command_bunker"},
-    {"type": "has_flag", "flag": "range_qualified"},
-    {"type": "has_flag", "flag": "course_completed"}
-  ],
-  "effects": [
-    {"type": "set_flag", "flag": "proving_grounds_complete"},
-    {"type": "add_score", "points": 25},
-    {"type": "print", "message": "You feed the punch card into the scanner. The machine whirs, clicks, and the display reads: ALL QUALIFICATIONS VERIFIED. CLEARANCE GRANTED. The heavy steel door marked EXIT swings open. Daylight streams in."}
-  ],
-  "success_message": "",
-  "failure_message": "You need to complete all qualifications first.",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "You've already been cleared. The exit is open."
-}
-```
-
-Also support "use punch card on scanner" as an alias:
-
-```json
-{
-  "id": "use_punch_card_on_scanner",
-  "verb": "use",
-  "pattern": "use {item} on {target}",
-  "preconditions": [
-    {"type": "has_item", "item": "punch_card"},
-    {"type": "in_room", "room": "command_bunker"},
-    {"type": "has_flag", "flag": "range_qualified"},
-    {"type": "has_flag", "flag": "course_completed"}
-  ],
-  "effects": [
-    {"type": "set_flag", "flag": "proving_grounds_complete"},
-    {"type": "add_score", "points": 25},
-    {"type": "print", "message": "You feed the punch card into the scanner. The machine whirs, clicks, and the display reads: ALL QUALIFICATIONS VERIFIED. CLEARANCE GRANTED. The heavy steel door marked EXIT swings open. Daylight streams in."}
-  ],
-  "success_message": "",
-  "failure_message": "You need to complete all qualifications first.",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "You've already been cleared. The exit is open."
-}
-```
-
-**Metadata:**
-
-```
-win_conditions: ["proving_grounds_complete"]
-win_text: "You step through the door into blinding sunlight. The compound's surface entrance is a concrete bunker in the middle of a flat desert. A transport truck idles nearby, its driver giving you a thumbs up. You made it. You qualified. Whatever comes next, you're ready."
-```
-
-### Lose Condition
-
-**Lose condition:** HP reaches 0 (engine checks `player.hp <= 0`).
-
-The player starts at 100 HP. There is no combat in this world, but the `change_health` effect can reduce HP. To test the lose condition, we add a hazard:
-
-```json
-{
-  "id": "touch_live_wire",
-  "verb": "touch",
-  "pattern": "touch {target}",
-  "preconditions": [
-    {"type": "in_room", "room": "underground_tunnel"},
-    {"type": "not_flag", "flag": "fuse_repaired"}
-  ],
-  "effects": [
-    {"type": "change_health", "amount": -40},
-    {"type": "print", "message": "You touch the exposed wiring. Electricity arcs through your body. Pain. Lots of pain."}
-  ],
-  "success_message": "",
-  "failure_message": "",
-  "priority": 0,
-  "one_shot": false
-}
-```
-
-This is repeatable (not one_shot). Touching the wire three times (120 damage total) kills the player at 100 HP.
-
-```
-lose_conditions: ["player_dead"]   -- standard flag, but engine also checks hp <= 0
-lose_text: "Everything goes dark. The emergency lights flicker once and die. You collapse in the tunnel, the smell of ozone and burnt insulation the last thing you register. Qualification: FAILED."
-```
-
-**Tests:**
-- [x] Win condition (flag-based)
-- [x] Lose condition (HP-based)
-- [x] change_health with negative amount (damage)
+| Feature | Value |
+|---|---|
+| Container | `supply_crate` |
+| `is_locked` | 1 |
+| `key_item_id` | `crate_key` |
+| `consume_key` | 0 |
+| `lock_message` | The supply crate is locked. You need the key from Sergeant Chen. |
+| `unlock_message` | The key turns and the latches pop open. |
 
 ---
 
-## 12. Score Breakdown
+## 8. Puzzles
 
-| Source | Points | Type |
-|--------|--------|------|
-| Weapons Qualification puzzle | 15 | puzzle score_value |
-| Obstacle Course puzzle | 20 | puzzle score_value |
-| Fuse Box Repair puzzle (optional) | 15 | puzzle score_value |
-| "shoot target" command | 10 | add_score effect |
-| "climb rope" command | 20 | add_score effect |
-| "use flashlight on fuse box" command | 15 | add_score effect |
-| Main Quest completion | 25 | quest score_value |
-| Main Quest bonus (fuse repair) | 10 | quest objective bonus_score |
-| Side Quest: Chen's Request | 10 | quest score_value |
-| Side Quest: Thorough Sweep | 5 | quest score_value |
-| Thorough Sweep bonus (rations) | 5 | quest objective bonus_score |
-| "use punch card" command | 25 | add_score effect |
+### 8.1 P226 Qualification
 
-Wait -- there is double-counting. The puzzle score_value is awarded when `solve_puzzle` marks the puzzle as solved, AND the command also calls `add_score` directly. These are separate systems. Let me audit:
+| Field | Value |
+|-------|-------|
+| `id` | `p226_qualification` |
+| `name` | P226 Pistol Qualification |
+| `description` | Assemble the P226 pistol (load ammo into magazine, load magazine into gun) and fire at the pistol target in the firing range. |
+| `room_id` | `firing_range` |
+| `is_solved` | 0 |
+| `solution_steps` | `["Take 9mm ammo, P226 magazine, and P226 pistol from the armory", "Load the 9mm ammo into the P226 magazine", "Load the P226 magazine into the P226 pistol", "Go to the firing range", "Shoot the pistol target"]` |
+| `hint_text` | `["You need to assemble a pistol. Check the armory for parts.", "Load the ammo into the magazine first, then the magazine into the gun.", "Take the loaded P226 to the firing range and shoot the target."]` |
+| `difficulty` | 2 |
+| `score_value` | 15 |
+| `is_optional` | 0 |
 
-- The `solve_puzzle` effect marks the puzzle as solved. Puzzle score_value is awarded by the quest system when the puzzle's completion is checked. Actually, looking at the engine code, puzzles do NOT auto-award score. The `solve_puzzle` effect only sets `is_solved=1`. Score from puzzles would need to be awarded separately.
+### 8.2 AR-15 Qualification
 
-Looking at the engine code more carefully: The `_check_quests` method awards `quest.score_value` when a quest completes, and `obj.bonus_score` for optional objectives. But puzzles themselves do not auto-award their `score_value`. So the `add_score` in the DSL commands IS the score award for solving the puzzle.
-
-**Revised score -- no double-counting:**
-
-| Source | Points | Mechanism |
-|--------|--------|-----------|
-| Shoot target | 10 | `add_score` in shoot_target command |
-| Obstacle course | 20 | `add_score` in climb_rope command |
-| Fuse box repair | 15 | `add_score` in use_flashlight command |
-| Exit clearance | 25 | `add_score` in use_punch_card command |
-| Main Quest completion | 25 | quest score_value on completion |
-| Main Quest fuse bonus | 10 | quest objective bonus_score |
-| Chen's Request quest | 10 | quest score_value on completion |
-| Thorough Sweep quest | 5 | quest score_value on completion |
-| Thorough Sweep rations bonus | 5 | quest objective bonus_score |
-| **Total** | **125** | |
-
-```
-max_score: 125
-```
+| Field | Value |
+|-------|-------|
+| `id` | `ar15_qualification` |
+| `name` | AR-15 Rifle Qualification |
+| `description` | Assemble the AR-15 rifle (load ammo into magazine, load magazine into gun) and fire at the rifle target in the firing range. |
+| `room_id` | `firing_range` |
+| `is_solved` | 0 |
+| `solution_steps` | `["Find the AR-15 in the weapons locker (unlock with locker key)", "Take 5.56mm ammo and AR-15 magazine from the armory", "Load the 5.56mm ammo into the AR-15 magazine", "Load the AR-15 magazine into the AR-15 rifle", "Go to the firing range", "Shoot the rifle target"]` |
+| `hint_text` | `["You need to assemble a rifle. The AR-15 is in the locked weapons locker in the armory.", "Find the locker key hanging on the wall in the armory. The ammo and magazine are on the shelves and workbench.", "Load ammo into mag, mag into gun. Take the loaded AR-15 to the range and shoot the steel target."]` |
+| `difficulty` | 2 |
+| `score_value` | 15 |
+| `is_optional` | 0 |
 
 ---
 
-## 13. Flags Summary
+## 9. Flags
 
-| Flag ID | Set By | Used By |
-|---------|--------|---------|
-| `talked_to_chen` | Dialogue option | take_vault_key precondition |
-| `vault_key_given` | take_vault_key command | Prevents duplicate key |
-| `asked_about_place` | Dialogue option | excluded_flags in dialogue |
-| `chen_gave_side_quest` | Dialogue option | discovery_flag for Chen's Request quest |
-| `got_punch_card_hint` | Dialogue option | (flavor only) |
-| `tunnel_revealed` | pull_lever command | Prevents re-pulling lever |
-| `magazine_loaded` | load_magazine command | load_gun precondition, quest objective |
-| `gun_loaded` | load_gun command | shoot_target precondition, quest objective |
-| `target_destroyed` | shoot_target command | Prevents re-shooting |
-| `range_qualified` | shoot_target command | State lock precondition, quest objective |
-| `timer_started` | flip_switch command | climb_rope precondition |
-| `course_completed` | climb_rope command | State lock precondition, quest objective |
-| `fuse_repaired` | use_flashlight command | Quest objective, hazard guard |
-| `found_training_orders` | take_orders command | Quest objective, quest discovery trigger |
-| `returned_training_orders` | drop_orders command | Quest objective |
-| `used_rations` | use_rations command | Quest objective |
-| `proving_grounds_complete` | use_punch_card command | Win condition |
-| `has_pistol` | (not used, removed) | -- |
-| `has_medkit` | (not used, removed) | -- |
+| Flag ID | Initial Value | Set By | Description |
+|---------|---------------|--------|-------------|
+| `talked_to_chen` | false | `chen_root` dialogue node | Player has talked to Sergeant Chen. |
+| `has_crate_key` | false | `chen_supply` dialogue node | Chen has offered the crate key. |
+| `crate_key_given` | false | `spawn_crate_key` command | Crate key has been spawned to inventory. |
+| `p226_assembled` | false | `load_p226` command | P226 magazine is loaded into P226. |
+| `ar15_assembled` | false | `load_ar15` command | AR-15 magazine is loaded into AR-15. |
+| `p226_qualified` | false | `shoot_pistol_target` command | Player passed P226 qualification. |
+| `ar15_qualified` | false | `shoot_rifle_target` command | Player passed AR-15 qualification. |
+| `has_ear_protection` | false | `take_ear_protection` command | Player obtained ear protection (optional). |
+| `qualification_complete` | false | Engine (state lock auto-sets when both quals pass) | Both qualifications complete. |
 
 ---
 
-## 14. Critical Path
+## 10. Scoring
 
-The minimum sequence of actions to win:
+| Source | Points | Command/Event |
+|--------|--------|--------------|
+| P226 qualification | 15 | `shoot_pistol_target` |
+| AR-15 qualification | 15 | `shoot_rifle_target` |
+| Quest completion (Weapons Qualification) | 10 | All required objectives met |
+| Optional: Ear protection obtained | 5 | `take_ear_protection` |
+| **Total possible** | **45** | |
 
-```
-1.  START in Ready Room
-2.  take clipboard                          (optional, but gives instructions)
-3.  east                                    (-> Bunk Room)
-4.  take locker key                         (needed for weapons locker)
-5.  pull lever                              (reveals hidden exit south)
-6.  south                                   (-> Underground Tunnel, via hidden exit)
-7.  south                                   (-> Armory Entrance)
-8.  north, north                            (back to Bunk Room -- alternative: continue forward)
-
-Actually, let me trace the critical path more carefully:
-
-1.  START in Ready Room
-2.  south                                   (-> Briefing Room)
-3.  talk to sergeant chen                   (dialogue: ask for vault key)
-    - Select option 1: "I need access to the weapons vault."
-    - This sets talked_to_chen flag
-    - Select 0 to leave dialogue
-4.  take vault key                          (DSL command spawns key to inventory)
-5.  north                                   (-> Ready Room)
-6.  east                                    (-> Bunk Room)
-7.  take locker key                         (from bunk room floor)
-8.  pull lever                              (reveals hidden exit south)
-9.  south                                   (-> Underground Tunnel)
-10. south                                   (-> Armory Entrance)
-11. east                                    (-> Weapons Vault)
-12. search armory shelves                   (see 9mm ammo inside)
-13. take 9mm ammo from armory shelves       (or just "take 9mm ammo")
-14. open weapons bench                      (closed container, opens)
-15. take pistol magazine from weapons bench
-16. use locker key on weapons locker        (auto-unlock, key consumed)
-    -- OR: open weapons locker (built-in detects key in inventory)
-17. take m9 pistol from weapons locker
-18. load magazine                           (consumes ammo, sets magazine_loaded)
-19. load gun                                (consumes magazine, sets gun_loaded)
-20. down                                    (Weapons Vault -> Secure Storage, needs vault_key)
-    -- Engine auto-detects vault_key in inventory, unlocks
-21. south                                   (-> Training Yard)
-22. west                                    (-> Firing Range)
-23. shoot target                            (sets range_qualified, solves puzzle, +10 score)
-24. east                                    (-> Training Yard)
-25. south                                   (-> Obstacle Course)
-26. flip switch                             (starts timer)
-27. climb rope                              (completes course, gets punch card, +20 score)
-    -- OR: pull rope
-28. north                                   (-> Training Yard)
-29. east                                    (-> Command Bunker, state lock checks range_qualified + course_completed, auto-unlocks)
-30. use punch card                          (sets proving_grounds_complete, +25 score)
-31. WIN                                     (engine detects win flag on next tick)
-```
-
-**Critical path length:** ~30 moves minimum. Comfortable for a test world.
-
-**Optional detours:**
-- Read clipboard (Ready Room) -- gives puzzle hints
-- Take tactical manual, read it (Observation Deck) -- flavor
-- Talk to Quartermaster Voss (Armory Entrance) -- hints
-- Take medkit (Supply Closet) -- safety net for hazard
-- Use flashlight on fuse box (Underground Tunnel) -- optional puzzle, +15 score
-- Complete Chen's side quest (find training orders, return them) -- +10 score
-- Complete Thorough Sweep quest (load mag, load gun, use rations) -- +5-10 score
+**Score balance:** 30 points (67%) from critical path (both qualifications), 10 points (22%) from quest completion, 5 points (11%) from optional content. The critical path plus quest gives 40/45 (89%). The optional ear protection adds the remaining 5 points.
 
 ---
 
-## 15. Feature Coverage Checklist
-
-Every AnyZork engine feature mapped to its test location in the Proving Grounds:
-
-### Movement & Rooms
-
-| Feature | Test Case | Location |
-|---------|-----------|----------|
-| North | briefing_room -> ready_room | Briefing Room |
-| South | ready_room -> briefing_room | Ready Room |
-| East | ready_room -> bunk_room | Ready Room |
-| West | bunk_room -> ready_room | Bunk Room |
-| Up | bunk_room -> observation_deck | Bunk Room |
-| Down | observation_deck -> bunk_room | Observation Deck |
-| Locked exit (key lock) | vault_to_secure (vault_key, reusable) | Weapons Vault |
-| Locked exit (state lock) | yard_to_bunker (range_qualified + course_completed) | Training Yard |
-| Hidden exit (revealed by action) | bunk_to_tunnel (pull lever) | Bunk Room |
-| Multiple regions | Barracks, Armory, Training Field | World-wide |
-| Start room with first_visit_text | ready_room | Ready Room |
-| Room short_description on revisit | All rooms have short_description | Every room |
-
-### Items
-
-| Feature | Test Case | Location |
-|---------|-----------|----------|
-| Takeable with take_message | clipboard | Ready Room |
-| Takeable without take_message (fallback) | dog_tags, locker_key | Bunk Room |
-| Scenery (is_takeable=0) | wall_map, shooting_target, rusty_lever, wall_switch, climbing_rope, fuse_box | Various |
-| room_description (dynamic prose) | flashlight, shooting_target | Ready Room, Firing Range |
-| read_description | clipboard, tactical_manual | Ready Room, Observation Deck |
-| examine_description | All items have examine_description | World-wide |
-| Consumable (is_consumed_on_use) | medkit, emergency_rations | Supply Closet, Secure Storage |
-| Key item (category: "key") | vault_key, locker_key, dog_tags, punch_card | Various |
-| Weapon item (category: "weapon") | m9_pistol, pistol_magazine | Weapons Vault |
-| Document item (category: "document") | clipboard, tactical_manual, training_orders | Various |
-
-### Containers
-
-| Feature | Test Case | Location |
-|---------|-----------|----------|
-| Closed container (has_lid=1, is_open=0) | footlocker, weapons_bench, filing_cabinet | Various |
-| Always-open (has_lid=0) | armory_shelves, ammo_can, equipment_rack | Various |
-| Locked container with key_item_id (auto-unlock) | weapons_locker (locker_key, consume=1) | Weapons Vault |
-| Locked container without key (DSL unlock) | secure_crate (DSL: use vault key on crate) | Secure Storage |
-| Items inside containers | 9mm_ammo in armory_shelves, pistol_magazine in weapons_bench, m9_pistol in weapons_locker, emergency_rations in secure_crate, dog_tags in footlocker | Various |
-| Nested search (search, take from) | "search weapons bench" -> "take magazine from weapons bench" | Weapons Vault |
-| Put item in container | "put dog tags in filing cabinet" | Briefing Room |
-
-### NPCs & Dialogue
-
-| Feature | Test Case | Location |
-|---------|-----------|----------|
-| NPC with dialogue tree | Sergeant Chen | Briefing Room |
-| NPC with default_dialogue only | Quartermaster Voss | Armory Entrance |
-| NPC with default_dialogue only (non-talkable) | Training Dummy | Training Yard |
-| Inventory-reactive dialogue option | "I have the punch card" (requires punch_card) | Briefing Room |
-| excluded_flags on dialogue option | "What is this place?" disappears after asking | Briefing Room |
-| set_flags from dialogue | talked_to_chen, asked_about_place, chen_gave_side_quest | Briefing Room |
-
-### Locks & Keys
-
-| Feature | Test Case | Location |
-|---------|-----------|----------|
-| Key lock (consume_key=0, reusable) | vault_security_lock (vault_key) | Weapons Vault -> Secure Storage |
-| Key lock (consume_key=1, consumed) | weapons_locker container (locker_key) | Weapons Vault |
-| State lock (requires flags) | bunker_qualification_lock (range_qualified + course_completed) | Training Yard -> Command Bunker |
-
-### Puzzles
-
-| Feature | Test Case | Location |
-|---------|-----------|----------|
-| Easy puzzle (difficulty 1) | Weapons Qualification | Firing Range |
-| Medium puzzle (difficulty 2) | Obstacle Course | Obstacle Course |
-| Hard puzzle (difficulty 3) | Fuse Box Repair | Underground Tunnel |
-| Optional puzzle | Fuse Box Repair (is_optional=1) | Underground Tunnel |
-
-### Quests
-
-| Feature | Test Case | Location |
-|---------|-----------|----------|
-| Main quest with multiple objectives | Prove Your Worth | World-wide |
-| Main quest auto-discovered | discovery_flag=NULL | Game start |
-| Side quest discovered via flag | Chen's Request (chen_gave_side_quest) | Dialogue |
-| Side quest with optional bonus | Thorough Sweep (rations bonus) | Armory area |
-| Chained quest discovery | Thorough Sweep discovered by found_training_orders | Quest chain |
-
-### DSL Commands
-
-| Feature | Test Case | Command ID |
-|---------|-----------|------------|
-| use X on Y (unique interaction) | use flashlight on fuse box | use_flashlight_on_fuse |
-| Custom verb: pull | pull lever | pull_lever_bunk |
-| Custom verb: flip | flip switch | flip_switch_obstacle |
-| Custom verb: climb | climb rope | climb_rope_obstacle |
-| Custom verb: shoot | shoot target | shoot_target |
-| Custom verb: load | load magazine, load gun | load_magazine, load_gun |
-| Custom verb: touch | touch wire | touch_live_wire |
-| one_shot with done_message | pull lever (already pulled) | pull_lever_bunk |
-| add_score effect | shoot target, climb rope, use flashlight, use punch card | Multiple |
-| reveal_exit effect | pull lever -> reveals bunk_to_tunnel | pull_lever_bunk |
-| solve_puzzle effect | shoot target, climb rope, use flashlight | Multiple |
-| spawn_item effect | take vault key (from Chen), climb rope (punch card) | take_vault_key, climb_rope |
-| set_flag effect | Almost every command | Multiple |
-| remove_item effect | load magazine (removes ammo), load gun (removes magazine) | load_magazine, load_gun |
-| change_health effect | use medkit (+30), use rations (+15), touch wire (-40) | Multiple |
-| print effect | Every command | Multiple |
-| move_item effect | take training orders, drop training orders | take/drop_orders |
-| open_container effect | use vault key on secure crate | unlock_secure_crate |
-| discover_quest effect | (not directly used -- discovery via flag is tested instead) | -- |
-| unlock effect | (not directly used -- built-in unlock and DSL open_container cover this) | -- |
-| move_player effect | (not directly used -- movement is via exits, not teleportation) | -- |
-
-**Missing effects identified:**
-- `discover_quest` -- not used. Could add a command that explicitly discovers a quest. But discovery via `discovery_flag` is already tested by the dialogue/flag chain. The `discover_quest` effect is an alternative mechanism. To cover it, add one command.
-- `unlock` -- not used as a DSL effect. The exit locks are handled by built-in key logic and state lock auto-checking. To cover it, could add a DSL command that unlocks an exit.
-- `move_player` -- not used. Could add a teleportation command for completeness.
-- `move_item_to_container` -- not used as a DSL effect. The built-in `put X in Y` covers the player-facing behavior. To cover the DSL effect, add one command.
-
-**Adding missing coverage:**
+## 11. Metadata
 
 ```json
 {
-  "id": "push_button_bunker",
-  "verb": "push",
-  "pattern": "push {target}",
-  "preconditions": [
-    {"type": "in_room", "room": "command_bunker"},
-    {"type": "has_flag", "flag": "proving_grounds_complete"}
-  ],
-  "effects": [
-    {"type": "discover_quest", "quest": "side_thorough_sweep"},
-    {"type": "print", "message": "You push the intercom button. A voice crackles: 'Before you leave, make sure you've gathered all standard-issue equipment. Sweep the armory.'"}
-  ],
-  "success_message": "",
-  "failure_message": "The intercom is dead.",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "The intercom is silent."
-}
-```
-
-Wait, the Thorough Sweep quest already has `discovery_flag = found_training_orders`. Using `discover_quest` effect here would be redundant since the quest might already be discovered. This is fine for testing -- if it is already discovered, the effect is a no-op.
-
-Actually, let me reconsider. The `discover_quest` effect works by setting the quest's `discovery_flag`. If the quest is already active, this is harmless. But the test value is in confirming the effect works. Let me add it on a quest that is NOT already discoverable another way. Or just use it as-is for the test.
-
-For simplicity, keep the Thorough Sweep quest discoverable via `found_training_orders` flag (organic discovery), and add the `push_button_bunker` command as a secondary way to discover it (via `discover_quest` effect). If the player finds the orders first, the quest is already active. If they reach the bunker without finding orders, this alternative path works. Either way, `discover_quest` is exercised.
-
-### Built-in Verbs
-
-| Feature | Test Case | Location |
-|---------|-----------|----------|
-| take / get | take clipboard, take locker key, take 9mm ammo | Various |
-| take X from Y | take dog tags from footlocker, take pistol from weapons locker | Various |
-| drop | drop training orders (in briefing room) | Briefing Room |
-| examine / x / look at | examine wall map, x training dummy | Various |
-| open (container) | open footlocker, open weapons bench | Various |
-| open (locked exit) | open down (living_room equivalent -- not in this world) | Tested by vault_to_secure lock |
-| unlock (exit with key) | auto-unlock vault_to_secure when approaching with vault_key | Weapons Vault |
-| unlock (container with key) | open weapons locker with locker_key in inventory | Weapons Vault |
-| search / look in (container) | search footlocker, look in armory shelves | Various |
-| read (document) | read clipboard, read tactical manual | Ready Room, Observation Deck |
-| use X on Y (key on lock, built-in) | use locker key on weapons locker | Weapons Vault |
-| talk to (NPC) | talk to sergeant chen, talk to quartermaster voss | Briefing Room, Armory Entrance |
-| put X in Y (container) | put dog tags in filing cabinet | Briefing Room |
-| look / l | Any room | Everywhere |
-| inventory / i | Any time | Everywhere |
-| score | Any time | Everywhere |
-| quests / journal / j | Any time | Everywhere |
-| help | Any time | Everywhere |
-
-### Precondition Types
-
-| Type | Test Case | Command |
-|------|-----------|---------|
-| in_room | shoot target (firing_range) | shoot_target |
-| has_item | load magazine (needs ammo + magazine) | load_magazine |
-| has_flag | load gun (needs magazine_loaded) | load_gun |
-| not_flag | load magazine (not magazine_loaded) | load_magazine |
-| item_in_room | take training orders (orders in current room) | take_training_orders |
-| npc_in_room | (not directly tested -- NPC presence is implicit) | -- |
-| lock_unlocked | (not directly tested) | -- |
-| puzzle_solved | (not directly tested) | -- |
-| health_above | (not directly tested) | -- |
-| container_open | (not directly tested) | -- |
-
-**Missing precondition coverage:**
-
-To test the remaining precondition types, add commands:
-
-```json
-{
-  "id": "check_health_status",
-  "verb": "check",
-  "pattern": "check {target}",
-  "preconditions": [
-    {"type": "health_above", "threshold": 50}
-  ],
-  "effects": [
-    {"type": "print", "message": "You feel healthy enough to continue."}
-  ],
-  "success_message": "",
-  "failure_message": "You feel weak. Find a medkit.",
-  "priority": 0,
-  "one_shot": false
-}
-```
-
-```json
-{
-  "id": "inspect_lock_status",
-  "verb": "inspect",
-  "pattern": "inspect {target}",
-  "preconditions": [
-    {"type": "in_room", "room": "training_yard"},
-    {"type": "lock_unlocked", "lock": "bunker_qualification_lock"}
-  ],
-  "effects": [
-    {"type": "print", "message": "The bunker door display shows green. All qualifications verified."}
-  ],
-  "success_message": "",
-  "failure_message": "The bunker door display shows red. Qualifications incomplete.",
-  "priority": 0,
-  "one_shot": false
-}
-```
-
-```json
-{
-  "id": "review_course_results",
-  "verb": "review",
-  "pattern": "review {target}",
-  "preconditions": [
-    {"type": "puzzle_solved", "puzzle": "obstacle_course_challenge"}
-  ],
-  "effects": [
-    {"type": "print", "message": "Course time: 01:42. Qualification: PASS."}
-  ],
-  "success_message": "",
-  "failure_message": "No course results to review yet.",
-  "priority": 0,
-  "one_shot": false
-}
-```
-
-For `npc_in_room`:
-
-```json
-{
-  "id": "salute_chen",
-  "verb": "salute",
-  "pattern": "salute {target}",
-  "preconditions": [
-    {"type": "npc_in_room", "npc": "sgt_chen", "room": "_current"}
-  ],
-  "effects": [
-    {"type": "print", "message": "You snap a salute. Chen returns it crisply. 'At ease, candidate.'"}
-  ],
-  "success_message": "",
-  "failure_message": "There's no one here to salute.",
-  "priority": 0,
-  "one_shot": false
-}
-```
-
-For `container_open`:
-
-```json
-{
-  "id": "rummage_footlocker",
-  "verb": "rummage",
-  "pattern": "rummage {target}",
-  "preconditions": [
-    {"type": "in_room", "room": "bunk_room"},
-    {"type": "container_open", "container": "footlocker"}
-  ],
-  "effects": [
-    {"type": "print", "message": "You rummage through the footlocker more thoroughly. Nothing else of interest -- just old socks and a broken comb."}
-  ],
-  "success_message": "",
-  "failure_message": "You need to open it first.",
-  "priority": 0,
-  "one_shot": true,
-  "done_message": "You've already rummaged through this. Nothing left."
-}
-```
-
-### Effect Types
-
-All effect types now covered (see DSL Commands section above).
-
-### Score & Win/Lose
-
-| Feature | Test Case |
-|---------|-----------|
-| Multiple score sources | Puzzles (add_score), quests (quest score_value), commands (add_score), bonus objectives |
-| Win condition | proving_grounds_complete flag |
-| Lose condition | HP reaches 0 (touch wire 3x) |
-
----
-
-## 16. Metadata
-
-```python
-{
-    "title": "The Proving Grounds",
-    "author_prompt": "Level Designer Agent (test harness)",
-    "prompt": "An underground military qualification facility. Complete weapons and obstacle course certifications to earn exit clearance.",
-    "seed": "proving-grounds-42",
-    "intro_text": (
-        "You descend the concrete stairs into the underground compound. The heavy "
-        "blast door seals behind you with a hydraulic hiss. Fluorescent lights "
-        "flicker to life, illuminating bare concrete walls and painted arrows "
-        "pointing deeper inside. A sign bolted to the wall reads:\n\n"
-        "THE PROVING GROUNDS\n"
-        "QUALIFICATION FACILITY\n"
-        "NO EXIT WITHOUT CLEARANCE\n\n"
-        "Your boots echo on the metal floor. Somewhere ahead, you hear the "
-        "distant pop of gunfire from a range. Time to get to work."
-    ),
-    "win_text": (
-        "You step through the door into blinding sunlight. The compound's surface "
-        "entrance is a concrete bunker in the middle of a flat desert. A transport "
-        "truck idles nearby, its driver giving you a thumbs up. You made it. You "
-        "qualified. Whatever comes next, you are ready."
-    ),
-    "lose_text": (
-        "Everything goes dark. The emergency lights flicker once and die. You "
-        "collapse on the cold concrete floor. The last thing you hear is a calm "
-        "automated voice: 'Candidate down. Medical team to sector seven.' "
-        "Qualification: FAILED."
-    ),
-    "win_conditions": '["proving_grounds_complete"]',
-    "lose_conditions": '["player_dead"]',
-    "max_score": 125,
-    "region_count": 3,
-    "room_count": 13,
+  "id": 1,
+  "title": "The Gun Range",
+  "author_prompt": "A military gun range qualification course that tests nested container weapon assembly.",
+  "seed": "gun-range-test-v2",
+  "version": "2.0",
+  "created_at": "2026-03-18T00:00:00Z",
+  "max_score": 45,
+  "win_conditions": ["p226_qualified", "ar15_qualified"],
+  "lose_conditions": null,
+  "intro_text": "PROVING GROUNDS -- WEAPONS QUALIFICATION COURSE\n\nYour objective: assemble and qualify with both assigned weapon systems. P226 pistol and AR-15 rifle. Load your magazines, load your weapons, and put rounds on target.\n\nReport to the armory to begin.",
+  "win_text": "QUALIFICATION COMPLETE\n\nBoth weapon systems qualified. You are cleared to proceed.\n\nFinal score: {score} / {max_score}",
+  "lose_text": null,
+  "region_count": 1,
+  "max_nesting_depth": 3
 }
 ```
 
 ---
 
-## 17. Implementation Notes for Level Designer
+## 12. Cross-Loading Rejection Matrix
 
-### Build order
+This table documents every invalid cross-loading attempt and the expected rejection message. These are all handled by the `accepts_items` whitelist on each container -- no DSL commands needed.
 
-Follow the same pattern as `build_test_game.py`:
+| Player Action | Target Container | Item | In Whitelist? | Result |
+|---|---|---|---|---|
+| `put 9mm in p226 mag` | p226_magazine | 9mm_ammo | Yes | Success |
+| `put 556 in p226 mag` | p226_magazine | 556_ammo | No | "That ammo doesn't fit this magazine." |
+| `put 556 in ar15 mag` | ar15_magazine | 556_ammo | Yes | Success |
+| `put 9mm in ar15 mag` | ar15_magazine | 9mm_ammo | No | "That ammo doesn't fit this magazine." |
+| `put p226 mag in p226` | p226 | p226_magazine | Yes | Success |
+| `put ar15 mag in p226` | p226 | ar15_magazine | No | "That magazine doesn't fit the P226." |
+| `put p226 mag in ar15` | ar15 | p226_magazine | No | "That magazine doesn't fit the AR-15." |
+| `put ar15 mag in ar15` | ar15 | ar15_magazine | Yes | Success |
+| `put p226 in p226` | p226 | p226 | No (self) | Cycle detection: "You can't put something inside itself." |
+| `put ar15 in weapons locker` | weapons_locker | ar15 | Yes (null = any) | Success |
+| `put p226 in weapons locker` | weapons_locker | p226 | Yes (null = any) | Success |
+| `put 9mm in weapons locker` | weapons_locker | 9mm_ammo | Yes (null = any) | Success |
 
-1. Initialize database and metadata
-2. Insert rooms (13 rooms, 3 regions)
-3. Insert exits (24 exits, 12 bidirectional pairs)
-4. Insert container items first (8 containers)
-5. Insert contained items (items with container_id set)
-6. Insert loose items (items with room_id set)
-7. Insert invisible items (vault_key, punch_card with is_visible=0)
-8. Insert NPCs (3 NPCs)
-9. Insert dialogue nodes and options (Sergeant Chen tree)
-10. Insert locks (2 exit locks)
-11. Insert puzzles (3 puzzles)
-12. Insert quests and quest objectives
-13. Insert commands (DSL commands, ~22 commands)
-14. Insert flags (initialize flags with value='false')
+---
 
-### Container item placement
+## 13. Walkthrough
 
-Items inside containers use `container_id` instead of `room_id`. The schema enforces `CHECK (NOT (room_id IS NOT NULL AND container_id IS NOT NULL))` -- an item can be in a room OR a container, not both.
+### Optimal Path (minimum moves)
 
-- `9mm_ammo`: container_id = `armory_shelves`, room_id = NULL
-- `pistol_magazine`: container_id = `weapons_bench`, room_id = NULL
-- `m9_pistol`: container_id = `weapons_locker`, room_id = NULL
-- `dog_tags`: container_id = `footlocker`, room_id = NULL
-- `emergency_rations`: container_id = `secure_crate`, room_id = NULL
+**Starting room: Armory**
 
-### Invisible items
+```
+1.  look
+    -- See room description + item room_descriptions (P226, P226 magazine,
+       9mm ammo, AR-15 magazine, 5.56mm ammo, locker key, weapons locker)
 
-- `vault_key`: room_id = NULL, container_id = NULL, is_visible = 0 (spawned to inventory by DSL command)
-- `punch_card`: room_id = NULL, container_id = NULL, is_visible = 0 (spawned to inventory by DSL command)
+2.  take locker key
+    -- "You take the locker key."
 
-### DSL command priority guide
+3.  open weapons locker
+    -- Engine auto-uses locker_key: "You turn the key in the padlock..."
 
-Higher priority = tried first.
+4.  search weapons locker
+    -- "Inside the weapons locker: AR-15 rifle"
 
-| Priority | Commands |
-|----------|----------|
-| 20 | put_ammo_in_magazine, put_magazine_in_gun (must beat built-in put handler) |
-| 10 | load_magazine, take_vault_key_from_chen, use_flashlight_on_fuse, unlock_secure_crate, drop_orders_briefing |
-| 5 | load_gun, take_training_orders |
-| 1 | (tracking commands) |
-| 0 | Everything else |
+5.  take ar15
+    -- "You pick up the AR-15. It's heavier than the pistol."
 
-### State lock auto-resolution
+6.  take p226
+    -- "You pick up the P226. It has good weight."
 
-The engine checks state locks on movement. When the player moves east in training_yard, the engine finds `bunker_qualification_lock` on `yard_to_bunker`, checks if all `required_flags` are set. If `range_qualified` AND `course_completed` are both true, it auto-unlocks. No player action needed beyond having the flags.
+7.  take p226 magazine
+    -- "You pick up the P226 magazine."
 
-Actually, looking at the engine code, state locks do NOT auto-unlock on movement. The movement handler checks `exit.is_locked` and shows the locked message. State locks are unlocked by... let me check.
+8.  take 9mm ammo
+    -- "You pick up the box of 9mm ammo."
 
-Looking at `_try_unlock`: it only handles key-type locks. For state-type locks, it falls through to "just show the locked message." The engine checks state locks in the `_tick` method? No, it does not.
+9.  take ar15 magazine
+    -- "You pick up the AR-15 magazine."
 
-**State lock resolution:** The engine does not automatically check state lock conditions. The `locks` table has `required_flags` for state-type locks, but the engine does not evaluate them on movement. The engine's `handle_movement` just checks `exit.is_locked` and shows the lock message.
+10. take 556 ammo
+    -- "You pick up the box of 5.56mm ammo."
 
-This means state locks need to be unlocked by a DSL command or by the flag system. Looking at the zombie test game more carefully... The zombie game does not use state-type locks. It uses key locks only.
+11. load p226 magazine
+    -- "You press the 9mm rounds into the P226 magazine..."
+    -- (9mm_ammo moves into p226_magazine container)
 
-**Solution:** Add a DSL command or engine-level check that evaluates state lock conditions. Or, since this is a test world and we need to work with the engine as-is, use a different mechanism:
+12. load p226
+    -- "You slam the loaded magazine into the P226's grip..."
+    -- (p226_magazine moves into p226 container, p226_assembled flag set)
 
-Option A: Make the state lock actually a key lock, using the punch_card as the key.
-Option B: Add a DSL command that explicitly unlocks the exit when flags are set.
+13. load ar15 magazine
+    -- "You push the 5.56mm rounds into the AR-15 magazine..."
+    -- (556_ammo moves into ar15_magazine container)
 
-Option B is cleaner and tests the `unlock` DSL effect:
+14. load ar15
+    -- "You rock the loaded magazine into the AR-15's mag well..."
+    -- (ar15_magazine moves into ar15 container, ar15_assembled flag set)
 
-```json
-{
-  "id": "unlock_bunker_door",
-  "verb": "open",
-  "pattern": "open {target}",
-  "preconditions": [
-    {"type": "in_room", "room": "training_yard"},
-    {"type": "has_flag", "flag": "range_qualified"},
-    {"type": "has_flag", "flag": "course_completed"}
-  ],
-  "effects": [
-    {"type": "unlock", "lock": "bunker_qualification_lock"},
-    {"type": "print", "message": "The bunker door display turns green: QUALIFICATION COMPLETE. The locks disengage and the heavy door swings open."}
-  ],
-  "success_message": "",
-  "failure_message": "The bunker door display reads: QUALIFICATION INCOMPLETE. Complete the weapons range and obstacle course.",
-  "priority": 10,
-  "one_shot": true,
-  "done_message": "The bunker door is already open."
-}
+15. east
+    -- Move to Firing Range.
+
+16. shoot pistol target
+    -- "You raise the P226, align the sights, and squeeze..."
+    -- (p226_qualified flag set, 15 points, p226_qualification puzzle solved)
+
+17. shoot rifle target
+    -- "You shoulder the AR-15, press your cheek to the stock..."
+    -- (ar15_qualified flag set, 15 points, ar15_qualification puzzle solved)
+    -- State lock auto-checks: both flags true -> range_exit_lock unlocks.
+    -- "The panel beside the exit door flashes green: QUALIFICATION COMPLETE..."
+
+18. south
+    -- Move to Exit Corridor. first_visit_text fires.
+    -- "You push through the door and daylight floods in..."
+    -- Win condition met. Game ends.
 ```
 
-This also tests the `unlock` DSL effect that was missing from coverage. Now the player must explicitly "open east" or "open bunker door" in the training yard, with flags as preconditions.
+**Score: 40/45** (missed optional ear protection)
 
-Keep the lock_type as "state" in the database for schema completeness, but the actual unlocking is done by the DSL command. The locked_message on the lock serves as the fallback if the player tries to walk east without opening first.
+### Optional: Ear Protection Side Path
 
-### Dialogue node IDs
+Insert between steps 14 and 15 (or at any point):
 
-Follow the pattern: `{npc_id}_{node_purpose}`:
-- `sgt_chen_root` (is_root=1)
-- `sgt_chen_vault_key`
-- `sgt_chen_lore`
-- `sgt_chen_punch_card`
-- `sgt_chen_side_quest`
+```
+a.  east
+    -- Move to Firing Range.
 
-### Dialogue option IDs
+b.  north
+    -- Move to Range Office.
 
-Follow the pattern: `{node_id}_opt_{number}`:
-- `sgt_chen_root_opt_1` (vault key request)
-- `sgt_chen_root_opt_2` (what is this place)
-- `sgt_chen_root_opt_3` (punch card)
-- `sgt_chen_root_opt_4` (side quest)
-- `sgt_chen_root_opt_5` (leave)
+c.  talk to chen
+    -- Dialogue tree root. Chen explains the qualification.
+
+d.  (select "I need the supply crate key.")
+    -- Chen gives you the key. has_crate_key flag set, crate_key spawned.
+
+e.  (select "Nothing. I'm good." to end dialogue)
+
+f.  open supply crate
+    -- Engine auto-uses crate_key: "The key turns and the latches pop open."
+
+g.  search supply crate
+    -- "Inside the supply crate: ear protection"
+
+h.  take ear protection
+    -- "You take the ear protection. Safety first."
+    -- (has_ear_protection flag set, 5 points)
+
+i.  south
+    -- Back to Firing Range.
+```
+
+**Score with optional: 45/45**
+
+### Full Walkthrough With All Content
+
+```
+ 1. [armory]         look
+ 2. [armory]         take locker key
+ 3. [armory]         open weapons locker
+ 4. [armory]         search weapons locker
+ 5. [armory]         take ar15
+ 6. [armory]         take p226
+ 7. [armory]         take p226 magazine
+ 8. [armory]         take 9mm ammo
+ 9. [armory]         take ar15 magazine
+10. [armory]         take 556 ammo
+11. [armory]         load p226 magazine
+12. [armory]         load p226
+13. [armory]         load ar15 magazine
+14. [armory]         load ar15
+15. [armory]         east                    -> firing_range
+16. [firing_range]   examine pistol target
+17. [firing_range]   examine rifle target
+18. [firing_range]   examine safety poster
+19. [firing_range]   north                   -> range_office
+20. [range_office]   talk to chen
+21. [range_office]   (select "Where are the weapons?")
+22. [range_office]   (select "Got it. What else?")
+23. [range_office]   (select "I need the supply crate key.")
+24. [range_office]   (select "Thanks. Anything else?")
+25. [range_office]   (select "Nothing. I'm good.")
+26. [range_office]   open supply crate
+27. [range_office]   search supply crate
+28. [range_office]   take ear protection
+29. [range_office]   examine ear protection
+30. [range_office]   south                   -> firing_range
+31. [firing_range]   shoot pistol target
+32. [firing_range]   north                   -> range_office
+33. [range_office]   talk to chen
+34. [range_office]   (select "I've qualified with the P226.")
+35. [range_office]   (select "Will do.")
+36. [range_office]   south                   -> firing_range
+37. [firing_range]   shoot rifle target
+38. [firing_range]   south                   -> exit_corridor (lock opens)
+39. [exit_corridor]  -- WIN --
+```
+
+**Final score: 45/45**
 
 ---
 
-## 18. Complete Command Reference
+## 14. Negative Test Cases
 
-All DSL commands in priority order:
+These are interactions the implementer should verify produce the correct rejection behavior.
 
-| # | ID | Verb | Pattern | Priority | One-shot | Key Test |
-|---|-----|------|---------|----------|----------|----------|
-| 1 | put_ammo_in_magazine | put | put {item} in {target} | 20 | yes | DSL overrides built-in put |
-| 2 | put_magazine_in_gun | put | put {item} in {target} | 20 | yes | DSL overrides built-in put |
-| 3 | load_magazine | load | load {target} | 10 | yes | Custom verb, flag system |
-| 4 | take_vault_key_from_chen | take | take {target} | 10 | yes | spawn_item to inventory |
-| 5 | use_flashlight_on_fuse | use | use {item} on {target} | 10 | yes | use X on Y (DSL) |
-| 6 | unlock_secure_crate | use | use {item} on {target} | 10 | yes | open_container effect |
-| 7 | drop_orders_briefing | drop | drop {target} | 10 | yes | move_item, quest flag |
-| 8 | unlock_bunker_door | open | open {target} | 10 | yes | unlock (DSL effect) |
-| 9 | load_gun | load | load {target} | 5 | yes | Multi-step assembly |
-| 10 | take_training_orders | take | take {target} | 5 | yes | item_in_room precondition |
-| 11 | pull_lever_bunk | pull | pull {target} | 0 | yes | reveal_exit |
-| 12 | flip_switch_obstacle | flip | flip {target} | 0 | yes | Custom verb |
-| 13 | pull_rope_obstacle | pull | pull {target} | 0 | yes | solve_puzzle, spawn_item |
-| 14 | climb_rope_obstacle | climb | climb {target} | 0 | yes | Custom verb alias |
-| 15 | shoot_target | shoot | shoot {target} | 0 | yes | Gun system payoff |
-| 16 | use_punch_card | use | use {item} | 0 | yes | Win condition |
-| 17 | use_punch_card_scanner | use | use {item} on {target} | 0 | yes | Win condition alias |
-| 18 | use_medkit | use | use {item} | 0 | no | change_health (+) |
-| 19 | use_rations | use | use {item} | 0 | no | change_health (+), quest flag |
-| 20 | touch_live_wire | touch | touch {target} | 0 | no | change_health (-), lose risk |
-| 21 | check_health_status | check | check {target} | 0 | no | health_above precondition |
-| 22 | inspect_lock_status | inspect | inspect {target} | 0 | no | lock_unlocked precondition |
-| 23 | review_course_results | review | review {target} | 0 | no | puzzle_solved precondition |
-| 24 | salute_chen | salute | salute {target} | 0 | no | npc_in_room precondition |
-| 25 | rummage_footlocker | rummage | rummage {target} | 0 | yes | container_open precondition |
-| 26 | push_button_bunker | push | push {target} | 0 | yes | discover_quest effect |
+### Cross-Loading (whitelist rejection)
+
+| Input | Expected Output |
+|---|---|
+| `put 556 ammo in p226 magazine` | "That ammo doesn't fit this magazine." |
+| `put 9mm ammo in ar15 magazine` | "That ammo doesn't fit this magazine." |
+| `put ar15 magazine in p226` | "That magazine doesn't fit the P226." |
+| `put p226 magazine in ar15` | "That magazine doesn't fit the AR-15." |
+
+### Missing Prerequisites
+
+| Input | Context | Expected Output |
+|---|---|---|
+| `load p226` | Magazine not loaded with ammo | "You need the P226 and a loaded P226 magazine to do that." |
+| `load p226` | Magazine not in inventory | "You need the P226 and a loaded P226 magazine to do that." |
+| `shoot pistol target` | Not at firing range | "You need a loaded P226 pistol and you need to be at the firing range." |
+| `shoot pistol target` | Gun not loaded | "You need a loaded P226 pistol and you need to be at the firing range." |
+| `south` (from firing range) | Not yet qualified | "The exit door is sealed. A panel beside it reads: QUALIFICATION INCOMPLETE..." |
+
+### Double Actions (one-shot / precondition guards)
+
+| Input | Context | Expected Output |
+|---|---|---|
+| `shoot pistol target` | Already qualified | "You've already qualified with the P226." |
+| `shoot rifle target` | Already qualified | "You've already qualified with the AR-15." |
+| `load p226 magazine` | Already loaded | Precondition `not_item_in_container` fails: "You need the P226 magazine and 9mm ammo to load it." |
+
+### Container State
+
+| Input | Context | Expected Output |
+|---|---|---|
+| `search weapons locker` | Locker still locked | "The weapons locker is padlocked shut. You need a key." |
+| `take ar15` | Locker still locked/closed | Cannot reach item inside locked container |
+| `open supply crate` | No crate key | "The supply crate is locked. You need the key from Sergeant Chen." |
+
+### Self-Insertion (cycle detection)
+
+| Input | Expected Output |
+|---|---|
+| `put p226 in p226` | "You can't put something inside itself." |
 
 ---
 
-## Changelog
+## 15. Engine Feature Coverage Checklist
 
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2026-03-18 | Initial design. Gun system, world layout, complete feature coverage, critical path, implementation notes. |
+| Feature | Test Case | Section |
+|---------|-----------|---------|
+| Nested container (3-level: gun > mag > ammo) | P226 system, AR-15 system | 3.1, 3.2 |
+| `accepts_items` whitelist | All weapons and magazines | 3.1, 3.2 |
+| `reject_message` custom text | Cross-loading attempts | 12 |
+| `has_lid: 0` (always accessible) | All guns and magazines | 3.1, 3.2 |
+| `has_lid: 1` (must open) | weapons_locker, supply_crate | 3.3 |
+| Flat container (`accepts_items: null`) | weapons_locker | 3.3 |
+| Locked container (`is_locked`, `key_item_id`) | weapons_locker, supply_crate | 3.3 |
+| State-based exit lock | range_exit_lock | 7.1 |
+| `move_item_to_container` effect | All load commands | 6.1-6.4 |
+| `take_item_from_container` effect | All unload commands | 6.7-6.10 |
+| `item_in_container` precondition | Load-gun, shoot commands | 6.3-6.6 |
+| `not_item_in_container` precondition | Load-magazine, load-gun commands | 6.1-6.4 |
+| `container_has_contents` precondition | (Available for extension) | -- |
+| `container_empty` precondition | (Available for extension) | -- |
+| NPC dialogue tree (branching) | Sergeant Chen | 4 |
+| Flag-gated dialogue option | Qualification reports | 4 |
+| Excluded-flag dialogue option | Crate key (disappears after given) | 4 |
+| Dialogue sets flags | `talked_to_chen`, `has_crate_key` | 4 |
+| Quest with objectives | Weapons Qualification | 5 |
+| Optional quest objective | Ear protection | 5 |
+| `spawn_item` effect | crate_key | 6.11 |
+| `add_score` effect | Shoot commands | 6.5, 6.6 |
+| `solve_puzzle` effect | Shoot commands | 6.5, 6.6 |
+| `set_flag` with value:false | Unload commands | 6.7, 6.8 |
+| `one_shot` with `done_message` | Shoot commands | 6.5, 6.6 |
+| `context_room_ids` | Shoot commands | 6.5, 6.6 |
+| `first_visit_text` | armory (start), exit_corridor (win) | 2 |
+| Room `is_start` | armory | 2 |
+| `room_description` on items | All items | 3 |
+| Non-takeable scenery items | Targets, safety poster | 3.4 |
+| `read_description` | safety poster | 3.4 |
+| Bidirectional exits | All connections | 2 |
+| Custom verbs (load, shoot, unload) | All DSL commands | 6 |
+| Win condition (flag-based) | `p226_qualified` + `ar15_qualified` | 11 |
+| `container_has_contents` precondition | Not used (available) | -- |
+| `container_empty` precondition | Not used (available) | -- |
+
+**Note on `container_has_contents` / `container_empty`:** These precondition types are defined in the nested-containers spec but are not strictly needed for this test world. The `item_in_container` precondition (which checks for a specific item) is sufficient because each container has a known, specific expected content. A future test world or generated game could exercise `container_has_contents` / `container_empty` for scenarios where the container's contents are variable (e.g., "is the bag empty?" without caring what was in it). If the implementer wants to exercise these now, the unload commands could use `container_has_contents` as an alternative to `item_in_container`:
+
+```json
+{"type": "container_has_contents", "container": "p226_magazine"}
+```
+
+This would be equivalent to `item_in_container` for the single-ammo-type case but exercises a different code path.

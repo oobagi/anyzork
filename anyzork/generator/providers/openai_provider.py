@@ -68,6 +68,7 @@ class OpenAIProvider(BaseProvider):
             temperature=ctx.temperature,
             max_tokens=ctx.max_tokens,
             response_format={"type": "json_object"},
+            seed=ctx.seed,
         )
 
     def generate_text(
@@ -95,6 +96,7 @@ class OpenAIProvider(BaseProvider):
             messages=messages,
             temperature=ctx.temperature,
             max_tokens=ctx.max_tokens,
+            seed=ctx.seed,
         )
         # When no response_format is set, result is a string.
         return result
@@ -118,6 +120,7 @@ class OpenAIProvider(BaseProvider):
         temperature: float,
         max_tokens: int,
         response_format: dict | None = None,
+        seed: int | None = None,
     ) -> dict | str:
         """Call the OpenAI API with retries on transient errors."""
         last_exc: Exception | None = None
@@ -132,6 +135,8 @@ class OpenAIProvider(BaseProvider):
                 }
                 if response_format is not None:
                     kwargs["response_format"] = response_format
+                if seed is not None:
+                    kwargs["seed"] = seed
 
                 response = self._client.chat.completions.create(**kwargs)
                 text = response.choices[0].message.content or ""

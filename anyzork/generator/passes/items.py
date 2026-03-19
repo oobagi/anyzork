@@ -97,6 +97,22 @@ ITEMS_SCHEMA: dict[str, Any] = {
                             "'A rusty iron key hangs from a hook beside the window.'"
                         ),
                     },
+                    "home_room_id": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "The room this item was originally placed in. Set to "
+                            "initial room_id for room items, parent container's room "
+                            "for container items, null for inventory items."
+                        ),
+                    },
+                    "drop_description": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "A short, location-agnostic sentence describing how the "
+                            "item looks when dropped on the ground. Required for all "
+                            "takeable items that have a room_description."
+                        ),
+                    },
                     "take_message": {
                         "type": ["string", "null"],
                         "description": "Custom message when the player takes the item.",
@@ -137,6 +153,24 @@ ITEMS_SCHEMA: dict[str, Any] = {
                         "type": "integer",
                         "enum": [0, 1],
                         "description": "For containers: 1 = can be opened/closed, 0 = always accessible (shelf, pile).",
+                    },
+                    "accepts_items": {
+                        "type": ["array", "null"],
+                        "items": {"type": "string"},
+                        "description": (
+                            "For containers: JSON array of item IDs this "
+                            "container accepts, or null to accept anything. "
+                            "Use for selective containers like a gun that "
+                            "only accepts its matching magazine."
+                        ),
+                    },
+                    "reject_message": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "For containers with accepts_items: message shown "
+                            "when the player tries to put a non-whitelisted "
+                            "item in the container."
+                        ),
                     },
                     "is_locked": {
                         "type": "integer",
@@ -186,6 +220,115 @@ ITEMS_SCHEMA: dict[str, Any] = {
                             "when the container is unlocked."
                         ),
                     },
+                    "is_toggleable": {
+                        "type": "integer",
+                        "enum": [0, 1],
+                        "description": (
+                            "1 = item can be toggled on/off (flashlights, lanterns, "
+                            "radios, switches). 0 = normal item."
+                        ),
+                    },
+                    "toggle_state": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Current toggle state. Usually 'off' at game start. "
+                            "Required if is_toggleable = 1."
+                        ),
+                    },
+                    "toggle_on_message": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Message shown when toggled ON. E.g., "
+                            "'The flashlight clicks on, casting a bright beam.'"
+                        ),
+                    },
+                    "toggle_off_message": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Message shown when toggled OFF. E.g., "
+                            "'The flashlight clicks off. Darkness returns.'"
+                        ),
+                    },
+                    "toggle_states": {
+                        "type": ["array", "null"],
+                        "items": {"type": "string"},
+                        "description": (
+                            "JSON array for multi-state items that cycle through "
+                            "more than on/off. E.g., ['off', 'static', 'tuned']. "
+                            "NULL = standard ['off', 'on'] toggle."
+                        ),
+                    },
+                    "toggle_messages": {
+                        "type": ["object", "null"],
+                        "description": (
+                            "JSON object mapping state -> message for multi-state "
+                            "items. E.g., {'off': 'Radio off.', 'static': 'Static.'}. "
+                            "NULL = use toggle_on/off messages."
+                        ),
+                    },
+                    "requires_item_id": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "ID of another item required for this item to function. "
+                            "E.g., a flashlight requires batteries. The required "
+                            "item must be in inventory with quantity > 0."
+                        ),
+                    },
+                    "requires_message": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Message shown when the required item is missing or "
+                            "depleted. E.g., 'The flashlight won't turn on -- "
+                            "the batteries are dead.'"
+                        ),
+                    },
+                    "item_tags": {
+                        "type": ["array", "null"],
+                        "items": {"type": "string"},
+                        "description": (
+                            "JSON array of tags for the interaction matrix. "
+                            "Common tags: 'weapon', 'firearm', 'light_source', "
+                            "'tool', 'blade', 'container', 'healing', 'loud'. "
+                            "Used to match against target categories for "
+                            "contextual use-on responses."
+                        ),
+                    },
+                    "quantity": {
+                        "type": ["integer", "null"],
+                        "description": (
+                            "Current quantity for consumable items. NULL = not "
+                            "quantified (infinite use). 0 = depleted."
+                        ),
+                    },
+                    "max_quantity": {
+                        "type": ["integer", "null"],
+                        "description": (
+                            "Maximum capacity for reload/recharge. NULL = not "
+                            "quantified."
+                        ),
+                    },
+                    "quantity_unit": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Display label: 'rounds', 'charges', 'uses', 'doses'. "
+                            "Shown in examine output."
+                        ),
+                    },
+                    "depleted_message": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Message when quantity reaches 0. E.g., "
+                            "'The flashlight flickers and dies.'"
+                        ),
+                    },
+                    "quantity_description": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Template for examine display. E.g., "
+                            "'The {item} has {quantity} {unit} remaining.' "
+                            "NULL = engine uses a default template."
+                        ),
+                    },
                 },
             },
         },
@@ -205,6 +348,7 @@ def _build_prompt(context: dict) -> str:
     rooms = context.get("rooms", [])
     locks = context.get("locks", [])
     lock_key_mapping = context.get("lock_key_mapping", {})
+    realism = context.get("realism", "medium")
 
     rooms_summary = json.dumps(
         [
@@ -362,6 +506,18 @@ one of the room IDs listed in "Existing Rooms", the item will be orphaned.
   Scenery items may also use this field, or they may be described in the base
   room description since they never move.
 
+- **drop_description field**: For every takeable item with a `room_description`,
+  also write a `drop_description` — a short sentence describing how the item
+  looks when lying on the ground in any generic room. This description should
+  NOT reference any specific room features (no "by the door", "on the shelf",
+  "near the window"). Use generic language: "lies on the ground", "sits on
+  the floor", "rests nearby."
+
+- **home_room_id field**: Set `home_room_id` to the item's initial `room_id`.
+  For items starting in containers, set to the room containing the container.
+  For items starting hidden, set to the room they will appear in. For items
+  starting in inventory, set to null.
+
 - **Item density**: Aim for 1.5–2.5 items per room on average (including
   scenery).  Every room should have at least one item.
 
@@ -430,9 +586,96 @@ Container placement guidelines:
 - Locked containers are mini-puzzles. Use them sparingly -- one or two per
   game, not one per room.
 
-**Nesting prohibition:**
-A container MUST NOT be placed inside another container. `container_id` must
-never reference an item where `is_container = 1`. This is a hard rule.
+**Container nesting:**
+- Containers can hold other containers. This enables multi-step assembly
+  systems like weapons (gun holds magazine, magazine holds ammo) or complex
+  storage (backpack holds pouch, pouch holds gem).
+- When creating a container that accepts only specific items, set
+  `accepts_items` to a JSON array of item IDs (e.g., `["p226_magazine"]`).
+  Set it to `null` or omit it if the container should accept anything.
+- Set `reject_message` to a custom string explaining why a rejected item
+  doesn't fit (e.g., "That magazine doesn't fit the P226."). Omit or set
+  to `null` for the default message.
+- Most containers (nightstands, chests, drawers, shelves, bags) should
+  have `accepts_items: null` — they accept anything.
+- Only use a whitelist when the design specifically requires item
+  restrictions (e.g., a gun that only accepts its matching magazine).
+- Nested containers should typically have `has_lid: false` (a gun doesn't
+  have a "lid").
+- Both outer and inner containers should have `is_takeable: true` if the
+  player needs to assemble/disassemble them.
+
+### Toggleable Items
+
+Some items can be toggled on/off (or cycled through multiple states).
+Flashlights, lanterns, radios, and switches are all toggleable.
+
+- Set `is_toggleable: 1` with `toggle_state: "off"` (initial state).
+- Provide `toggle_on_message` and `toggle_off_message` for standard on/off
+  items.
+- For multi-state items (e.g., a radio with off/static/tuned), set
+  `toggle_states` to a JSON array and `toggle_messages` to a JSON object
+  mapping each state to its transition message.
+
+### Light Sources
+
+Items that illuminate dark rooms should have `item_tags` containing
+`"light_source"`.  When toggled on, a light source reveals dark rooms.
+Light sources should also be toggleable (`is_toggleable: 1`).
+
+### Item Dependencies (requires_item_id)
+
+Items that need another item to function (flashlight needs batteries, gun
+needs ammo) should set `requires_item_id` to the ID of the required item.
+Set `requires_message` to the feedback when the dependency is missing or
+depleted.  The required item must be in the player's inventory with
+`quantity > 0` for the dependent item to work.
+
+### Consumable Items (Quantities)
+
+Items with limited uses should have:
+- `quantity`: current amount (e.g., 10 charges, 30 rounds)
+- `max_quantity`: maximum capacity for reloading/recharging
+- `quantity_unit`: display label ("rounds", "charges", "uses", "doses")
+- `depleted_message`: feedback when quantity reaches 0
+- `quantity_description`: optional template for examine display, e.g.,
+  "The {{item}} has {{quantity}} {{unit}} remaining."
+
+### Item Tags (item_tags)
+
+A JSON array of tags for the interaction matrix.  Tags determine how an
+item interacts with targets via the `use {{item}} on {{target}}` command.
+Common tags:
+- `"weapon"` -- can be used aggressively
+- `"firearm"` -- ranged weapon (subset of weapon)
+- `"light_source"` -- produces light when active
+- `"tool"` -- general-purpose utility
+- `"blade"` -- cutting/slashing weapon
+- `"container"` -- already handled by container system, but tagged for
+  interaction purposes
+- `"healing"` -- restores health
+- `"loud"` -- using this makes noise
+
+### Realism Level
+
+Realism level: {realism}
+
+If realism is "low":
+  - Do NOT set requires_item_id on any item
+  - Do NOT set quantity on any item (leave NULL)
+  - Light sources should be toggleable but always work
+  - Weapons should be usable but never need ammo
+
+If realism is "medium":
+  - Set requires_item_id on items that logically need fuel/power
+  - Set quantity to generous values (batteries: 20 charges, ammo: 30 rounds)
+  - Ensure at least 2 light sources are available per dark area
+
+If realism is "high":
+  - Set requires_item_id on all items that logically need fuel/power
+  - Set quantity to realistic values (batteries: 8 charges, ammo: 12 rounds)
+  - Light sources are scarce (1 per dark area, barely enough)
+  - Include depleted_message for all quantified items
 
 ### Output Format
 
@@ -453,17 +696,35 @@ objects.  Each item object must have these fields:
   "is_container": 0 or 1,
   "is_open": 0 or 1,
   "has_lid": 0 or 1,
+  "accepts_items": ["item_id_1", "item_id_2"] or null,
+  "reject_message": "string or null",
   "is_locked": 0 or 1,
   "lock_message": "string or null",
   "open_message": "string or null",
   "search_message": "string or null",
   "room_description": "string or null",
+  "home_room_id": "string (room ID) or null",
+  "drop_description": "string or null",
   "take_message": "string or null",
   "category": "key|tool|weapon|treasure|document|scenery|consumable|container",
   "read_description": "string or null",
   "key_item_id": "string or null",
   "consume_key": 0 or 1,
-  "unlock_message": "string or null"
+  "unlock_message": "string or null",
+  "is_toggleable": 0 or 1,
+  "toggle_state": "string or null",
+  "toggle_on_message": "string or null",
+  "toggle_off_message": "string or null",
+  "toggle_states": ["state1", "state2"] or null,
+  "toggle_messages": {{"state1": "message1"}} or null,
+  "requires_item_id": "string (item ID) or null",
+  "requires_message": "string or null",
+  "item_tags": ["tag1", "tag2"] or null,
+  "quantity": integer or null,
+  "max_quantity": integer or null,
+  "quantity_unit": "string or null",
+  "depleted_message": "string or null",
+  "quantity_description": "string or null"
 }}
 ```
 """
@@ -500,6 +761,25 @@ def _validate_items(items: list[dict], context: dict) -> list[str]:
                     f"Takeable visible item {iid} is missing room_description"
                 )
 
+        # Takeable items with room_description need drop_description
+        if (
+            item.get("is_takeable", 0) == 1
+            and item.get("room_description")
+            and not item.get("drop_description")
+        ):
+            errors.append(
+                f"Takeable item {iid} has room_description but missing "
+                f"drop_description"
+            )
+
+        # home_room_id must reference a valid room
+        home_rid = item.get("home_room_id")
+        if home_rid is not None and home_rid not in room_ids:
+            errors.append(
+                f"Item {iid} has home_room_id={home_rid!r} which is not "
+                f"a valid room"
+            )
+
         # Required fields
         for field in ("name", "description", "examine_description", "category"):
             if not item.get(field):
@@ -533,11 +813,6 @@ def _validate_items(items: list[dict], context: dict) -> list[str]:
                 errors.append(
                     f"Item {iid} has container_id={cid!r} which is not "
                     f"a container (is_container=1)"
-                )
-            # No nesting: a container must not be inside another container
-            if item.get("is_container"):
-                errors.append(
-                    f"Container {iid} has container_id set (no nesting allowed)"
                 )
             # Mutually exclusive: room_id and container_id
             if rid is not None:
@@ -586,6 +861,34 @@ def _insert_items(db: GameDB, items: list[dict], context: dict) -> list[dict]:
             )
             item["room_id"] = None
 
+        # Serialize accepts_items list to JSON string for SQLite storage.
+        accepts_items_raw = item.get("accepts_items")
+        accepts_items_json = (
+            json.dumps(accepts_items_raw)
+            if accepts_items_raw is not None
+            else None
+        )
+
+        # Serialize JSON array/object fields for SQLite storage.
+        item_tags_raw = item.get("item_tags")
+        item_tags_json = (
+            json.dumps(item_tags_raw)
+            if item_tags_raw is not None
+            else None
+        )
+        toggle_states_raw = item.get("toggle_states")
+        toggle_states_json = (
+            json.dumps(toggle_states_raw)
+            if toggle_states_raw is not None
+            else None
+        )
+        toggle_messages_raw = item.get("toggle_messages")
+        toggle_messages_json = (
+            json.dumps(toggle_messages_raw)
+            if toggle_messages_raw is not None
+            else None
+        )
+
         db.insert_item(
             id=item["id"],
             name=item["name"],
@@ -608,10 +911,29 @@ def _insert_items(db: GameDB, items: list[dict], context: dict) -> list[dict]:
             weight=item.get("weight", 1),
             category=item.get("category"),
             room_description=item.get("room_description"),
+            home_room_id=item.get("home_room_id"),
+            drop_description=item.get("drop_description"),
             read_description=item.get("read_description"),
             key_item_id=item.get("key_item_id"),
             consume_key=item.get("consume_key", 0),
             unlock_message=item.get("unlock_message"),
+            accepts_items=accepts_items_json,
+            reject_message=item.get("reject_message"),
+            # Item dynamics fields
+            is_toggleable=item.get("is_toggleable", 0),
+            toggle_state=item.get("toggle_state"),
+            toggle_on_message=item.get("toggle_on_message"),
+            toggle_off_message=item.get("toggle_off_message"),
+            toggle_states=toggle_states_json,
+            toggle_messages=toggle_messages_json,
+            requires_item_id=item.get("requires_item_id"),
+            requires_message=item.get("requires_message"),
+            item_tags=item_tags_json,
+            quantity=item.get("quantity"),
+            max_quantity=item.get("max_quantity"),
+            quantity_unit=item.get("quantity_unit"),
+            depleted_message=item.get("depleted_message"),
+            quantity_description=item.get("quantity_description"),
         )
         inserted.append(item)
 
@@ -702,6 +1024,9 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
             "is_locked": i.get("is_locked", 0),
             "category": i.get("category"),
             "description": i["description"],
+            "item_tags": i.get("item_tags"),
+            "is_toggleable": i.get("is_toggleable", 0),
+            "quantity": i.get("quantity"),
         }
         for i in inserted_items
     ]

@@ -75,6 +75,8 @@ class GeminiProvider(BaseProvider):
             "Do not include any explanation, markdown formatting, or text outside the JSON object.\n\n"
             f"Required JSON schema:\n{json.dumps(schema, indent=2)}"
         )
+        if ctx.seed is not None:
+            system_instruction += f"\n\nGeneration seed: {ctx.seed}. Use this seed to guide deterministic choices."
 
         user_content = prompt
         if ctx.existing_data:

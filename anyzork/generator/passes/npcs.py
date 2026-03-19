@@ -100,6 +100,16 @@ NPCS_SCHEMA: dict[str, Any] = {
                         "type": ["integer", "null"],
                         "description": "Damage per attack for combat NPCs, null for non-combatants.",
                     },
+                    "category": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "Category for the interaction matrix. Determines "
+                            "how items interact with this NPC via 'use X on Y'. "
+                            "Common categories: 'character' (friendly/neutral), "
+                            "'hostile' (enemy), 'animal' (non-humanoid creature), "
+                            "'merchant' (trader)."
+                        ),
+                    },
                 },
             },
         },
@@ -331,6 +341,17 @@ If `room_id` does not exactly match one of the room IDs listed in
 "Existing Rooms", the NPC will fail to insert. If `blocked_exit_id` does
 not exactly match an exit ID from "Existing Exits", it will be dropped.
 
+### NPC Categories (IMPORTANT)
+
+Every NPC MUST have a `category` field for the interaction matrix. The
+category determines how items interact with this NPC when the player types
+`use {{item}} on {{npc}}`.  Use these standard categories:
+
+- `"character"` — friendly or neutral NPC (quest givers, lore sources)
+- `"hostile"` — enemy NPC (combat encounters)
+- `"animal"` — non-humanoid creature
+- `"merchant"` — trader NPC
+
 ### Placement Rules
 
 - Spread NPCs across regions.  Do not cluster.
@@ -543,6 +564,7 @@ def _insert_npcs(
             default_dialogue=npc["default_dialogue"],
             hp=npc.get("hp"),
             damage=npc.get("damage"),
+            category=npc.get("category"),
         )
         inserted.append(npc)
         inserted_npc_ids.add(npc["id"])
@@ -637,6 +659,7 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
             "is_blocking": n.get("is_blocking", 0),
             "blocked_exit_id": n.get("blocked_exit_id"),
             "unblock_flag": n.get("unblock_flag"),
+            "category": n.get("category"),
         }
         for n in inserted_npcs
     ]

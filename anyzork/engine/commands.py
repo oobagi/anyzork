@@ -187,7 +187,9 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
 
     Supports all precondition types from the DSL spec:
     ``in_room``, ``has_item``, ``has_flag``, ``not_flag``, ``item_in_room``,
-    ``npc_in_room``, ``lock_unlocked``, ``puzzle_solved``, ``health_above``.
+    ``npc_in_room``, ``lock_unlocked``, ``puzzle_solved``, ``health_above``,
+    ``container_open``, ``item_in_container``, ``not_item_in_container``,
+    ``container_has_contents``, ``container_empty``, ``has_quantity``.
 
     Slot references (``{slot_name}``) in string fields are substituted before
     evaluation.
@@ -263,6 +265,57 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
             return False
         return bool(item.get("is_open")) or not bool(item.get("has_lid"))
 
+    if cond_type == "item_in_container":
+        item_ref = _substitute_slots(condition["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        container_ref = _substitute_slots(condition["container"], slots)
+        container_id = _resolve_name_to_id(container_ref, db)
+        row = db._fetchone(
+            "SELECT 1 FROM items WHERE id = ? AND container_id = ? AND is_visible = 1",
+            (item_id, container_id),
+        )
+        return row is not None
+
+    if cond_type == "not_item_in_container":
+        item_ref = _substitute_slots(condition["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        container_ref = _substitute_slots(condition["container"], slots)
+        container_id = _resolve_name_to_id(container_ref, db)
+        row = db._fetchone(
+            "SELECT 1 FROM items WHERE id = ? AND container_id = ? AND is_visible = 1",
+            (item_id, container_id),
+        )
+        return row is None
+
+    if cond_type == "container_has_contents":
+        container_ref = _substitute_slots(condition["container"], slots)
+        container_id = _resolve_name_to_id(container_ref, db)
+        row = db._fetchone(
+            "SELECT 1 FROM items WHERE container_id = ? AND is_visible = 1 LIMIT 1",
+            (container_id,),
+        )
+        return row is not None
+
+    if cond_type == "container_empty":
+        container_ref = _substitute_slots(condition["container"], slots)
+        container_id = _resolve_name_to_id(container_ref, db)
+        row = db._fetchone(
+            "SELECT 1 FROM items WHERE container_id = ? AND is_visible = 1 LIMIT 1",
+            (container_id,),
+        )
+        return row is None
+
+    if cond_type == "has_quantity":
+        item_ref = _substitute_slots(condition["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        item = db.get_item(item_id)
+        if item is None:
+            return False
+        qty = item.get("quantity")
+        if qty is None:
+            return False
+        return qty >= condition.get("min", 1)
+
     logger.warning("Unknown precondition type: %s", cond_type)
     return False
 
@@ -282,7 +335,9 @@ def apply_effect(
     Supports all effect types from the DSL spec:
     ``move_item``, ``remove_item``, ``set_flag``, ``unlock``, ``move_player``,
     ``spawn_item``, ``change_health``, ``add_score``, ``reveal_exit``,
-    ``solve_puzzle``, ``discover_quest``, ``print``.
+    ``solve_puzzle``, ``discover_quest``, ``open_container``,
+    ``move_item_to_container``, ``take_item_from_container``, ``print``,
+    ``consume_quantity``, ``restore_quantity``, ``set_toggle_state``.
 
     Args:
         effect: The effect dict with a ``type`` field and type-specific params.
@@ -387,11 +442,38 @@ def apply_effect(
         item_id = _resolve_name_to_id(item_ref, db)
         container_ref = _substitute_slots(effect["container"], slots)
         container_id = _resolve_name_to_id(container_ref, db)
-        db.move_item_to_container(item_id, container_id)
+        success, reject_msg = db.move_item_to_container(item_id, container_id)
+        if not success and reject_msg:
+            messages.append(reject_msg)
+
+    elif effect_type == "take_item_from_container":
+        item_ref = _substitute_slots(effect["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        db.take_item_from_container(item_id)
 
     elif effect_type == "print":
         message = _substitute_slots(effect["message"], slots)
         messages.append(message)
+
+    elif effect_type == "consume_quantity":
+        item_ref = _substitute_slots(effect["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        amount = effect.get("amount", 1)
+        db.consume_item_quantity(item_id, amount)
+
+    elif effect_type == "restore_quantity":
+        item_ref = _substitute_slots(effect["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        amount = effect.get("amount", 1)
+        source_ref = effect.get("source")
+        source_id = _resolve_name_to_id(source_ref, db) if source_ref else None
+        db.restore_item_quantity(item_id, amount, source_id)
+
+    elif effect_type == "set_toggle_state":
+        item_ref = _substitute_slots(effect["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        new_state = _substitute_slots(effect["state"], slots)
+        db.toggle_item_state(item_id, new_state)
 
     else:
         logger.warning("Unknown effect type: %s", effect_type)
@@ -453,6 +535,8 @@ def resolve_command(
 
     # Track the best failure message from a matching-but-failing command
     best_fail_message: str | None = None
+    # Track done_message from an already-executed one-shot (fallback, not immediate return)
+    best_done_message: str | None = None
 
     for cmd in candidates:
         # Parse preconditions and effects from JSON strings
@@ -469,21 +553,19 @@ def resolve_command(
         for slot_name, raw_value in match.items():
             resolved_slots[slot_name] = _resolve_name_to_id(raw_value, db)
 
-        # Check one-shot: if already executed, show done_message or skip
+        # Check one-shot: if already executed, save done_message as fallback
         if cmd["one_shot"] and cmd["executed"]:
             done_msg = cmd.get("done_message", "")
-            if done_msg:
-                # Verify preconditions still hold (e.g., player is in the
-                # right room) before showing the done message.  Skip
-                # preconditions that check for flags set BY this command
-                # (they will have changed since execution).
+            if done_msg and best_done_message is None:
+                # Verify preconditions still hold before saving (skip not_flag
+                # since flags set BY this command will have changed).
                 preconds_pass = all(
                     check_precondition(cond, db, resolved_slots)
                     for cond in preconditions
                     if cond.get("type") not in ("not_flag",)
                 )
                 if preconds_pass:
-                    return CommandResult(success=True, messages=[done_msg])
+                    best_done_message = done_msg
             continue
 
         # Check all preconditions
@@ -522,6 +604,10 @@ def resolve_command(
             db.mark_command_executed(cmd["id"])
 
         return CommandResult(success=True, messages=all_messages, effects_applied=applied)
+
+    # An already-executed one-shot matched — show its done_message as fallback
+    if best_done_message:
+        return CommandResult(success=True, messages=[best_done_message])
 
     # No command's preconditions passed (but at least one pattern matched)
     if best_fail_message:

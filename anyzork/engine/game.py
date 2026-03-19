@@ -7,6 +7,8 @@ Rich provides styled terminal output for a polished text adventure experience.
 from __future__ import annotations
 
 import json
+import logging
+import re
 from typing import TYPE_CHECKING
 
 from rich.console import Console
@@ -16,6 +18,9 @@ from rich.table import Table
 
 if TYPE_CHECKING:
     from anyzork.db.schema import GameDB
+    from anyzork.engine.narrator import Narrator
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Styling palette — every engine-generated label uses these constants so
@@ -78,13 +83,27 @@ class GameEngine:
     flags, score, moves).
     """
 
-    def __init__(self, db: GameDB) -> None:
+    def __init__(
+        self,
+        db: GameDB,
+        *,
+        narrator_enabled: bool = False,
+        narrator_provider: str | None = None,
+        narrator_model: str | None = None,
+    ) -> None:
         self.db = db
         self.console = Console()
         self._running = False
         # Cache of objective completion states from the previous tick.
         # Maps objective_id -> bool (was complete last tick).
         self._objective_cache: dict[str, bool] = {}
+        # Narrator -- optional LLM prose layer.
+        self._narrator: Narrator | None = None
+        self._narrator_requested = narrator_enabled
+        self._narrator_provider_override = narrator_provider
+        self._narrator_model_override = narrator_model
+        self._shown_shortcut_bar = False
+        self._has_seen_help = False
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -103,7 +122,7 @@ class GameEngine:
             self.db.init_player(start_room["id"])
             player = self.db.get_player()
 
-        # Show game title and intro text.
+        # Show game title and info panel.
         meta = self.db.get_all_meta()
         if meta:
             title = meta.get("title", "Untitled Adventure")
@@ -117,6 +136,31 @@ class GameEngine:
                 )
             )
 
+            # Compact game info line below the title.
+            from anyzork import __version__ as engine_version
+
+            info_parts: list[str] = []
+            save_version = meta.get("version", "?")
+            if save_version == engine_version:
+                info_parts.append(f"v{engine_version}")
+            else:
+                info_parts.append(
+                    f"Engine v{engine_version} | Save v{save_version} [yellow](outdated)[/yellow]"
+                )
+            seed = meta.get("seed")
+            if seed:
+                info_parts.append(f"Seed: {seed}")
+            created = meta.get("created_at", "")
+            if created and len(created) >= 10:
+                info_parts.append(created[:10])
+            max_score = meta.get("max_score", 0)
+            if max_score:
+                info_parts.append(f"Max score: {max_score}")
+            if info_parts:
+                self.console.print(
+                    "  " + "[dim]  |  [/dim]".join(f"[dim]{p}[/dim]" for p in info_parts)
+                )
+
             intro = meta.get("intro_text", "")
             if intro:
                 self.console.print()
@@ -124,12 +168,24 @@ class GameEngine:
 
         self.console.print()
 
+        # Initialize narrator if requested via CLI flag, env var, or saved preference.
+        if self._narrator_requested or self.db.has_flag("_narrator_enabled"):
+            self._init_narrator()
+
         # Initialize quest state: auto-discover main quest and cache objectives.
         self._init_quest_state()
 
         # Display the starting room.
         assert player is not None
         self.display_room(player["current_room_id"])
+
+        # Show shortcut bar once after the very first room display.
+        if not self._shown_shortcut_bar:
+            self.console.print(
+                f"  [{STYLE_COMMAND}]I[/][dim]nventory  [{STYLE_COMMAND}]J[/][dim]ournal  "
+                f"[{STYLE_COMMAND}]L[/][dim]ook  [{STYLE_COMMAND}]H[/][dim]elp[/]"
+            )
+            self._shown_shortcut_bar = True
 
         # Enter the REPL.
         self.main_loop()
@@ -149,7 +205,7 @@ class GameEngine:
                 break
 
             try:
-                raw = Prompt.ask(f"\n[{STYLE_PROMPT}]>[/]")
+                raw = self.console.input(f"\n[{STYLE_PROMPT}]> [/]")
             except (EOFError, KeyboardInterrupt):
                 self.console.print("\nFarewell, adventurer.")
                 break
@@ -168,7 +224,6 @@ class GameEngine:
                 break
 
             if verb in ("look", "l") and len(tokens) == 1:
-                self.console.clear()
                 self.display_room(player["current_room_id"], force_full=True)
                 self._tick()
                 continue
@@ -185,6 +240,7 @@ class GameEngine:
 
             if verb == "help" and len(tokens) == 1:
                 self.show_help()
+                self._has_seen_help = True
                 continue  # help doesn't cost a move
 
             if verb == "save" and len(tokens) == 1:
@@ -194,6 +250,30 @@ class GameEngine:
                     style=STYLE_SYSTEM,
                 )
                 continue  # save info doesn't cost a move
+
+            if verb == "narrator" and len(tokens) >= 2:
+                if tokens[1] == "on":
+                    if self._narrator is None:
+                        self._init_narrator()
+                    if self._narrator is not None:
+                        self.console.print("Narrator mode enabled.", style=STYLE_SYSTEM)
+                        self.db.set_flag("_narrator_enabled", "true")
+                    else:
+                        self.console.print(
+                            "Cannot enable narrator: no API key configured.",
+                            style=STYLE_SYSTEM,
+                        )
+                elif tokens[1] == "off":
+                    self._narrator = None
+                    self.console.print("Narrator mode disabled.", style=STYLE_SYSTEM)
+                    self.db.set_flag("_narrator_enabled", "false")
+                else:
+                    status = "ON" if self._narrator is not None else "OFF"
+                    self.console.print(
+                        f"Narrator: {status}. Use 'narrator on' or 'narrator off'.",
+                        style=STYLE_SYSTEM,
+                    )
+                continue  # narrator toggle doesn't cost a move
 
             if verb in ("quests", "journal", "quest", "j") and len(tokens) == 1:
                 self._show_quests()
@@ -218,7 +298,22 @@ class GameEngine:
             if resolve_command is not None:
                 result = resolve_command(raw, self.db, player["current_room_id"])
                 if result.success:
-                    # DSL command succeeded — show messages and move on
+                    # DSL command succeeded — optionally narrate, then show messages.
+                    display_messages = result.messages
+                    if self._narrator and result.messages:
+                        narrated = self._narrator.narrate_action(
+                            verb, " ".join(tokens[1:]) if len(tokens) > 1 else None,
+                            result.messages,
+                        )
+                        if narrated:
+                            display_messages = [narrated]
+                    for msg in display_messages:
+                        self.console.print(msg)
+                    dsl_handled = True
+                elif result.messages and result.messages != ["I don't understand that."]:
+                    # DSL matched a command but preconditions failed with a
+                    # specific failure message (e.g. "You need a loaded gun
+                    # to shoot"). Show it so the player gets useful feedback.
                     for msg in result.messages:
                         self.console.print(msg)
                     dsl_handled = True
@@ -313,24 +408,60 @@ class GameEngine:
                 self._tick()
                 continue
 
-            # use {item} on {target} — built-in key-on-lock handler
-            if verb == "use" and len(tokens) >= 4 and "on" in tokens:
-                on_idx = tokens.index("on")
-                if on_idx > 1 and on_idx < len(tokens) - 1:
-                    item_name = " ".join(tokens[1:on_idx])
-                    target_name = " ".join(tokens[on_idx + 1:])
-                    handled = self._handle_use_on(item_name, target_name, player["current_room_id"])
-                    if handled:
+            # turn on/off {item} — direct state setters
+            if verb == "turn" and len(tokens) >= 3 and tokens[1] in ("on", "off"):
+                target_state = tokens[1]
+                item_name = " ".join(tokens[2:])
+                self._handle_turn(item_name, target_state, player["current_room_id"])
+                self._tick()
+                continue
+
+            # use {item} on {target} — key-on-lock, then interaction matrix, then put-in
+            if verb == "use" and len(tokens) >= 2:
+                if len(tokens) >= 4 and "on" in tokens:
+                    on_idx = tokens.index("on")
+                    if on_idx > 1 and on_idx < len(tokens) - 1:
+                        item_name = " ".join(tokens[1:on_idx])
+                        target_name = " ".join(tokens[on_idx + 1:])
+                        # Try key-on-lock first.
+                        handled = self._handle_use_on(item_name, target_name, player["current_room_id"])
+                        if handled:
+                            self._tick()
+                            continue
+                        # Try interaction matrix second.
+                        handled = self._handle_interaction(
+                            item_name, target_name, player["current_room_id"]
+                        )
+                        if handled:
+                            self._tick()
+                            continue
+                        # Fall back to put-in (use ammo on magazine = put ammo in magazine).
+                        self._handle_put_in(item_name, target_name, player["current_room_id"])
                         self._tick()
                         continue
+                else:
+                    # "use X" without "on Y" — toggle if toggleable, else syntax hint
+                    item_name = " ".join(tokens[1:])
+                    self._handle_use_bare(item_name, player["current_room_id"])
+                    self._tick()
+                    continue
 
-            # put / place <item> in/into/inside <container>
+            # put / place <item> in/into/inside/on <container>
             if verb in ("put", "place") and len(tokens) >= 4:
+                # Try DSL first (catches placement puzzles like "put crystal on altar")
+                if resolve_command is not None:
+                    result = resolve_command(raw, self.db, player["current_room_id"])
+                    if result.success:
+                        for msg in result.messages:
+                            self.console.print(msg)
+                        self._tick()
+                        continue
+                # Fall through to built-in container handling
                 rest_tokens = tokens[1:]
-                # Find the split word: "in", "into", or "inside"
+                # Find the split word: "in", "into", "inside", or "on"
                 split_idx = None
                 for i, t in enumerate(rest_tokens):
-                    if t in ("in", "into", "inside"):
+                    if t in ("in", "into", "inside", "on"):
                         split_idx = i
                         break
                 if split_idx is not None and split_idx > 0 and split_idx < len(rest_tokens) - 1:
@@ -354,18 +485,39 @@ class GameEngine:
                 continue
 
             # ---- Nothing matched ----
-            self.console.print("I don't understand that.", style=STYLE_SYSTEM)
+            if not self._has_seen_help:
+                self.console.print(
+                    "I don't understand that. Type 'help' for available commands.",
+                    style=STYLE_SYSTEM,
+                )
+                self._has_seen_help = True
+            else:
+                self.console.print("I don't understand that.", style=STYLE_SYSTEM)
             self._tick()
 
     # ------------------------------------------------------------------
     # Room display
     # ------------------------------------------------------------------
 
+    def _is_room_lit(self, room: dict) -> bool:
+        """Return ``True`` if the room is visible to the player.
+
+        A room is lit when it is not marked dark, or when the player
+        carries an active light source (an inventory item tagged
+        ``light_source`` with ``toggle_state = 'on'``).
+        """
+        if not room.get("is_dark"):
+            return True
+        if self.db.get_active_light_sources():
+            return True
+        return False
+
     def display_room(self, room_id: str, *, force_full: bool = False) -> None:
         """Render a room to the console.
 
         On the first visit (or when *force_full* is ``True``), the full
         description is shown.  On revisits, the short description is used.
+        Dark rooms show a limited view unless the player has a light source.
         """
         room = self.db.get_room(room_id)
         if room is None:
@@ -377,6 +529,32 @@ class GameEngine:
 
         # Record the visit and decide which description to show.
         first_visit = self.db.record_visit(room_id, move_num)
+
+        # --- Dark room handling ---
+        lit = self._is_room_lit(room)
+        if not lit:
+            # Dark and unlit — show limited view.
+            self.console.print(
+                Panel(
+                    "It's pitch black. You can't see a thing.",
+                    title=f"[{STYLE_ROOM_NAME}]{room['name']}[/]",
+                    title_align="left",
+                    border_style=STYLE_ROOM_BORDER,
+                    padding=(1, 2),
+                )
+            )
+            # Exits with direction only (no destination) — the player can feel walls.
+            exits = self.db.get_exits(room_id)
+            if exits:
+                exit_strs = [
+                    f"[{STYLE_DIRECTION}]{ex['direction']}[/]" for ex in exits
+                ]
+                self.console.print(
+                    "[bold]Exits:[/] " + "  |  ".join(exit_strs)
+                )
+            return
+
+        # --- Normal (lit) room rendering ---
 
         # Build the room body text.
         parts: list[str] = []
@@ -396,21 +574,56 @@ class GameEngine:
         prose_items: list[str] = []
         list_items: list[dict] = []
         for it in items:
-            rd = it.get("room_description")
-            if rd:
-                prose_items.append(rd)
+            home = it.get("home_room_id")
+            if home == room_id and it.get("room_description"):
+                # Item is in its authored home — use bespoke prose
+                prose_items.append(it["room_description"])
+            elif it.get("drop_description"):
+                # Item is away from home (or has no home) — use generic prose
+                prose_items.append(it["drop_description"])
             else:
+                # No prose at all — fall back to name list
                 list_items.append(it)
 
         if prose_items:
             parts.append(" ".join(prose_items))
 
+        # NPCs present — fetched early because the narrator needs them.
+        npcs = self.db.get_npcs_in(room_id)
+
         body = "\n\n".join(parts)
+
+        # If this is a dark room illuminated by a light source, note it.
+        light_note = ""
+        if room.get("is_dark"):
+            active_lights = self.db.get_active_light_sources()
+            if active_lights:
+                light_name = active_lights[0]["name"]
+                light_note = f"\n\n[{STYLE_SYSTEM}](illuminated by your {light_name})[/]"
+
+        # Attempt narration if the narrator is active.
+        display_body = body
+        if self._narrator is not None:
+            narrated = self._narrator.narrate_room(
+                room_id=room_id,
+                room_name=room["name"],
+                description=body,
+                items=items,
+                npcs=npcs,
+                first_visit=first_visit,
+            )
+            if narrated:
+                display_body = narrated
+            elif self._narrator._failure_count == 1:
+                self.console.print(
+                    "(Narrator unavailable for this turn -- showing engine output.)",
+                    style=STYLE_SYSTEM,
+                )
 
         # Display the room panel.
         self.console.print(
             Panel(
-                body,
+                display_body + light_note,
                 title=f"[{STYLE_ROOM_NAME}]{room['name']}[/]",
                 title_align="left",
                 border_style=STYLE_ROOM_BORDER,
@@ -443,8 +656,7 @@ class GameEngine:
             item_names = ", ".join(f"[{STYLE_ITEM}]{it['name']}[/]" for it in list_items)
             self.console.print(f"[bold]You see:[/] {item_names}")
 
-        # NPCs present.
-        npcs = self.db.get_npcs_in(room_id)
+        # NPCs present (already fetched above for the narrator).
         if npcs:
             npc_names = ", ".join(f"[{STYLE_NPC}]{npc['name']}[/]" for npc in npcs)
             self.console.print(f"[bold]Present:[/] {npc_names}")
@@ -466,20 +678,12 @@ class GameEngine:
             self.console.print("You can't go that way.", style=STYLE_SYSTEM)
             return
 
-        # Hidden exits are excluded by get_exit_by_direction via the schema's
-        # get_exits filter, but get_exit_by_direction returns all exits
-        # including hidden ones.  Guard against it here.
-        if exit_row.get("is_hidden"):
-            self.console.print("You can't go that way.", style=STYLE_SYSTEM)
-            return
-
         # Locked?
         if exit_row.get("is_locked"):
             lock = self.db.get_lock_for_exit(exit_row["id"])
-            if lock:
-                self.console.print(lock["locked_message"], style=STYLE_LOCKED)
-            else:
-                self.console.print("The way is blocked.", style=STYLE_LOCKED)
+            raw_msg = lock["locked_message"] if lock else "The way is blocked."
+            for m in self._narrate_action("go", direction, [raw_msg]):
+                self.console.print(m, style=STYLE_LOCKED)
             return
 
         # Move the player.
@@ -509,7 +713,19 @@ class GameEngine:
         table.add_column("Description", style=STYLE_SYSTEM)
 
         for item in items:
-            table.add_row(item["name"], item["description"])
+            desc = item["description"]
+            # Append toggle state indicator.
+            if item.get("toggle_state"):
+                desc += f" [{item['toggle_state']}]"
+            # Append quantity indicator.
+            if item.get("quantity") is not None:
+                unit = item.get("quantity_unit") or "units"
+                max_qty = item.get("max_quantity")
+                if max_qty is not None:
+                    desc += f" {item['quantity']}/{max_qty} {unit}"
+                else:
+                    desc += f" {item['quantity']} {unit}"
+            table.add_row(item["name"], desc)
 
         self.console.print(table)
 
@@ -552,43 +768,91 @@ class GameEngine:
     # ------------------------------------------------------------------
 
     def show_help(self) -> None:
-        """List built-in commands available to the player."""
+        """List built-in commands and game-specific DSL commands."""
 
         c = STYLE_COMMAND  # shorthand for readability in the help block
+        narrator_status = "ON" if self._narrator is not None else "OFF"
+        sections = (
+            "[bold]Built-in commands[/]\n"
+            f"  [{c}]look[/] (l)           — redisplay the current room\n"
+            f"  [{c}]inventory[/] (i)      — show what you're carrying\n"
+            f"  [{c}]score[/]              — show your score and stats\n"
+            f"  [{c}]quests[/] (j)          — view your quest log\n"
+            f"  [{c}]narrator on[/]/[{c}]off[/]    — toggle narrator mode (currently {narrator_status})\n"
+            f"  [{c}]save[/]               — how saving works\n"
+            f"  [{c}]help[/]               — this message\n"
+            f"  [{c}]quit[/] / [{c}]exit[/]        — leave the game\n"
+            "\n"
+            "[bold]Interaction[/]\n"
+            f"  [{c}]take[/] / [{c}]get[/] / [{c}]pick up[/] {{item}}  — pick up an item\n"
+            f"  [{c}]take[/] {{item}} [{c}]from[/] {{container}}  — take from a container\n"
+            f"  [{c}]drop[/] {{item}}        — drop an item from inventory\n"
+            f"  [{c}]examine[/] / [{c}]x[/] / [{c}]look at[/] {{thing}}  — examine something closely\n"
+            f"  [{c}]read[/] {{item}}        — read a document or inscription\n"
+            f"  [{c}]open[/] {{thing}}       — open a container or locked exit\n"
+            f"  [{c}]unlock[/] {{thing}}     — try to unlock something locked\n"
+            f"  [{c}]use[/] {{item}} [{c}]on[/] {{thing}}  — use an item on something\n"
+            f"  [{c}]turn on[/]/[{c}]off[/] {{item}}  — toggle an item on or off\n"
+            f"  [{c}]search[/] / [{c}]look in[/] {{container}}  — search inside a container\n"
+            f"  [{c}]put[/] {{item}} [{c}]in[/] {{container}}  — put something into a container\n"
+            f"  [{c}]talk to[/] {{npc}}      — start a conversation\n"
+            "\n"
+            "[bold]Movement[/]\n"
+            f"  Type a direction: [{c}]north[/], [{c}]south[/], [{c}]east[/], "
+            f"[{c}]west[/], [{c}]up[/], [{c}]down[/]\n"
+            f"  Shortcuts: [{c}]n[/] [{c}]s[/] [{c}]e[/] [{c}]w[/] [{c}]u[/] [{c}]d[/]"
+        )
+
+        # Append game-specific DSL commands.
+        game_cmds = self._get_dsl_help_lines()
+        if game_cmds:
+            sections += "\n\n[bold]Game commands[/]\n" + game_cmds
+
         self.console.print(
             Panel(
-                "[bold]Built-in commands[/]\n"
-                f"  [{c}]look[/] (l)           — redisplay the current room\n"
-                f"  [{c}]inventory[/] (i)      — show what you're carrying\n"
-                f"  [{c}]score[/]              — show your score and stats\n"
-                f"  [{c}]quests[/] (j)          — view your quest log\n"
-                f"  [{c}]save[/]               — how saving works\n"
-                f"  [{c}]help[/]               — this message\n"
-                f"  [{c}]quit[/] / [{c}]exit[/]        — leave the game\n"
-                "\n"
-                "[bold]Interaction[/]\n"
-                f"  [{c}]take[/] / [{c}]get[/] / [{c}]pick up[/] {{item}}  — pick up an item\n"
-                f"  [{c}]take[/] {{item}} [{c}]from[/] {{container}}  — take from a container\n"
-                f"  [{c}]drop[/] {{item}}        — drop an item from inventory\n"
-                f"  [{c}]examine[/] / [{c}]x[/] / [{c}]look at[/] {{thing}}  — examine something closely\n"
-                f"  [{c}]read[/] {{item}}        — read a document or inscription\n"
-                f"  [{c}]open[/] {{thing}}       — open a container or locked exit\n"
-                f"  [{c}]unlock[/] {{thing}}     — try to unlock something locked\n"
-                f"  [{c}]use[/] {{item}} [{c}]on[/] {{thing}}  — use an item on something\n"
-                f"  [{c}]search[/] / [{c}]look in[/] {{container}}  — search inside a container\n"
-                f"  [{c}]put[/] {{item}} [{c}]in[/] {{container}}  — put something into a container\n"
-                f"  [{c}]talk to[/] {{npc}}      — start a conversation\n"
-                "\n"
-                "[bold]Movement[/]\n"
-                f"  Type a direction: [{c}]north[/], [{c}]south[/], [{c}]east[/], "
-                f"[{c}]west[/], [{c}]up[/], [{c}]down[/]\n"
-                f"  Shortcuts: [{c}]n[/] [{c}]s[/] [{c}]e[/] [{c}]w[/] [{c}]u[/] [{c}]d[/]",
+                sections,
                 title=f"[{STYLE_ROOM_NAME}]Help[/]",
                 title_align="left",
                 border_style=STYLE_ROOM_BORDER,
                 padding=(1, 2),
             )
         )
+
+    def _get_dsl_help_lines(self) -> str:
+        """Build help text from DSL commands in the database.
+
+        Shows unique patterns grouped by verb, excluding patterns that
+        duplicate built-in verbs (take, drop, open, etc.).
+        """
+        builtin_verbs = {
+            "take", "get", "pick", "drop", "examine", "x", "look",
+            "read", "open", "unlock", "use", "search", "put", "place",
+            "talk", "go", "north", "south", "east", "west", "up", "down",
+            "turn",
+        }
+        commands = self.db.get_all_commands()
+        seen_patterns: set[str] = set()
+        lines: list[str] = []
+        c = STYLE_COMMAND
+
+        for cmd in commands:
+            verb = cmd.get("verb", "")
+            pattern = cmd.get("pattern", "")
+            if verb in builtin_verbs:
+                continue
+            if pattern in seen_patterns:
+                continue
+            seen_patterns.add(pattern)
+
+            # Style the pattern: make literal words cyan, keep {slots} plain
+            parts = re.split(r"(\{[^}]+\})", pattern)
+            styled = "".join(
+                f"[{c}]{p}[/]" if not p.startswith("{") else p
+                for p in parts
+            )
+            lines.append(f"  {styled}")
+
+        return "\n".join(lines)
 
 
     # ------------------------------------------------------------------
@@ -676,6 +940,65 @@ class GameEngine:
     # Built-in interaction verbs
     # ------------------------------------------------------------------
 
+    def _find_accessible_item(self, name: str, current_room_id: str) -> dict | None:
+        """Find an item by name, searching room, inventory, and one level into accessible containers.
+
+        Search order:
+        1. Room items.
+        2. Inventory items.
+        3. Items inside open/lid-less, unlocked containers in the room.
+        4. Items inside open/lid-less, unlocked containers in inventory.
+        """
+        db = self.db
+
+        # 1. Room items.
+        item = db.find_item_by_name(name, "room", current_room_id)
+        if item is not None:
+            return item
+
+        # 2. Inventory items.
+        item = db.find_item_by_name(name, "inventory", "")
+        if item is not None:
+            return item
+
+        # 3. Inside accessible containers in the room.
+        for container in db.get_open_containers_in_room(current_room_id):
+            found = db.find_item_in_container(name, container["id"])
+            if found is not None:
+                return found
+
+        # 4. Inside accessible containers in inventory.
+        for inv_item in db.get_inventory():
+            if (
+                inv_item.get("is_container")
+                and (inv_item.get("is_open") or not inv_item.get("has_lid"))
+                and not inv_item.get("is_locked")
+            ):
+                found = db.find_item_in_container(name, inv_item["id"])
+                if found is not None:
+                    return found
+
+        return None
+
+    @staticmethod
+    def _container_hint(child: dict, db: GameDB) -> str:
+        """Return a hint suffix for a child item that is itself a non-empty, accessible container.
+
+        Returns ``" (contains items)"`` when the child is a container that is
+        open or lid-less, not locked, and has at least one visible item inside.
+        Returns ``""`` otherwise.
+        """
+        if not child.get("is_container"):
+            return ""
+        if child.get("is_locked"):
+            return ""
+        if not child.get("is_open") and child.get("has_lid"):
+            return ""
+        contents = db.get_container_contents(child["id"])
+        if contents:
+            return " (contains items)"
+        return ""
+
     def _handle_take(self, item_name: str, current_room_id: str) -> None:
         """Pick up a takeable item from the current room or open containers."""
         db = self.db
@@ -687,11 +1010,9 @@ class GameEngine:
                 self.console.print("You can't take that.", style=STYLE_SYSTEM)
                 return
             db.move_item(item["id"], "inventory", "")
-            msg = item.get("take_message")
-            if msg:
-                self.console.print(msg)
-            else:
-                self.console.print("Taken.")
+            msg = item.get("take_message") or "Taken."
+            for m in self._narrate_action("take", item["name"], [msg]):
+                self.console.print(m)
             return
 
         # Not found directly in room — search inside open containers.
@@ -703,11 +1024,9 @@ class GameEngine:
                     self.console.print("You can't take that.", style=STYLE_SYSTEM)
                     return
                 db.take_item_from_container(found["id"])
-                msg = found.get("take_message")
-                if msg:
-                    self.console.print(msg)
-                else:
-                    self.console.print("Taken.")
+                msg = found.get("take_message") or "Taken."
+                for m in self._narrate_action("take", found["name"], [msg]):
+                    self.console.print(m)
                 return
 
         # Maybe they already have it?
@@ -727,11 +1046,9 @@ class GameEngine:
             return
 
         db.move_item(item["id"], "room", current_room_id)
-        msg = item.get("drop_message")
-        if msg:
-            self.console.print(msg)
-        else:
-            self.console.print("Dropped.")
+        msg = item.get("drop_message") or "Dropped."
+        for m in self._narrate_action("drop", item["name"], [msg]):
+            self.console.print(m)
 
     def _handle_examine(
         self, target_name: str, current_room_id: str, *, prefer_read: bool = False
@@ -744,18 +1061,46 @@ class GameEngine:
         """
         db = self.db
 
-        # Check items in inventory first.
-        item = db.find_item_by_name(target_name, "inventory", "")
-        if item is None:
-            # Check items in the current room.
-            item = db.find_item_by_name(target_name, "room", current_room_id)
+        # Find the target in the room, inventory, or inside accessible containers.
+        item = self._find_accessible_item(target_name, current_room_id)
 
         if item is not None:
             if prefer_read and item.get("read_description"):
                 desc = item["read_description"]
             else:
                 desc = item.get("examine_description") or item.get("description", "")
-            self.console.print(desc)
+            for m in self._narrate_action("examine", item["name"], [desc]):
+                self.console.print(m)
+
+            # Toggle state appendix.
+            if item.get("is_toggleable") and item.get("toggle_state"):
+                self.console.print(
+                    f"Status: {item['toggle_state']}", style=STYLE_SYSTEM
+                )
+
+            # Quantity appendix.
+            if item.get("quantity") is not None:
+                unit = item.get("quantity_unit") or "units"
+                max_qty = item.get("max_quantity")
+                qty = item["quantity"]
+                if qty <= 0:
+                    depl_msg = item.get("depleted_message") or "It's empty."
+                    self.console.print(depl_msg, style=STYLE_SYSTEM)
+                elif item.get("quantity_description"):
+                    tmpl = item["quantity_description"]
+                    self.console.print(
+                        tmpl.format(
+                            item=item["name"], quantity=qty, unit=unit
+                        )
+                    )
+                elif max_qty is not None:
+                    self.console.print(
+                        f"Ammo: {qty}/{max_qty} {unit}", style=STYLE_SYSTEM
+                    )
+                else:
+                    self.console.print(
+                        f"It has {qty} {unit}.", style=STYLE_SYSTEM
+                    )
 
             # Container state appendix.
             if item.get("is_container"):
@@ -768,7 +1113,9 @@ class GameEngine:
                     contents = db.get_container_contents(item["id"])
                     if contents:
                         names = ", ".join(
-                            f"[{STYLE_ITEM}]{c['name']}[/]" for c in contents
+                            f"[{STYLE_ITEM}]{c['name']}[/]"
+                            f"{self._container_hint(c, db)}"
+                            for c in contents
                         )
                         self.console.print(f"Inside, you see: {names}.")
                     else:
@@ -809,8 +1156,10 @@ class GameEngine:
                 self._try_unlock(lock)
                 return
 
-        # 3. Try matching a container item in the room.
+        # 3. Try matching a container item in the room or inventory.
         item = db.find_item_by_name(target_name, "room", current_room_id)
+        if item is None:
+            item = db.find_item_by_name(target_name, "inventory", "")
         if item is not None and item.get("is_container"):
             if item.get("is_locked"):
                 msg = item.get("lock_message") or "It's locked."
@@ -825,7 +1174,8 @@ class GameEngine:
             # Open the container.
             db.open_container(item["id"])
             msg = item.get("open_message") or f"You open the {item['name']}."
-            self.console.print(msg, style=STYLE_SUCCESS)
+            for m in self._narrate_action("open", item["name"], [msg]):
+                self.console.print(m, style=STYLE_SUCCESS)
             return
 
         self.console.print("You can't open that.", style=STYLE_SYSTEM)
@@ -854,6 +1204,26 @@ class GameEngine:
         item = db.find_item_by_name(target_name, "room", current_room_id)
         if item is not None and item.get("is_container"):
             if item.get("is_locked"):
+                key_id = item.get("key_item_id")
+                if key_id:
+                    inventory = db.get_inventory()
+                    has_key = any(i["id"] == key_id for i in inventory)
+                    if has_key:
+                        db.open_container(item["id"])
+                        if item.get("consume_key"):
+                            db.remove_item(key_id)
+                        msg = item.get("unlock_message") or "Unlocked."
+                        self.console.print(msg)
+                        # Auto-list container contents after unlock.
+                        contents = db.get_container_contents(item["id"])
+                        if contents:
+                            names = ", ".join(
+                                f"[{STYLE_ITEM}]{c['name']}[/]" for c in contents
+                            )
+                            self.console.print(
+                                f"Inside the [{STYLE_ITEM}]{item['name']}[/]: {names}."
+                            )
+                        return
                 msg = item.get("lock_message") or "It's locked."
                 self.console.print(msg, style=STYLE_LOCKED)
                 return
@@ -973,11 +1343,8 @@ class GameEngine:
         """Search a container — open if needed, then list contents."""
         db = self.db
 
-        # Find the target in the current room.
-        item = db.find_item_by_name(target_name, "room", current_room_id)
-        if item is None:
-            # Also check inventory (for portable containers like bags).
-            item = db.find_item_by_name(target_name, "inventory", "")
+        # Find the target in the room, inventory, or inside accessible containers.
+        item = self._find_accessible_item(target_name, current_room_id)
         if item is None:
             self.console.print("You don't see that here.", style=STYLE_SYSTEM)
             return
@@ -1007,7 +1374,8 @@ class GameEngine:
             self.console.print()
             self.console.print(f"Inside the [{STYLE_ITEM}]{item['name']}[/]:")
             for c in contents:
-                self.console.print(f"  - [{STYLE_ITEM}]{c['name']}[/]")
+                suffix = self._container_hint(c, db)
+                self.console.print(f"  - [{STYLE_ITEM}]{c['name']}[/]{suffix}")
         else:
             if search_msg:
                 self.console.print(search_msg)
@@ -1019,10 +1387,8 @@ class GameEngine:
         """Take an item from inside a specific container."""
         db = self.db
 
-        # Find the container in the room or inventory.
-        container = db.find_item_by_name(container_name, "room", current_room_id)
-        if container is None:
-            container = db.find_item_by_name(container_name, "inventory", "")
+        # Find the container in the room, inventory, or inside accessible containers.
+        container = self._find_accessible_item(container_name, current_room_id)
         if container is None:
             self.console.print("You don't see that here.", style=STYLE_SYSTEM)
             return
@@ -1093,12 +1459,239 @@ class GameEngine:
             self.console.print("You need to open it first.", style=STYLE_SYSTEM)
             return
 
-        db.move_item_to_container(item["id"], container["id"])
+        success, reject_msg = db.move_item_to_container(item["id"], container["id"])
+        if not success:
+            self.console.print(reject_msg, style=STYLE_SYSTEM)
+            return
         self.console.print(
             f"You put the [{STYLE_ITEM}]{item['name']}[/] in the"
             f" [{STYLE_ITEM}]{container['name']}[/].",
-            style=STYLE_SUCCESS,
         )
+
+    # ------------------------------------------------------------------
+    # Toggle / reload / interaction matrix
+    # ------------------------------------------------------------------
+
+    def _handle_use_bare(self, item_name: str, current_room_id: str) -> None:
+        """Handle ``use {item}`` without a target -- toggle if toggleable."""
+        db = self.db
+
+        item = db.find_item_by_name(item_name, "inventory", "")
+        if item is None:
+            self.console.print("You're not carrying that.", style=STYLE_SYSTEM)
+            return
+
+        if not item.get("is_toggleable"):
+            # Not toggleable -- show the existing syntax hint.
+            self.console.print(
+                f"Use {item['name']} on what? Try: use {{item}} on {{target}}",
+                style=STYLE_SYSTEM,
+            )
+            return
+
+        # Check requires_item_id.
+        if item.get("requires_item_id"):
+            req_item = db.get_item(item["requires_item_id"])
+            if req_item is None or (
+                req_item.get("quantity") is not None and req_item["quantity"] <= 0
+            ):
+                msg = item.get("requires_message") or "It doesn't seem to work."
+                self.console.print(msg, style=STYLE_SYSTEM)
+                return
+
+        # Determine the new state by cycling.
+        current_state = item.get("toggle_state") or "off"
+        states = ["off", "on"]
+        raw_states = item.get("toggle_states")
+        if raw_states:
+            try:
+                states = json.loads(raw_states)
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        if current_state in states:
+            idx = states.index(current_state)
+            new_state = states[(idx + 1) % len(states)]
+        else:
+            new_state = states[0]
+
+        db.toggle_item_state(item["id"], new_state)
+
+        # Determine the transition message.
+        msg = None
+        raw_messages = item.get("toggle_messages")
+        if raw_messages:
+            try:
+                messages_map = json.loads(raw_messages)
+                msg = messages_map.get(new_state)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if msg is None:
+            if new_state == "on":
+                msg = item.get("toggle_on_message") or f"You turn on the {item['name']}."
+            elif new_state == "off":
+                msg = item.get("toggle_off_message") or f"You turn off the {item['name']}."
+            else:
+                msg = f"The {item['name']} is now {new_state}."
+
+        for m in self._narrate_action("use", item["name"], [msg]):
+            self.console.print(m)
+
+        # If toggling a light source in a dark room, re-display the room.
+        room = db.get_room(current_room_id)
+        if room and room.get("is_dark"):
+            tags: list[str] = []
+            if item.get("item_tags"):
+                try:
+                    tags = json.loads(item["item_tags"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if "light_source" in tags:
+                if new_state == "on":
+                    self.display_room(current_room_id, force_full=True)
+                else:
+                    self.console.print("Darkness swallows the room.", style=STYLE_SYSTEM)
+
+    def _handle_turn(
+        self, item_name: str, target_state: str, current_room_id: str
+    ) -> None:
+        """Handle ``turn on {item}`` / ``turn off {item}`` -- direct state setters."""
+        db = self.db
+
+        item = db.find_item_by_name(item_name, "inventory", "")
+        if item is None:
+            self.console.print("You're not carrying that.", style=STYLE_SYSTEM)
+            return
+
+        if not item.get("is_toggleable"):
+            self.console.print("You can't turn that on or off.", style=STYLE_SYSTEM)
+            return
+
+        current_state = item.get("toggle_state") or "off"
+        if current_state == target_state:
+            self.console.print(
+                f"It's already {target_state}.", style=STYLE_SYSTEM
+            )
+            return
+
+        # Check requires_item_id (only when turning on).
+        if target_state != "off" and item.get("requires_item_id"):
+            req_item = db.get_item(item["requires_item_id"])
+            if req_item is None or (
+                req_item.get("quantity") is not None and req_item["quantity"] <= 0
+            ):
+                msg = item.get("requires_message") or "It doesn't seem to work."
+                self.console.print(msg, style=STYLE_SYSTEM)
+                return
+
+        db.toggle_item_state(item["id"], target_state)
+
+        # Determine the transition message.
+        msg = None
+        raw_messages = item.get("toggle_messages")
+        if raw_messages:
+            try:
+                messages_map = json.loads(raw_messages)
+                msg = messages_map.get(target_state)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if msg is None:
+            if target_state == "on":
+                msg = item.get("toggle_on_message") or f"You turn on the {item['name']}."
+            elif target_state == "off":
+                msg = item.get("toggle_off_message") or f"You turn off the {item['name']}."
+            else:
+                msg = f"The {item['name']} is now {target_state}."
+
+        for m in self._narrate_action("turn", item["name"], [msg]):
+            self.console.print(m)
+
+        # If toggling a light source in a dark room, re-display the room.
+        room = db.get_room(current_room_id)
+        if room and room.get("is_dark"):
+            tags: list[str] = []
+            if item.get("item_tags"):
+                try:
+                    tags = json.loads(item["item_tags"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            if "light_source" in tags:
+                if target_state == "on":
+                    self.display_room(current_room_id, force_full=True)
+                else:
+                    self.console.print("Darkness swallows the room.", style=STYLE_SYSTEM)
+
+    def _handle_interaction(
+        self, item_name: str, target_name: str, current_room_id: str
+    ) -> bool:
+        """Resolve ``use {item} on {target}`` via the interaction matrix.
+
+        Returns ``True`` if a response was found and shown, ``False`` if
+        the caller should fall through to the next handler.
+        """
+        db = self.db
+
+        # Find the item in inventory.
+        inv_item = db.find_item_by_name(item_name, "inventory", "")
+        if inv_item is None:
+            return False
+
+        # Get the item's tags.
+        tags: list[str] = []
+        raw_tags = inv_item.get("item_tags")
+        if raw_tags:
+            try:
+                tags = json.loads(raw_tags)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        if not tags:
+            return False
+
+        # Find the target -- room item, NPC, or inventory item.
+        target_item = self._find_accessible_item(target_name, current_room_id)
+        target_npc = None
+        target_category: str | None = None
+
+        if target_item is not None:
+            target_category = target_item.get("category")
+            target_display = target_item["name"]
+        else:
+            target_npc = db.find_npc_by_name(target_name, current_room_id)
+            if target_npc is not None:
+                target_category = target_npc.get("category")
+                target_display = target_npc["name"]
+
+        if target_category is None:
+            return False
+
+        # Query interaction_responses for each tag until we find a match.
+        response: dict | None = None
+        for tag in tags:
+            response = db.get_interaction_response(tag, target_category)
+            if response is not None:
+                break
+
+        if response is None:
+            return False
+
+        # Substitute placeholders and display.
+        text = response["response"]
+        text = text.replace("{item}", inv_item["name"])
+        text = text.replace("{target}", target_display)
+        for m in self._narrate_action("use", inv_item["name"], [text]):
+            self.console.print(m)
+
+        # Consume quantity if specified.
+        consumes = response.get("consumes", 0)
+        if consumes and consumes > 0:
+            db.consume_item_quantity(inv_item["id"], consumes)
+
+        # Set flag if specified.
+        flag = response.get("flag_to_set")
+        if flag:
+            db.set_flag(flag, "true")
+
+        return True
 
     def _enter_dialogue(self, npc_name: str, current_room_id: str) -> None:
         """Enter dialogue mode with an NPC.
@@ -1260,11 +1853,14 @@ class GameEngine:
         lines: list[str] = []
         lines.append(f"\n{node['content']}\n")
 
+        has_terminal = any(opt.get("next_node_id") is None for opt in visible_options)
+
         for i, opt in enumerate(visible_options, 1):
             tag = " [bright_yellow]\\[NEW][/]" if opt.get("_is_item_gated") else ""
             lines.append(f"  {i}. {opt['text']}{tag}")
 
-        lines.append("  0. [dim]\\[Leave][/]")
+        if not has_terminal:
+            lines.append("  0. [dim]\\[Leave][/]")
 
         body = "\n".join(lines)
 
@@ -1510,6 +2106,54 @@ class GameEngine:
                             padding=(1, 2),
                         )
                     )
+
+    # ------------------------------------------------------------------
+    # Narrator integration
+    # ------------------------------------------------------------------
+
+    def _init_narrator(self) -> None:
+        """Try to create a Narrator instance. Fails silently if no API key.
+
+        Uses --provider/--model from CLI if passed, otherwise falls back to
+        the default provider from config/env.
+        """
+        try:
+            from anyzork.config import Config, LLMProvider
+            from anyzork.engine.narrator import Narrator
+            from anyzork.generator.providers import create_provider
+
+            config = Config()
+
+            # CLI overrides for narrator provider/model.
+            if self._narrator_provider_override:
+                config.provider = LLMProvider(self._narrator_provider_override)
+            if self._narrator_model_override:
+                config.model = self._narrator_model_override
+
+            provider = create_provider(config)
+            self._narrator = Narrator(provider, self.db)
+        except Exception as exc:
+            logger.debug("Could not enable narrator: %s", exc)
+            self.console.print(
+                f"Could not enable narrator: {exc}", style=STYLE_SYSTEM
+            )
+            self._narrator = None
+
+    def _narrate_action(
+        self, verb: str, target: str | None, messages: list[str]
+    ) -> list[str]:
+        """Optionally narrate action messages through the narrator.
+
+        Returns the narrated version as a single-element list if narration
+        succeeded, or the original messages list as-is if the narrator is
+        disabled or the call failed.
+        """
+        if self._narrator is None or not messages:
+            return messages
+        narrated = self._narrator.narrate_action(verb, target, messages)
+        if narrated:
+            return [narrated]
+        return messages
 
     @staticmethod
     def _parse_direction(tokens: list[str]) -> str | None:
