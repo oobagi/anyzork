@@ -197,7 +197,7 @@ class Narrator:
             theme=self._game_ctx.theme,
             tone=self._game_ctx.tone,
             temperature=0.9,
-            max_tokens=1024,
+            max_tokens=4096,
         )
         try:
             result = self._provider.generate_text(

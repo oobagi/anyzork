@@ -173,11 +173,22 @@ class GeminiProvider(BaseProvider):
                         time.sleep(delay)
                     continue
 
+                # Log token usage for debugging.
+                usage = getattr(response, "usage_metadata", None)
+                if usage:
+                    logger.info(
+                        "Gemini tokens — input: %s, output: %s, finish: %s",
+                        getattr(usage, "prompt_token_count", "?"),
+                        getattr(usage, "candidates_token_count", "?"),
+                        finish_reason,
+                    )
+
                 # Detect truncated output — finish reason MAX_TOKENS.
                 if finish_reason and "MAX_TOKENS" in str(finish_reason):
                     raise ProviderError(
-                        "Gemini output was truncated (MAX_TOKENS). "
-                        "The response is too large."
+                        f"Gemini output was truncated (MAX_TOKENS). "
+                        f"Output tokens: {getattr(usage, 'candidates_token_count', '?') if usage else '?'}. "
+                        f"Limit was: {config.max_output_tokens}."
                     )
 
                 return text
