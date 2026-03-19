@@ -306,16 +306,7 @@ class GameEngine:
             if resolve_command is not None:
                 result = resolve_command(raw, self.db, player["current_room_id"])
                 if result.success:
-                    # DSL command succeeded — optionally narrate, then show messages.
-                    display_messages = result.messages
-                    if self._narrator and result.messages:
-                        narrated = self._narrator.narrate_action(
-                            verb, " ".join(tokens[1:]) if len(tokens) > 1 else None,
-                            result.messages,
-                        )
-                        if narrated:
-                            display_messages = [narrated]
-                    for msg in display_messages:
+                    for msg in result.messages:
                         self.console.print(msg)
                     dsl_handled = True
                 elif result.messages and result.messages != ["I don't understand that."]:
@@ -691,8 +682,7 @@ class GameEngine:
         if exit_row.get("is_locked"):
             lock = self.db.get_lock_for_exit(exit_row["id"])
             raw_msg = lock["locked_message"] if lock else "The way is blocked."
-            for m in self._narrate_action("go", direction, [raw_msg]):
-                self.console.print(m, style=STYLE_LOCKED)
+            self.console.print(raw_msg, style=STYLE_LOCKED)
             return
 
         # Move the player.
@@ -1020,8 +1010,7 @@ class GameEngine:
                 return
             db.move_item(item["id"], "inventory", "")
             msg = item.get("take_message") or "Taken."
-            for m in self._narrate_action("take", item["name"], [msg]):
-                self.console.print(m)
+            self.console.print(msg)
             return
 
         # Not found directly in room — search inside open containers.
@@ -1034,8 +1023,7 @@ class GameEngine:
                     return
                 db.take_item_from_container(found["id"])
                 msg = found.get("take_message") or "Taken."
-                for m in self._narrate_action("take", found["name"], [msg]):
-                    self.console.print(m)
+                self.console.print(msg)
                 return
 
         # Maybe they already have it?
@@ -1056,8 +1044,7 @@ class GameEngine:
 
         db.move_item(item["id"], "room", current_room_id)
         msg = item.get("drop_message") or "Dropped."
-        for m in self._narrate_action("drop", item["name"], [msg]):
-            self.console.print(m)
+        self.console.print(msg)
 
     def _handle_examine(
         self, target_name: str, current_room_id: str, *, prefer_read: bool = False
@@ -1078,8 +1065,7 @@ class GameEngine:
                 desc = item["read_description"]
             else:
                 desc = item.get("examine_description") or item.get("description", "")
-            for m in self._narrate_action("examine", item["name"], [desc]):
-                self.console.print(m)
+            self.console.print(desc)
 
             # Toggle state appendix.
             if item.get("is_toggleable") and item.get("toggle_state"):
@@ -1183,8 +1169,7 @@ class GameEngine:
             # Open the container.
             db.open_container(item["id"])
             msg = item.get("open_message") or f"You open the {item['name']}."
-            for m in self._narrate_action("open", item["name"], [msg]):
-                self.console.print(m, style=STYLE_SUCCESS)
+            self.console.print(msg, style=STYLE_SUCCESS)
             return
 
         self.console.print("You can't open that.", style=STYLE_SYSTEM)
@@ -1543,8 +1528,7 @@ class GameEngine:
             else:
                 msg = f"The {item['name']} is now {new_state}."
 
-        for m in self._narrate_action("use", item["name"], [msg]):
-            self.console.print(m)
+        self.console.print(msg)
 
         # If toggling a light source in a dark room, re-display the room.
         room = db.get_room(current_room_id)
@@ -1612,8 +1596,7 @@ class GameEngine:
             else:
                 msg = f"The {item['name']} is now {target_state}."
 
-        for m in self._narrate_action("turn", item["name"], [msg]):
-            self.console.print(m)
+        self.console.print(msg)
 
         # If toggling a light source in a dark room, re-display the room.
         room = db.get_room(current_room_id)
@@ -1687,8 +1670,7 @@ class GameEngine:
         text = response["response"]
         text = text.replace("{item}", inv_item["name"])
         text = text.replace("{target}", target_display)
-        for m in self._narrate_action("use", inv_item["name"], [text]):
-            self.console.print(m)
+        self.console.print(text)
 
         # Consume quantity if specified.
         consumes = response.get("consumes", 0)
