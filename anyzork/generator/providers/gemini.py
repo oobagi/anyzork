@@ -72,11 +72,15 @@ class GeminiProvider(BaseProvider):
         system_instruction = (
             "You are a world-building assistant for a text adventure game generator. "
             "Respond with ONLY valid JSON matching the schema provided. "
-            "Do not include any explanation, markdown formatting, or text outside the JSON object.\n\n"
+            "Do not include any explanation, markdown formatting, or text "
+            "outside the JSON object.\n\n"
             f"Required JSON schema:\n{json.dumps(schema, indent=2)}"
         )
         if ctx.seed is not None:
-            system_instruction += f"\n\nGeneration seed: {ctx.seed}. Use this seed to guide deterministic choices."
+            system_instruction += (
+                f"\n\nGeneration seed: {ctx.seed}. Use this seed to guide "
+                "deterministic choices."
+            )
 
         user_content = prompt
         if ctx.existing_data:
@@ -187,7 +191,8 @@ class GeminiProvider(BaseProvider):
                 if finish_reason and "MAX_TOKENS" in str(finish_reason):
                     raise ProviderError(
                         f"Gemini output was truncated (MAX_TOKENS). "
-                        f"Output tokens: {getattr(usage, 'candidates_token_count', '?') if usage else '?'}. "
+                        f"Output tokens: "
+                        f"{getattr(usage, 'candidates_token_count', '?') if usage else '?'}. "
                         f"Limit was: {config.max_output_tokens}."
                     )
 

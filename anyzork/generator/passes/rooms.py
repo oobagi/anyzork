@@ -334,7 +334,6 @@ def _validate(data: dict, concept: dict) -> None:
         )
 
     # Room count within range
-    scale = concept.get("scale", "medium")
     target = concept.get("room_count_target", 20)
     if abs(len(rooms) - target) > max(5, target // 3):
         errors.append(

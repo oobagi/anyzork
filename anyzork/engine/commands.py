@@ -190,7 +190,8 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
     ``in_room``, ``has_item``, ``has_flag``, ``not_flag``, ``item_in_room``,
     ``npc_in_room``, ``lock_unlocked``, ``puzzle_solved``, ``health_above``,
     ``container_open``, ``item_in_container``, ``not_item_in_container``,
-    ``container_has_contents``, ``container_empty``, ``has_quantity``.
+    ``container_has_contents``, ``container_empty``, ``has_quantity``,
+    ``toggle_state``.
 
     Slot references (``{slot_name}``) in string fields are substituted before
     evaluation.
@@ -317,6 +318,16 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
             return False
         return qty >= condition.get("min", 1)
 
+    if cond_type == "toggle_state":
+        item_ref = _substitute_slots(condition["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        item = db.get_item(item_id)
+        if item is None:
+            return False
+        desired_state = _substitute_slots(condition["state"], slots)
+        current_state = item.get("toggle_state") or "off"
+        return current_state == desired_state
+
     logger.warning("Unknown precondition type: %s", cond_type)
     return False
 
@@ -424,7 +435,11 @@ def apply_effect(
         elif location == "_current":
             db.spawn_item(item_id, "room", current_room)
         else:
-            db.spawn_item(item_id, "room", location)
+            target_item = db.get_item(location)
+            if target_item is not None and target_item.get("is_container"):
+                db.spawn_item(item_id, "container", location)
+            else:
+                db.spawn_item(item_id, "room", location)
 
     elif effect_type == "change_health":
         amount = effect["amount"]

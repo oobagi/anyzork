@@ -19,9 +19,11 @@ The goal is to identify which patterns should become built-in engine behaviors (
 
 ---
 
-## 2. Full Command Audit: Dead City Test Game
+## 2. Full Command Audit: Legacy Test Game
 
-The test game (`tests/build_test_game.py`, section 10) contains **26 DSL commands**. Each is categorized below.
+This section audits an older hand-authored test game that predates the current
+single human-testing world. It remains useful as historical analysis of DSL
+shape, but it should not be treated as the current fixture source of truth.
 
 ### 2.1 Command Inventory
 

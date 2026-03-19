@@ -365,16 +365,20 @@ def _insert_interactions(
             )
             resp["room_id"] = None
 
+        consume_amount = (
+            resp.get("consume_amount", 1)
+            if resp.get("consumes", 0)
+            else 0
+        )
+
         db.insert_interaction_response(
             id=resp["id"],
             item_tag=resp["item_tag"],
             target_category=resp["target_category"],
             response=resp["response"],
-            priority=resp.get("priority", 0),
-            room_id=resp.get("room_id"),
-            requires_state=resp.get("requires_state"),
-            consumes=resp.get("consumes", 0),
-            consume_amount=resp.get("consume_amount", 1),
+            consumes=consume_amount,
+            score_change=resp.get("score_change", 0),
+            flag_to_set=resp.get("flag_to_set"),
         )
         inserted.append(resp)
 

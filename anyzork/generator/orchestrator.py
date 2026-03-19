@@ -18,12 +18,11 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 
 from anyzork.db.schema import GameDB
 from anyzork.generator.providers import create_provider
-from anyzork.generator.providers.base import GenerationContext, ProviderError
+from anyzork.generator.providers.base import ProviderError
 from anyzork.generator.validator import validate_game
 
 if TYPE_CHECKING:
     from anyzork.config import Config
-    from anyzork.generator.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -46,6 +45,27 @@ _PASSES: list[tuple[str, str]] = [
     ("quests", "anyzork.generator.passes.quests"),
     ("triggers", "anyzork.generator.passes.triggers"),
 ]
+
+
+def _merge_context_list(existing: list, incoming: list) -> list:
+    """Merge two context lists, deduplicating dict rows by ``id`` when possible."""
+    if not existing:
+        return list(incoming)
+    if not incoming:
+        return list(existing)
+
+    if all(isinstance(item, dict) and "id" in item for item in [*existing, *incoming]):
+        merged: list[dict] = []
+        seen_ids: set[str] = set()
+        for item in [*existing, *incoming]:
+            item_id = item["id"]
+            if item_id in seen_ids:
+                continue
+            merged.append(item)
+            seen_ids.add(item_id)
+        return merged
+
+    return [*existing, *incoming]
 
 
 def _import_pass(module_path: str):
@@ -87,22 +107,27 @@ def _build_context(pass_name: str, results: dict[str, dict]) -> dict:
             # can access e.g. context["rooms"] (the list) directly,
             # rather than context["rooms"]["rooms"] (double-nested).
             if isinstance(results[dep], dict):
-                context.update(results[dep])
+                for key, value in results[dep].items():
+                    if (
+                        key in context
+                        and isinstance(context[key], list)
+                        and isinstance(value, list)
+                    ):
+                        context[key] = _merge_context_list(context[key], value)
+                    else:
+                        context[key] = value
 
     return context
 
 
-def _run_validation(db: GameDB) -> list[str]:
+def _run_validation(db: GameDB):
     """Final validation step — deterministic cross-referential integrity checks.
 
-    Delegates to the real ``validate_game`` in ``anyzork.generator.validator``
-    and converts the structured ``ValidationError`` results into plain
-    strings for display.
-
-    Returns a list of error/warning strings (empty means the world is valid).
+    Delegates to the real ``validate_game`` in ``anyzork.generator.validator``.
+    Returns the structured results so the caller can distinguish warnings from
+    hard errors.
     """
-    results = validate_game(db)
-    return [str(r) for r in results]
+    return validate_game(db)
 
 
 # ---------------------------------------------------------------------------
@@ -217,13 +242,26 @@ def generate_game(
 
         # --- Final validation step (deterministic, no LLM) ---
         progress.update(main_task, description="Pass: validation")
-        validation_errors = _run_validation(db)
-        if validation_errors:
-            for err in validation_errors:
+        validation_results = _run_validation(db)
+        if validation_results:
+            for err in validation_results:
                 console.print(f"  [yellow]Warning:[/] {err}")
+            critical = [r for r in validation_results if r.severity == "error"]
+            if critical:
+                logger.error(
+                    "Validation failed with %d error(s) and %d warning(s)",
+                    len(critical),
+                    len(validation_results) - len(critical),
+                )
+                db.close()
+                output_path.unlink(missing_ok=True)
+                raise RuntimeError(
+                    f"Validation failed with {len(critical)} error(s). "
+                    "Generation output was discarded."
+                )
             logger.warning(
-                "Validation found %d issue(s) — game may have inconsistencies",
-                len(validation_errors),
+                "Validation found %d warning(s) — game may have inconsistencies",
+                len(validation_results),
             )
         else:
             console.print("  [green]Validation passed — world is consistent.[/]")

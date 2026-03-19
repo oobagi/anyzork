@@ -45,6 +45,8 @@ VALID_PRECONDITION_TYPES: frozenset[str] = frozenset(
         "not_item_in_container",
         "container_has_contents",
         "container_empty",
+        "has_quantity",
+        "toggle_state",
     }
 )
 
@@ -65,6 +67,19 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "open_container",
         "move_item_to_container",
         "take_item_from_container",
+        "consume_quantity",
+        "restore_quantity",
+        "set_toggle_state",
+    }
+)
+
+VALID_TRIGGER_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        "room_enter",
+        "flag_set",
+        "dialogue_node",
+        "item_taken",
+        "item_dropped",
     }
 )
 
@@ -149,6 +164,18 @@ def _all_quests(db: GameDB) -> list[dict]:
 
 def _all_dialogue_nodes(db: GameDB) -> list[dict]:
     return db._fetchall("SELECT * FROM dialogue_nodes")
+
+
+def _all_dialogue_options(db: GameDB) -> list[dict]:
+    return db._fetchall("SELECT * FROM dialogue_options")
+
+
+def _all_triggers(db: GameDB) -> list[dict]:
+    return db._fetchall("SELECT * FROM triggers")
+
+
+def _dialogue_node_ids(db: GameDB) -> set[str]:
+    return {r["id"] for r in db._fetchall("SELECT id FROM dialogue_nodes")}
 
 
 def _is_slot_ref(value: str) -> bool:
@@ -342,7 +369,8 @@ def _check_locks(db: GameDB) -> list[ValidationError]:
                         ValidationError(
                             "error",
                             "lock",
-                            f"Key item '{key_id}' for lock {lock['id']} is not takeable (is_takeable=0).",
+                            f"Key item '{key_id}' for lock {lock['id']} "
+                            "is not takeable (is_takeable=0).",
                         )
                     )
 
@@ -411,31 +439,30 @@ def _check_locks(db: GameDB) -> list[ValidationError]:
                 dep_graph[lock["id"]].add(other_lock_id)
 
     # Detect cycles via DFS.
-    WHITE, GRAY, BLACK = 0, 1, 2
-    color: dict[str, int] = {lid: WHITE for lid in dep_graph}
+    white, gray, black = 0, 1, 2
+    color: dict[str, int] = {lid: white for lid in dep_graph}
 
     def _dfs_cycle(node: str) -> bool:
-        color[node] = GRAY
+        color[node] = gray
         for neighbor in dep_graph.get(node, set()):
             if neighbor not in color:
                 continue
-            if color[neighbor] == GRAY:
+            if color[neighbor] == gray:
                 return True
-            if color[neighbor] == WHITE and _dfs_cycle(neighbor):
+            if color[neighbor] == white and _dfs_cycle(neighbor):
                 return True
-        color[node] = BLACK
+        color[node] = black
         return False
 
     for lock_id in dep_graph:
-        if color[lock_id] == WHITE:
-            if _dfs_cycle(lock_id):
-                errors.append(
-                    ValidationError(
-                        "error",
-                        "lock",
-                        f"Circular lock dependency detected involving lock '{lock_id}'.",
-                    )
+        if color[lock_id] == white and _dfs_cycle(lock_id):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "lock",
+                    f"Circular lock dependency detected involving lock '{lock_id}'.",
                 )
+            )
 
     return errors
 
@@ -477,15 +504,14 @@ def _check_items(db: GameDB) -> list[ValidationError]:
     for lock in locks:
         if lock["lock_type"] == "key":
             key_id = lock.get("key_item_id")
-            if key_id and key_id in item_map:
-                if not item_map[key_id].get("is_takeable"):
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "item",
-                            f"Key item '{key_id}' (for lock {lock['id']}) must be takeable.",
-                        )
+            if key_id and key_id in item_map and not item_map[key_id].get("is_takeable"):
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "item",
+                        f"Key item '{key_id}' (for lock {lock['id']}) must be takeable.",
                     )
+                )
 
     # --- Container nesting validation ---
     for item in items:
@@ -567,6 +593,422 @@ def _check_items(db: GameDB) -> list[ValidationError]:
     return errors
 
 
+def _validate_rule_preconditions(
+    *,
+    label: str,
+    category: str,
+    preconds: list[dict],
+    room_set: set[str],
+    item_set: set[str],
+    npc_set: set[str],
+    lock_set: set[str],
+    puzzle_set: set[str],
+    flag_set: set[str],
+    errors: list[ValidationError],
+) -> None:
+    """Validate precondition objects shared by commands and triggers."""
+    for pc in preconds:
+        pc_type = pc.get("type")
+        if pc_type not in VALID_PRECONDITION_TYPES:
+            errors.append(
+                ValidationError(
+                    "error",
+                    category,
+                    f"{label} has unknown precondition type '{pc_type}'.",
+                )
+            )
+            continue
+
+        if pc_type == "in_room":
+            room_val = pc.get("room", "")
+            if not _is_slot_ref(room_val) and room_val not in room_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} precondition in_room references non-existent room '{room_val}'.",
+                    )
+                )
+        elif pc_type == "has_item":
+            item_val = pc.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition has_item references unknown item '{item_val}'.",
+                    )
+                )
+        elif pc_type in {"has_flag", "not_flag"}:
+            flag_val = pc.get("flag", "")
+            if not _is_slot_ref(flag_val) and flag_val not in flag_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition {pc_type} references unknown flag '{flag_val}'.",
+                    )
+                )
+        elif pc_type == "item_in_room":
+            item_val = pc.get("item", "")
+            room_val = pc.get("room", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition item_in_room references unknown item '{item_val}'.",
+                    )
+                )
+            if (
+                not _is_slot_ref(room_val)
+                and room_val != "_current"
+                and room_val not in room_set
+            ):
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} precondition item_in_room references "
+                        f"non-existent room '{room_val}'.",
+                    )
+                )
+        elif pc_type == "npc_in_room":
+            npc_val = pc.get("npc", "")
+            room_val = pc.get("room", "")
+            if not _is_slot_ref(npc_val) and npc_val not in npc_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition npc_in_room references unknown NPC '{npc_val}'.",
+                    )
+                )
+            if (
+                not _is_slot_ref(room_val)
+                and room_val != "_current"
+                and room_val not in room_set
+            ):
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} precondition npc_in_room references "
+                        f"non-existent room '{room_val}'.",
+                    )
+                )
+        elif pc_type == "lock_unlocked":
+            lock_val = pc.get("lock", "")
+            if not _is_slot_ref(lock_val) and lock_val not in lock_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} precondition lock_unlocked references "
+                        f"non-existent lock '{lock_val}'.",
+                    )
+                )
+        elif pc_type == "puzzle_solved":
+            puz_val = pc.get("puzzle", "")
+            if not _is_slot_ref(puz_val) and puz_val not in puzzle_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} precondition puzzle_solved references "
+                        f"non-existent puzzle '{puz_val}'.",
+                    )
+                )
+        elif pc_type in {"container_open", "container_has_contents", "container_empty"}:
+            container_val = pc.get("container", "")
+            if not _is_slot_ref(container_val) and container_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition {pc_type} references unknown "
+                        f"container '{container_val}'.",
+                    )
+                )
+        elif pc_type in {"item_in_container", "not_item_in_container"}:
+            item_val = pc.get("item", "")
+            container_val = pc.get("container", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition {pc_type} references unknown item '{item_val}'.",
+                    )
+                )
+            if not _is_slot_ref(container_val) and container_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition {pc_type} references unknown "
+                        f"container '{container_val}'.",
+                    )
+                )
+        elif pc_type == "has_quantity":
+            item_val = pc.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition has_quantity references unknown item '{item_val}'.",
+                    )
+                )
+        elif pc_type == "toggle_state":
+            item_val = pc.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition toggle_state references unknown item '{item_val}'.",
+                    )
+                )
+
+
+def _validate_rule_effects(
+    *,
+    label: str,
+    category: str,
+    effects: list[dict],
+    room_set: set[str],
+    item_set: set[str],
+    lock_set: set[str],
+    exit_set: set[str],
+    puzzle_set: set[str],
+    quest_set: set[str],
+    flag_set: set[str],
+    errors: list[ValidationError],
+) -> None:
+    """Validate effect objects shared by commands and triggers."""
+    for eff in effects:
+        eff_type = eff.get("type")
+        if eff_type not in VALID_EFFECT_TYPES:
+            errors.append(
+                ValidationError(
+                    "error",
+                    category,
+                    f"{label} has unknown effect type '{eff_type}'.",
+                )
+            )
+            continue
+
+        if eff_type == "move_item":
+            item_val = eff.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect move_item references unknown item '{item_val}'.",
+                    )
+                )
+            for loc_key in ("from", "to"):
+                loc_val = eff.get(loc_key, "")
+                if (
+                    not _is_slot_ref(loc_val)
+                    and loc_val not in ("_inventory", "_current")
+                    and loc_val not in room_set
+                ):
+                    errors.append(
+                        ValidationError(
+                            "warning",
+                            category,
+                            f"{label} effect move_item {loc_key}='{loc_val}' "
+                            f"is not a valid room or special constant.",
+                        )
+                    )
+        elif eff_type == "remove_item":
+            item_val = eff.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect remove_item references unknown item '{item_val}'.",
+                    )
+                )
+        elif eff_type == "set_flag":
+            flag_val = eff.get("flag", "")
+            if not _is_slot_ref(flag_val) and flag_val not in flag_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect set_flag references unknown flag '{flag_val}'.",
+                    )
+                )
+        elif eff_type == "unlock":
+            lock_val = eff.get("lock", "")
+            if not _is_slot_ref(lock_val) and lock_val not in lock_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect unlock references non-existent lock '{lock_val}'.",
+                    )
+                )
+        elif eff_type == "move_player":
+            room_val = eff.get("room", "")
+            if (
+                not _is_slot_ref(room_val)
+                and room_val != "_current"
+                and room_val not in room_set
+            ):
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect move_player references non-existent room '{room_val}'.",
+                    )
+                )
+        elif eff_type == "spawn_item":
+            item_val = eff.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect spawn_item references unknown item '{item_val}'.",
+                    )
+                )
+            loc_val = eff.get("location", "")
+            if (
+                not _is_slot_ref(loc_val)
+                and loc_val not in ("_inventory", "_current")
+                and loc_val not in room_set
+                and loc_val not in item_set
+            ):
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect spawn_item location '{loc_val}' "
+                        "is not a valid room, container, or special constant.",
+                    )
+                )
+        elif eff_type == "reveal_exit":
+            exit_val = eff.get("exit", "")
+            if not _is_slot_ref(exit_val) and exit_val not in exit_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect reveal_exit references non-existent exit '{exit_val}'.",
+                    )
+                )
+        elif eff_type == "solve_puzzle":
+            puz_val = eff.get("puzzle", "")
+            if not _is_slot_ref(puz_val) and puz_val not in puzzle_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect solve_puzzle references non-existent puzzle '{puz_val}'.",
+                    )
+                )
+        elif eff_type == "discover_quest":
+            quest_val = eff.get("quest", "")
+            if not _is_slot_ref(quest_val) and quest_val not in quest_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect discover_quest references "
+                        f"non-existent quest '{quest_val}'.",
+                    )
+                )
+        elif eff_type == "open_container":
+            container_val = eff.get("container", "")
+            if not _is_slot_ref(container_val) and container_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect open_container references unknown "
+                        f"container '{container_val}'.",
+                    )
+                )
+        elif eff_type == "move_item_to_container":
+            item_val = eff.get("item", "")
+            container_val = eff.get("container", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect move_item_to_container references "
+                        f"unknown item '{item_val}'.",
+                    )
+                )
+            if not _is_slot_ref(container_val) and container_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect move_item_to_container references "
+                        f"unknown container '{container_val}'.",
+                    )
+                )
+        elif eff_type == "take_item_from_container":
+            item_val = eff.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect take_item_from_container references "
+                        f"unknown item '{item_val}'.",
+                    )
+                )
+        elif eff_type == "consume_quantity":
+            item_val = eff.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect consume_quantity references unknown item '{item_val}'.",
+                    )
+                )
+        elif eff_type == "restore_quantity":
+            item_val = eff.get("item", "")
+            source_val = eff.get("source", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect restore_quantity references unknown item '{item_val}'.",
+                    )
+                )
+            if source_val and not _is_slot_ref(source_val) and source_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect restore_quantity references unknown "
+                        f"source item '{source_val}'.",
+                    )
+                )
+        elif eff_type == "set_toggle_state":
+            item_val = eff.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} effect set_toggle_state references unknown item '{item_val}'.",
+                    )
+                )
+
+
 def _check_commands(db: GameDB) -> list[ValidationError]:
     """Command validity checks."""
     errors: list[ValidationError] = []
@@ -596,7 +1038,8 @@ def _check_commands(db: GameDB) -> list[ValidationError]:
                         ValidationError(
                             "error",
                             "command",
-                            f"{cmd_label} references non-existent room '{rid}' in context_room_ids.",
+                            f"{cmd_label} references non-existent room '{rid}' "
+                            "in context_room_ids.",
                         )
                     )
 
@@ -623,106 +1066,18 @@ def _check_commands(db: GameDB) -> list[ValidationError]:
                 )
             )
             preconds = []
-
-        for pc in preconds:
-            pc_type = pc.get("type")
-            if pc_type not in VALID_PRECONDITION_TYPES:
-                errors.append(
-                    ValidationError(
-                        "error",
-                        "command",
-                        f"{cmd_label} has unknown precondition type '{pc_type}'.",
-                    )
-                )
-                continue
-
-            # Validate entity references (skip slot refs like "{item}").
-            if pc_type == "in_room":
-                room_val = pc.get("room", "")
-                if not _is_slot_ref(room_val) and room_val not in room_set:
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} precondition in_room references non-existent room '{room_val}'.",
-                        )
-                    )
-            elif pc_type == "has_item":
-                item_val = pc.get("item", "")
-                if not _is_slot_ref(item_val) and item_val not in item_set:
-                    errors.append(
-                        ValidationError(
-                            "warning",
-                            "command",
-                            f"{cmd_label} precondition has_item references unknown item '{item_val}'.",
-                        )
-                    )
-            elif pc_type == "item_in_room":
-                item_val = pc.get("item", "")
-                room_val = pc.get("room", "")
-                if not _is_slot_ref(item_val) and item_val not in item_set:
-                    errors.append(
-                        ValidationError(
-                            "warning",
-                            "command",
-                            f"{cmd_label} precondition item_in_room references unknown item '{item_val}'.",
-                        )
-                    )
-                if (
-                    not _is_slot_ref(room_val)
-                    and room_val != "_current"
-                    and room_val not in room_set
-                ):
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} precondition item_in_room references non-existent room '{room_val}'.",
-                        )
-                    )
-            elif pc_type == "npc_in_room":
-                npc_val = pc.get("npc", "")
-                room_val = pc.get("room", "")
-                if not _is_slot_ref(npc_val) and npc_val not in npc_set:
-                    errors.append(
-                        ValidationError(
-                            "warning",
-                            "command",
-                            f"{cmd_label} precondition npc_in_room references unknown NPC '{npc_val}'.",
-                        )
-                    )
-                if (
-                    not _is_slot_ref(room_val)
-                    and room_val != "_current"
-                    and room_val not in room_set
-                ):
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} precondition npc_in_room references non-existent room '{room_val}'.",
-                        )
-                    )
-            elif pc_type == "lock_unlocked":
-                lock_val = pc.get("lock", "")
-                if not _is_slot_ref(lock_val) and lock_val not in lock_set:
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} precondition lock_unlocked references non-existent lock '{lock_val}'.",
-                        )
-                    )
-            elif pc_type == "puzzle_solved":
-                puz_val = pc.get("puzzle", "")
-                if not _is_slot_ref(puz_val) and puz_val not in puzzle_set:
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} precondition puzzle_solved references non-existent puzzle '{puz_val}'.",
-                        )
-                    )
+        _validate_rule_preconditions(
+            label=cmd_label,
+            category="command",
+            preconds=preconds,
+            room_set=room_set,
+            item_set=item_set,
+            npc_set=npc_set,
+            lock_set=lock_set,
+            puzzle_set=puzzle_set,
+            flag_set=_flag_ids(db),
+            errors=errors,
+        )
 
         # Parse and validate effects.
         try:
@@ -736,133 +1091,19 @@ def _check_commands(db: GameDB) -> list[ValidationError]:
                 )
             )
             effects = []
-
-        for eff in effects:
-            eff_type = eff.get("type")
-            if eff_type not in VALID_EFFECT_TYPES:
-                errors.append(
-                    ValidationError(
-                        "error",
-                        "command",
-                        f"{cmd_label} has unknown effect type '{eff_type}'.",
-                    )
-                )
-                continue
-
-            # Validate entity references in effects.
-            if eff_type == "move_item":
-                item_val = eff.get("item", "")
-                if not _is_slot_ref(item_val) and item_val not in item_set:
-                    errors.append(
-                        ValidationError(
-                            "warning",
-                            "command",
-                            f"{cmd_label} effect move_item references unknown item '{item_val}'.",
-                        )
-                    )
-                for loc_key in ("from", "to"):
-                    loc_val = eff.get(loc_key, "")
-                    if (
-                        not _is_slot_ref(loc_val)
-                        and loc_val not in ("_inventory", "_current")
-                        and loc_val not in room_set
-                    ):
-                        errors.append(
-                            ValidationError(
-                                "warning",
-                                "command",
-                                f"{cmd_label} effect move_item {loc_key}='{loc_val}' "
-                                f"is not a valid room or special constant.",
-                            )
-                        )
-            elif eff_type == "remove_item":
-                item_val = eff.get("item", "")
-                if not _is_slot_ref(item_val) and item_val not in item_set:
-                    errors.append(
-                        ValidationError(
-                            "warning",
-                            "command",
-                            f"{cmd_label} effect remove_item references unknown item '{item_val}'.",
-                        )
-                    )
-            elif eff_type == "unlock":
-                lock_val = eff.get("lock", "")
-                if not _is_slot_ref(lock_val) and lock_val not in lock_set:
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} effect unlock references non-existent lock '{lock_val}'.",
-                        )
-                    )
-            elif eff_type == "move_player":
-                room_val = eff.get("room", "")
-                if (
-                    not _is_slot_ref(room_val)
-                    and room_val != "_current"
-                    and room_val not in room_set
-                ):
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} effect move_player references non-existent room '{room_val}'.",
-                        )
-                    )
-            elif eff_type == "spawn_item":
-                item_val = eff.get("item", "")
-                if not _is_slot_ref(item_val) and item_val not in item_set:
-                    errors.append(
-                        ValidationError(
-                            "warning",
-                            "command",
-                            f"{cmd_label} effect spawn_item references unknown item '{item_val}'.",
-                        )
-                    )
-                loc_val = eff.get("location", "")
-                if (
-                    not _is_slot_ref(loc_val)
-                    and loc_val not in ("_inventory", "_current")
-                    and loc_val not in room_set
-                ):
-                    errors.append(
-                        ValidationError(
-                            "warning",
-                            "command",
-                            f"{cmd_label} effect spawn_item location '{loc_val}' "
-                            f"is not a valid room or special constant.",
-                        )
-                    )
-            elif eff_type == "reveal_exit":
-                exit_val = eff.get("exit", "")
-                if not _is_slot_ref(exit_val) and exit_val not in exit_set:
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} effect reveal_exit references non-existent exit '{exit_val}'.",
-                        )
-                    )
-            elif eff_type == "solve_puzzle":
-                puz_val = eff.get("puzzle", "")
-                if not _is_slot_ref(puz_val) and puz_val not in puzzle_set:
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} effect solve_puzzle references non-existent puzzle '{puz_val}'.",
-                        )
-                    )
-            elif eff_type == "discover_quest":
-                quest_val = eff.get("quest", "")
-                if not _is_slot_ref(quest_val) and quest_val not in quest_set:
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "command",
-                            f"{cmd_label} effect discover_quest references non-existent quest '{quest_val}'.",
-                        )
-                    )
+        _validate_rule_effects(
+            label=cmd_label,
+            category="command",
+            effects=effects,
+            room_set=room_set,
+            item_set=item_set,
+            lock_set=lock_set,
+            exit_set=exit_set,
+            puzzle_set=puzzle_set,
+            quest_set=quest_set,
+            flag_set=_flag_ids(db),
+            errors=errors,
+        )
 
     return errors
 
@@ -874,9 +1115,6 @@ def _check_npcs(db: GameDB) -> list[ValidationError]:
     room_set = _room_ids(db)
     dialogue_nodes = _all_dialogue_nodes(db)
     npc_set = _npc_ids(db)
-
-    # Build set of NPC IDs that have at least one dialogue node.
-    npcs_with_dialogue: set[str] = {d["npc_id"] for d in dialogue_nodes}
 
     for npc in npcs:
         # Room reference must be valid.
@@ -1001,6 +1239,160 @@ def _check_quests(db: GameDB) -> list[ValidationError]:
     return errors
 
 
+def _check_triggers(db: GameDB) -> list[ValidationError]:
+    """Trigger structure, event-data, and rule reference checks."""
+    errors: list[ValidationError] = []
+    triggers = _all_triggers(db)
+    room_set = _room_ids(db)
+    item_set = _item_ids(db)
+    npc_set = _npc_ids(db)
+    lock_set = _lock_ids(db)
+    exit_set = _exit_ids(db)
+    puzzle_set = _puzzle_ids(db)
+    quest_set = _quest_ids(db)
+    flag_set = _flag_ids(db)
+    dialogue_node_set = _dialogue_node_ids(db)
+
+    for trigger in triggers:
+        trig_label = f"Trigger '{trigger['id']}'"
+        event_type = trigger.get("event_type")
+        if event_type not in VALID_TRIGGER_EVENT_TYPES:
+            errors.append(
+                ValidationError(
+                    "error",
+                    "trigger",
+                    f"{trig_label} has unknown event_type '{event_type}'.",
+                )
+            )
+            continue
+
+        try:
+            event_data = json.loads(trigger.get("event_data", "{}"))
+        except (json.JSONDecodeError, TypeError):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "trigger",
+                    f"{trig_label} has invalid event_data JSON.",
+                )
+            )
+            event_data = {}
+
+        if event_type == "room_enter":
+            room_val = event_data.get("room_id")
+            if room_val and room_val not in room_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "trigger",
+                        f"{trig_label} event_data references non-existent room "
+                        f"'{room_val}'.",
+                    )
+                )
+        elif event_type == "flag_set":
+            flag_val = event_data.get("flag")
+            if flag_val and flag_val not in flag_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        "trigger",
+                        f"{trig_label} event_data references unknown flag '{flag_val}'.",
+                    )
+                )
+        elif event_type == "dialogue_node":
+            node_val = event_data.get("node_id")
+            npc_val = event_data.get("npc_id")
+            if node_val and node_val not in dialogue_node_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "trigger",
+                        f"{trig_label} event_data references non-existent "
+                        f"dialogue node '{node_val}'.",
+                    )
+                )
+            if npc_val and npc_val not in npc_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        "trigger",
+                        f"{trig_label} event_data references unknown NPC '{npc_val}'.",
+                    )
+                )
+        elif event_type in {"item_taken", "item_dropped"}:
+            item_val = event_data.get("item_id")
+            room_val = event_data.get("room_id")
+            if item_val and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        "trigger",
+                        f"{trig_label} event_data references unknown item '{item_val}'.",
+                    )
+                )
+            if room_val and room_val not in room_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "trigger",
+                        f"{trig_label} event_data references non-existent room '{room_val}'.",
+                    )
+                )
+
+        try:
+            preconds = json.loads(trigger.get("preconditions", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "trigger",
+                    f"{trig_label} has invalid preconditions JSON.",
+                )
+            )
+            preconds = []
+
+        _validate_rule_preconditions(
+            label=trig_label,
+            category="trigger",
+            preconds=preconds,
+            room_set=room_set,
+            item_set=item_set,
+            npc_set=npc_set,
+            lock_set=lock_set,
+            puzzle_set=puzzle_set,
+            flag_set=flag_set,
+            errors=errors,
+        )
+
+        try:
+            effects = json.loads(trigger.get("effects", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "trigger",
+                    f"{trig_label} has invalid effects JSON.",
+                )
+            )
+            effects = []
+
+        _validate_rule_effects(
+            label=trig_label,
+            category="trigger",
+            effects=effects,
+            room_set=room_set,
+            item_set=item_set,
+            lock_set=lock_set,
+            exit_set=exit_set,
+            puzzle_set=puzzle_set,
+            quest_set=quest_set,
+            flag_set=flag_set,
+            errors=errors,
+        )
+
+    return errors
+
+
 def _check_win_condition(db: GameDB) -> list[ValidationError]:
     """Win condition flag checks."""
     errors: list[ValidationError] = []
@@ -1030,9 +1422,10 @@ def _check_win_condition(db: GameDB) -> list[ValidationError]:
         )
         return errors
 
-    # Each win-condition flag must be settable by at least one command effect.
-    commands = db.get_all_commands()
+    # Each win-condition flag must be settable by at least one deterministic
+    # state transition: command, trigger, dialogue, or quest completion.
     settable_flags: set[str] = set()
+    commands = db.get_all_commands()
     for cmd in commands:
         try:
             effects = json.loads(cmd.get("effects", "[]"))
@@ -1043,6 +1436,36 @@ def _check_win_condition(db: GameDB) -> list[ValidationError]:
                 flag_name = eff.get("flag")
                 if flag_name:
                     settable_flags.add(flag_name)
+
+    for trigger in _all_triggers(db):
+        try:
+            effects = json.loads(trigger.get("effects", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for eff in effects:
+            if eff.get("type") == "set_flag":
+                flag_name = eff.get("flag")
+                if flag_name:
+                    settable_flags.add(flag_name)
+
+    for node in _all_dialogue_nodes(db):
+        try:
+            flags = json.loads(node.get("set_flags", "[]")) if node.get("set_flags") else []
+        except (json.JSONDecodeError, TypeError):
+            flags = []
+        settable_flags.update(flag for flag in flags if flag)
+
+    for option in _all_dialogue_options(db):
+        try:
+            flags = json.loads(option.get("set_flags", "[]")) if option.get("set_flags") else []
+        except (json.JSONDecodeError, TypeError):
+            flags = []
+        settable_flags.update(flag for flag in flags if flag)
+
+    for quest in _all_quests(db):
+        completion_flag = quest.get("completion_flag")
+        if completion_flag:
+            settable_flags.add(completion_flag)
 
     for flag in win_flags:
         if flag not in settable_flags:
@@ -1076,6 +1499,7 @@ def validate_game(db: GameDB) -> list[ValidationError]:
     results.extend(_check_commands(db))
     results.extend(_check_npcs(db))
     results.extend(_check_quests(db))
+    results.extend(_check_triggers(db))
     results.extend(_check_win_condition(db))
 
     return results

@@ -16,9 +16,9 @@ from typing import Any
 class FieldType(Enum):
     """How the field collects user input."""
 
-    TEXT = "text"                # Single-line free text
-    MULTILINE = "multiline"     # Multi-line free text (enter on empty line to finish)
-    SELECT = "select"           # Numbered selection from a list
+    TEXT = "text"  # Single-line free text
+    MULTILINE = "multiline"  # Multi-line free text (enter on empty line to finish)
+    SELECT = "select"  # Numbered selection from a list
     MULTI_SELECT = "multi_select"  # Comma-separated numbered selections
 
 
@@ -81,7 +81,10 @@ class FieldDef:
 
 SCALE_OPTIONS = [
     ("Small", "8-15 rooms, 1 region. A single building or ship. ~15 min."),
-    ("Medium", "16-30 rooms, 2-3 regions. Multiple wings or districts. ~45 min."),
+    (
+        "Medium",
+        "16-30 rooms, 2-3 regions. Multiple wings or districts. ~45 min.",
+    ),
     ("Large", "31-50 rooms, 4-6 regions. A sprawling world. ~90 min."),
 ]
 
@@ -97,11 +100,26 @@ SCALE_DETAIL = {
 # Tone and genre options
 # ---------------------------------------------------------------------------
 
-TONE_OPTIONS = ["dark", "whimsical", "serious", "comedic", "surreal", "grim", "hopeful"]
+TONE_OPTIONS = [
+    "dark",
+    "whimsical",
+    "serious",
+    "comedic",
+    "surreal",
+    "grim",
+    "hopeful",
+]
 
 GENRE_OPTIONS = [
-    "exploration", "puzzle", "survival", "combat",
-    "mystery", "horror", "stealth", "social", "trading",
+    "exploration",
+    "puzzle",
+    "survival",
+    "combat",
+    "mystery",
+    "horror",
+    "stealth",
+    "social",
+    "trading",
 ]
 
 # ---------------------------------------------------------------------------
@@ -118,7 +136,8 @@ FIELDS: list[FieldDef] = [
         ask_text="Describe the world, setting, or scenario for your game.",
         guidance=(
             "Where is this? What kind of place? What happened here? Why is the player here?\n"
-            "Be as detailed or brief as you want -- a single sentence works, a paragraph works better.\n"
+            "Be as detailed or brief as you want -- a single sentence works, "
+            "a paragraph works better.\n"
             "Press Enter on an empty line when done."
         ),
         prompt_label="World Description",
@@ -130,7 +149,10 @@ FIELDS: list[FieldDef] = [
         required=False,
         field_type=FieldType.TEXT,
         ask_text="When does this world exist?",
-        guidance="Examples: medieval, Victorian, 1920s, far future, prehistoric, timeless/mythical",
+        guidance=(
+            "Examples: medieval, Victorian, 1920s, far future, prehistoric, "
+            "timeless/mythical"
+        ),
         prompt_label="Time period",
     ),
     FieldDef(
@@ -140,7 +162,10 @@ FIELDS: list[FieldDef] = [
         required=False,
         field_type=FieldType.MULTI_SELECT,
         ask_text="What tone should the game have?",
-        guidance="Enter numbers separated by commas (e.g., 1,4), or type custom tones.",
+        guidance=(
+            "Enter numbers separated by commas (e.g., 1,4), or type custom "
+            "tones."
+        ),
         options=TONE_OPTIONS,
         allow_custom=True,
         prompt_label="Tone",

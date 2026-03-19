@@ -7,20 +7,12 @@ on name collision.
 
 from __future__ import annotations
 
-import sys
+import tomllib
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 from rich.table import Table
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib  # type: ignore[import]
-    except ImportError:
-        import tomli as tomllib  # type: ignore[import, no-redef]
 
 
 def _builtin_presets_dir() -> Path:

@@ -14,14 +14,7 @@ from rich.panel import Panel
 from rich.text import Text
 
 from anyzork.wizard.assembler import assemble_prompt
-from anyzork.wizard.fields import (
-    FIELDS,
-    GENRE_OPTIONS,
-    SCALE_OPTIONS,
-    SCALE_VALUES,
-    TONE_OPTIONS,
-    FieldType,
-)
+from anyzork.wizard.fields import FIELDS, SCALE_OPTIONS, SCALE_VALUES, FieldType
 
 
 def _read_multiline(console: Console, prompt_str: str = " > ") -> str | None:
@@ -277,13 +270,20 @@ def run_wizard(
                 elif field_def.required:
                     # Required field cannot be skipped.
                     console.print(" [red]This field is required. Please enter a value.[/red]")
-                    while result is None or (isinstance(result, str) and len(result.strip()) < 5):
+                    while True:
                         result = _prompt_field(console, field_def)
-                        if result is not None and isinstance(result, str) and len(result.strip()) < 5:
+                        too_short = (
+                            result is not None
+                            and isinstance(result, str)
+                            and len(result.strip()) < 5
+                        )
+                        if too_short:
                             console.print(
                                 " [red]Please enter at least 5 characters.[/red]"
                             )
                             result = None
+                        if result is not None:
+                            break
                     values[field_def.key] = result
 
         # Check that we have the required world_description.

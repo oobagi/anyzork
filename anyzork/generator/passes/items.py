@@ -72,7 +72,10 @@ ITEMS_SCHEMA: dict[str, Any] = {
                     },
                     "room_id": {
                         "type": ["string", "null"],
-                        "description": "Room ID where the item starts, or null if spawned later / in inventory.",
+                        "description": (
+                            "Room ID where the item starts, or null if spawned "
+                            "later / in inventory."
+                        ),
                     },
                     "is_takeable": {
                         "type": "integer",
@@ -147,12 +150,18 @@ ITEMS_SCHEMA: dict[str, Any] = {
                     "is_open": {
                         "type": "integer",
                         "enum": [0, 1],
-                        "description": "For containers: 1 = open, 0 = closed. Set 1 for lid-less containers.",
+                        "description": (
+                            "For containers: 1 = open, 0 = closed. Set 1 for "
+                            "lid-less containers."
+                        ),
                     },
                     "has_lid": {
                         "type": "integer",
                         "enum": [0, 1],
-                        "description": "For containers: 1 = can be opened/closed, 0 = always accessible (shelf, pile).",
+                        "description": (
+                            "For containers: 1 = can be opened/closed, 0 = always "
+                            "accessible (shelf, pile)."
+                        ),
                     },
                     "accepts_items": {
                         "type": ["array", "null"],
@@ -175,19 +184,31 @@ ITEMS_SCHEMA: dict[str, Any] = {
                     "is_locked": {
                         "type": "integer",
                         "enum": [0, 1],
-                        "description": "For containers: 1 = locked, needs unlocking first. 0 = not locked.",
+                        "description": (
+                            "For containers: 1 = locked, needs unlocking first. "
+                            "0 = not locked."
+                        ),
                     },
                     "lock_message": {
                         "type": ["string", "null"],
-                        "description": "For locked containers: message shown when player tries to open/search while locked.",
+                        "description": (
+                            "For locked containers: message shown when player "
+                            "tries to open/search while locked."
+                        ),
                     },
                     "open_message": {
                         "type": ["string", "null"],
-                        "description": "For containers: message shown when the container is opened.",
+                        "description": (
+                            "For containers: message shown when the container "
+                            "is opened."
+                        ),
                     },
                     "search_message": {
                         "type": ["string", "null"],
-                        "description": "For containers: message shown before listing contents when searched.",
+                        "description": (
+                            "For containers: message shown before listing "
+                            "contents when searched."
+                        ),
                     },
                     "read_description": {
                         "type": ["string", "null"],
@@ -518,7 +539,7 @@ one of the room IDs listed in "Existing Rooms", the item will be orphaned.
   For items starting hidden, set to the room they will appear in. For items
   starting in inventory, set to null.
 
-- **Item density**: Aim for 1.5–2.5 items per room on average (including
+- **Item density**: Aim for 1.5-2.5 items per room on average (including
   scenery).  Every room should have at least one item.
 
 - **Start room**: The start room should have at least one takeable item so the
@@ -755,11 +776,15 @@ def _validate_items(items: list[dict], context: dict) -> list[str]:
             errors.append(f"Item {iid} references unknown room: {rid}")
 
         # Takeable items need room_description
-        if item.get("is_takeable", 0) == 1 and not item.get("room_description"):
-            if item.get("is_visible", 1) == 1 and rid is not None:
-                errors.append(
-                    f"Takeable visible item {iid} is missing room_description"
-                )
+        if (
+            item.get("is_takeable", 0) == 1
+            and not item.get("room_description")
+            and item.get("is_visible", 1) == 1
+            and rid is not None
+        ):
+            errors.append(
+                f"Takeable visible item {iid} is missing room_description"
+            )
 
         # Takeable items with room_description need drop_description
         if (
@@ -800,7 +825,6 @@ def _validate_items(items: list[dict], context: dict) -> list[str]:
     container_ids = {
         i["id"] for i in items if i.get("is_container")
     }
-    items_by_id = {i["id"]: i for i in items}
 
     for item in items:
         iid = item.get("id", "<missing>")
@@ -822,11 +846,14 @@ def _validate_items(items: list[dict], context: dict) -> list[str]:
                 )
 
         # Locked containers must have a lock_message
-        if item.get("is_container") and item.get("is_locked"):
-            if not item.get("lock_message"):
-                errors.append(
-                    f"Locked container {iid} is missing lock_message"
-                )
+        if (
+            item.get("is_container")
+            and item.get("is_locked")
+            and not item.get("lock_message")
+        ):
+            errors.append(
+                f"Locked container {iid} is missing lock_message"
+            )
 
     return errors
 
@@ -836,106 +863,209 @@ def _validate_items(items: list[dict], context: dict) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _enforce_lock_key_placements(items: list[dict], context: dict) -> None:
+    """Pin mandatory lock keys to the rooms chosen by the Locks pass.
+
+    The Locks pass already computes a solvable key location for every key-type
+    lock. If the provider drifts and places that key elsewhere, prefer the
+    earlier deterministic choice instead of saving an impossible world.
+    """
+    lock_key_mapping = context.get("lock_key_mapping", {})
+    items_by_id = {item.get("id"): item for item in items}
+
+    for mapping in lock_key_mapping.values():
+        key_item_id = mapping.get("key_item_id")
+        key_room_id = mapping.get("key_location_room_id")
+        if not key_item_id or not key_room_id:
+            continue
+
+        item = items_by_id.get(key_item_id)
+        if item is None:
+            continue
+
+        item["room_id"] = key_room_id
+        item["home_room_id"] = key_room_id
+        item["container_id"] = None
+
+
+def _default_item_phrase(item: dict) -> str:
+    """Return a simple noun phrase for fallback generated item text."""
+    raw_name = str(item.get("name") or item.get("id") or "item").strip().rstrip(".")
+    if not raw_name:
+        raw_name = "item"
+
+    lowered = raw_name.lower()
+    if lowered.startswith(("a ", "an ", "the ")):
+        return raw_name[0].upper() + raw_name[1:]
+
+    article = "An" if raw_name[0].lower() in "aeiou" else "A"
+    return f"{article} {raw_name}"
+
+
+def _fill_missing_item_descriptions(items: list[dict]) -> None:
+    """Add deterministic fallback descriptions for required item text.
+
+    This keeps generation resilient when the model omits short boilerplate
+    fields like room/drop descriptions for otherwise valid items.
+    """
+    for item in items:
+        if item.get("is_takeable", 0) != 1:
+            continue
+
+        phrase = _default_item_phrase(item)
+        room_id = item.get("room_id")
+        container_id = item.get("container_id")
+        is_visible = item.get("is_visible", 1) == 1
+
+        if (
+            is_visible
+            and room_id is not None
+            and container_id is None
+            and not item.get("room_description")
+        ):
+            item["room_description"] = f"{phrase} is here."
+
+        if item.get("room_description") and not item.get("drop_description"):
+            item["drop_description"] = f"{phrase} lies here."
+
+
 def _insert_items(db: GameDB, items: list[dict], context: dict) -> list[dict]:
     """Insert validated items into the database.
 
     FK references (room_id) are checked against known room IDs before
     insertion.  Invalid room references are set to NULL with a warning.
+    Item-to-item references are inserted in dependency order so the provider
+    does not need to emit parents, keys, or required items before dependents.
 
     Returns the list of successfully inserted items.
     """
     room_ids = {r["id"] for r in context.get("rooms", [])}
+    pending = [dict(item) for item in items]
     inserted: list[dict] = []
+    inserted_ids: set[str] = set()
+    all_item_ids = {item.get("id", "<unknown>") for item in pending}
 
-    for item in items:
-        iid = item.get("id", "<unknown>")
+    def _item_refs(item: dict) -> set[str]:
+        refs = {
+            item.get("container_id"),
+            item.get("key_item_id"),
+            item.get("requires_item_id"),
+        }
+        return {ref for ref in refs if ref}
 
-        # --- Validate room_id (nullable FK) ---
-        rid = item.get("room_id")
-        if rid is not None and rid not in room_ids:
-            logger.warning(
-                "Item %s references non-existent room_id %r — "
-                "setting to NULL (item will be in limbo)",
-                iid,
-                rid,
+    while pending:
+        progress = False
+        next_pending: list[dict] = []
+
+        for item in pending:
+            iid = item.get("id", "<unknown>")
+            refs = _item_refs(item)
+            unresolved = {ref for ref in refs if ref in all_item_ids and ref not in inserted_ids}
+            if unresolved:
+                next_pending.append(item)
+                continue
+
+            # --- Validate room_id (nullable FK) ---
+            rid = item.get("room_id")
+            if rid is not None and rid not in room_ids:
+                logger.warning(
+                    "Item %s references non-existent room_id %r — "
+                    "setting to NULL (item will be in limbo)",
+                    iid,
+                    rid,
+                )
+                item["room_id"] = None
+
+            # Serialize accepts_items list to JSON string for SQLite storage.
+            accepts_items_raw = item.get("accepts_items")
+            accepts_items_json = (
+                json.dumps(accepts_items_raw)
+                if accepts_items_raw is not None
+                else None
             )
-            item["room_id"] = None
 
-        # Serialize accepts_items list to JSON string for SQLite storage.
-        accepts_items_raw = item.get("accepts_items")
-        accepts_items_json = (
-            json.dumps(accepts_items_raw)
-            if accepts_items_raw is not None
-            else None
-        )
+            # Serialize JSON array/object fields for SQLite storage.
+            item_tags_raw = item.get("item_tags")
+            item_tags_json = (
+                json.dumps(item_tags_raw)
+                if item_tags_raw is not None
+                else None
+            )
+            toggle_states_raw = item.get("toggle_states")
+            toggle_states_json = (
+                json.dumps(toggle_states_raw)
+                if toggle_states_raw is not None
+                else None
+            )
+            toggle_messages_raw = item.get("toggle_messages")
+            toggle_messages_json = (
+                json.dumps(toggle_messages_raw)
+                if toggle_messages_raw is not None
+                else None
+            )
 
-        # Serialize JSON array/object fields for SQLite storage.
-        item_tags_raw = item.get("item_tags")
-        item_tags_json = (
-            json.dumps(item_tags_raw)
-            if item_tags_raw is not None
-            else None
-        )
-        toggle_states_raw = item.get("toggle_states")
-        toggle_states_json = (
-            json.dumps(toggle_states_raw)
-            if toggle_states_raw is not None
-            else None
-        )
-        toggle_messages_raw = item.get("toggle_messages")
-        toggle_messages_json = (
-            json.dumps(toggle_messages_raw)
-            if toggle_messages_raw is not None
-            else None
-        )
+            db.insert_item(
+                id=item["id"],
+                name=item["name"],
+                description=item["description"],
+                examine_description=item["examine_description"],
+                room_id=item.get("room_id"),
+                container_id=item.get("container_id"),
+                is_takeable=item.get("is_takeable", 1),
+                is_visible=item.get("is_visible", 1),
+                is_consumed_on_use=item.get("is_consumed_on_use", 0),
+                is_container=item.get("is_container", 0),
+                is_open=item.get("is_open", 0),
+                has_lid=item.get("has_lid", 1),
+                is_locked=item.get("is_locked", 0),
+                lock_message=item.get("lock_message"),
+                open_message=item.get("open_message"),
+                search_message=item.get("search_message"),
+                take_message=item.get("take_message"),
+                drop_message=item.get("drop_message"),
+                weight=item.get("weight", 1),
+                category=item.get("category"),
+                room_description=item.get("room_description"),
+                home_room_id=item.get("home_room_id"),
+                drop_description=item.get("drop_description"),
+                read_description=item.get("read_description"),
+                key_item_id=item.get("key_item_id"),
+                consume_key=item.get("consume_key", 0),
+                unlock_message=item.get("unlock_message"),
+                accepts_items=accepts_items_json,
+                reject_message=item.get("reject_message"),
+                # Item dynamics fields
+                is_toggleable=item.get("is_toggleable", 0),
+                toggle_state=item.get("toggle_state"),
+                toggle_on_message=item.get("toggle_on_message"),
+                toggle_off_message=item.get("toggle_off_message"),
+                toggle_states=toggle_states_json,
+                toggle_messages=toggle_messages_json,
+                requires_item_id=item.get("requires_item_id"),
+                requires_message=item.get("requires_message"),
+                item_tags=item_tags_json,
+                quantity=item.get("quantity"),
+                max_quantity=item.get("max_quantity"),
+                quantity_unit=item.get("quantity_unit"),
+                depleted_message=item.get("depleted_message"),
+                quantity_description=item.get("quantity_description"),
+            )
+            inserted.append(item)
+            inserted_ids.add(iid)
+            progress = True
 
-        db.insert_item(
-            id=item["id"],
-            name=item["name"],
-            description=item["description"],
-            examine_description=item["examine_description"],
-            room_id=item.get("room_id"),
-            container_id=item.get("container_id"),
-            is_takeable=item.get("is_takeable", 1),
-            is_visible=item.get("is_visible", 1),
-            is_consumed_on_use=item.get("is_consumed_on_use", 0),
-            is_container=item.get("is_container", 0),
-            is_open=item.get("is_open", 0),
-            has_lid=item.get("has_lid", 1),
-            is_locked=item.get("is_locked", 0),
-            lock_message=item.get("lock_message"),
-            open_message=item.get("open_message"),
-            search_message=item.get("search_message"),
-            take_message=item.get("take_message"),
-            drop_message=item.get("drop_message"),
-            weight=item.get("weight", 1),
-            category=item.get("category"),
-            room_description=item.get("room_description"),
-            home_room_id=item.get("home_room_id"),
-            drop_description=item.get("drop_description"),
-            read_description=item.get("read_description"),
-            key_item_id=item.get("key_item_id"),
-            consume_key=item.get("consume_key", 0),
-            unlock_message=item.get("unlock_message"),
-            accepts_items=accepts_items_json,
-            reject_message=item.get("reject_message"),
-            # Item dynamics fields
-            is_toggleable=item.get("is_toggleable", 0),
-            toggle_state=item.get("toggle_state"),
-            toggle_on_message=item.get("toggle_on_message"),
-            toggle_off_message=item.get("toggle_off_message"),
-            toggle_states=toggle_states_json,
-            toggle_messages=toggle_messages_json,
-            requires_item_id=item.get("requires_item_id"),
-            requires_message=item.get("requires_message"),
-            item_tags=item_tags_json,
-            quantity=item.get("quantity"),
-            max_quantity=item.get("max_quantity"),
-            quantity_unit=item.get("quantity_unit"),
-            depleted_message=item.get("depleted_message"),
-            quantity_description=item.get("quantity_description"),
+        if progress:
+            pending = next_pending
+            continue
+
+        unresolved_chunks = []
+        for item in next_pending:
+            refs = sorted(_item_refs(item) - inserted_ids)
+            unresolved_chunks.append(f"{item.get('id', '<unknown>')} -> {refs}")
+        raise ValueError(
+            "Unable to resolve item insertion order due to unresolved item "
+            f"references: {', '.join(unresolved_chunks)}"
         )
-        inserted.append(item)
 
     return inserted
 
@@ -998,6 +1128,9 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
 
     result = provider.generate_structured(prompt, ITEMS_SCHEMA, gen_ctx)
     items: list[dict] = result.get("items", [])
+
+    _enforce_lock_key_placements(items, context)
+    _fill_missing_item_descriptions(items)
 
     # Validate
     errors = _validate_items(items, context)

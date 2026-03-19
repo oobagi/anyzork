@@ -74,11 +74,15 @@ class ClaudeProvider(BaseProvider):
         system_prompt = (
             "You are a world-building assistant for a text adventure game generator. "
             "Respond with ONLY valid JSON matching the schema below. "
-            "Do not include any explanation, markdown formatting, or text outside the JSON object.\n\n"
+            "Do not include any explanation, markdown formatting, or text "
+            "outside the JSON object.\n\n"
             f"Required JSON schema:\n{json.dumps(schema, indent=2)}"
         )
         if ctx.seed is not None:
-            system_prompt += f"\n\nGeneration seed: {ctx.seed}. Use this seed to guide deterministic choices."
+            system_prompt += (
+                f"\n\nGeneration seed: {ctx.seed}. Use this seed to guide "
+                "deterministic choices."
+            )
 
         user_content = prompt
         if ctx.existing_data:
@@ -173,4 +177,6 @@ class ClaudeProvider(BaseProvider):
             if delay is not None:
                 time.sleep(delay)
 
-        raise ProviderError(f"Claude API failed after {len(_RETRY_DELAYS) + 1} attempts") from last_exc
+        raise ProviderError(
+            f"Claude API failed after {len(_RETRY_DELAYS) + 1} attempts"
+        ) from last_exc

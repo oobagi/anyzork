@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import os
 import tomllib
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class LLMProvider(str, Enum):
+class LLMProvider(StrEnum):
     """Supported LLM providers."""
 
     CLAUDE = "claude"

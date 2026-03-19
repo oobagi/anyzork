@@ -32,7 +32,7 @@
 **Tasks:**
 - [x] `anyzork/engine/commands.py` — command DSL interpreter (preconditions + effects)
 - [x] `anyzork/engine/game.py` — game loop (room display, input parsing, command resolution, state updates)
-- [x] `tests/build_test_game.py` + `tests/test_game.zork` — hand-crafted 6-room test game ("The Hollow Lantern")
+- [x] `tests/build_test_game.py` — single hand-crafted human-testing world for runtime coverage
 
 **Agents:**
 - Narrative Designer agent → command DSL interpreter (they wrote the DSL spec)
@@ -79,7 +79,7 @@
 - [x] Built-in engine verbs — `take`/`get`, `drop`, `examine`/`look at`, `open`, `talk to`/`ask`
 - [x] Rich output formatting — room descriptions, inventory, score, styled text
 - [x] Help system — shows built-in verbs + DSL verbs
-- [x] End-to-end test — `anyzork play tests/test_game.zork` plays the full game
+- [x] End-to-end test — `anyzork play tests/test_game.zork` plays the hand-authored human-testing world
 
 **Agents:**
 - Software Architect agent → CLI wiring (`cli.py` play command)
