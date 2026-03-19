@@ -259,62 +259,56 @@ The generator should create a progression structure that follows these principle
 
 ---
 
-## Lore System
+## Quest System
 
-Lore adds depth and replayability. It is layered into three tiers so that different player types all find something rewarding.
+Quests give the player explicit direction without turning the game into a rigid checklist.
 
-### Tier 1: Surface Lore
+### Main Quest
 
-**Audience**: Every player, including those who just want to solve puzzles and move on.
+Every generated game has exactly one main quest. It represents the big-picture goal of the adventure and should align with the actual win condition.
 
-**Delivery**: Embedded in room descriptions, NPC dialogue, and item names. The player absorbs this passively by playing the game normally.
+Main-quest rules:
 
-**Examples**:
-- Room descriptions mention a war that scarred the land.
-- An NPC refers to "the old king" in passing.
-- Item names imply history: "a sword with a notched blade" rather than just "a sword."
+- Discovered at game start
+- Built from 2-5 clear objectives
+- Tracks critical-path progress
+- Usually awards `0` score directly because the gated puzzles and milestones already carry their own rewards
 
-**Purpose**: Establishes the world's tone and makes it feel like a place with history, not a series of puzzle rooms.
+### Side Quests
 
-### Tier 2: Engaged Lore
+Side quests reward exploration, optional dialogue, and off-critical-path discoveries.
 
-**Audience**: Players who examine things, talk to NPCs beyond what's required, and explore optional rooms.
+Good side quests:
 
-**Delivery**: Found by examining items closely, asking NPCs about optional topics, reading books/scrolls/inscriptions, and visiting optional rooms.
+- reuse existing rooms, items, NPCs, and flags
+- clarify why optional content matters
+- provide score, shortcuts, rewards, or narrative payoff
+- can often be progressed in parallel with the main quest
 
-**Examples**:
-- Examining the sword reveals an inscription: "Forged for Captain Aldric, who held the bridge at Thornwall."
-- Asking the innkeeper about "the old king" triggers a story about the kingdom's fall.
-- A hidden journal in an optional room describes the dungeon's original purpose.
+### Objectives
 
-**Purpose**: Rewards curiosity with context. The player who engages with the world understands *why* things are the way they are.
+Quest objectives are tracked by deterministic flags. The quest system observes those flags and presents progress to the player; it does not gate mechanics on its own.
 
-### Tier 3: Deep Lore
+Typical objective patterns:
 
-**Audience**: Lore hunters, completionists, and second-playthrough players.
+- Find an item
+- Reach a room
+- Solve a puzzle
+- Convince or help an NPC
+- Complete a multi-step collection or restoration task
 
-**Delivery**: Requires connecting information across multiple sources, solving optional puzzles, or finding well-hidden secrets.
+### Player-Facing Journal
 
-**Examples**:
-- Combining clues from three different inscriptions reveals that the "hero" of the surface lore was actually the villain.
-- An optional puzzle in a hidden room unlocks a sealed chamber containing a chronicle that reframes the entire story.
-- Examining a seemingly decorative item after learning a specific fact (setting a flag) reveals new text.
+The player uses `quests`, `journal`, or `j` to open the quest log.
 
-**Purpose**: Rewards mastery and thoroughness with the richest narrative payoff. These are the moments players share and discuss.
+Display goals:
 
-### Lore Properties
+- Main quest first
+- Active objectives with checkboxes
+- Completed quests collapsed into short summaries
+- Side quests visible only once discovered
 
-| Property | Description |
-|---|---|
-| `id` | Unique identifier. |
-| `tier` | `surface`, `engaged`, or `deep`. |
-| `content` | The lore text itself. |
-| `delivery_method` | How the player encounters it: `room_description`, `examine`, `dialogue`, `inscription`, `book`, `puzzle_reward`. |
-| `location_id` | Room where this lore is found (if applicable). |
-| `item_id` | Item this lore is attached to (if applicable). |
-| `npc_id` | NPC who delivers this lore (if applicable). |
-| `required_flags` | Flags that must be set before this lore is visible/accessible. |
-| `score_value` | Points awarded for discovering this lore. |
+See [docs/game-design/quest-system.md](/Users/jaden/Developer/anyzork/docs/game-design/quest-system.md) for the full design.
 
 ---
 
@@ -329,11 +323,11 @@ Scoring provides extrinsic motivation and a measure of completeness.
 | Required puzzle solved | 10-25 pts | Scales with difficulty. |
 | Optional puzzle solved | 15-30 pts | Higher than required — rewards going off the critical path. |
 | Region unlocked | 5-10 pts | Milestone marker. |
-| Lore discovered (surface) | 0 pts | Surface lore is free — no score incentive needed. |
-| Lore discovered (engaged) | 2-5 pts | Small reward for curiosity. |
-| Lore discovered (deep) | 10-20 pts | Substantial reward for thoroughness. |
+| Side quest completed | 5-20 pts | Rewards optional exploration and follow-through. |
+| Bonus objective completed | 2-10 pts | Optional steps inside a quest. |
+| Optional discovery or hidden shortcut | 2-10 pts | For worthwhile but non-quest optional content. |
 | Optional challenge completed | 10-25 pts | Time-based, inventory-limited, or otherwise constrained challenges. |
-| NPC quest completed | 5-15 pts | Helping NPCs beyond the critical path. |
+| NPC task completed | 5-15 pts | Often represented as a side quest or quest objective. |
 
 All values above are `[PLACEHOLDER]` ranges. The generator should assign specific values per game, scaling to a target maximum score.
 
@@ -346,7 +340,7 @@ All values above are `[PLACEHOLDER]` ranges. The generator should assign specifi
 
 During generation validation, the scoring system serves as a self-check:
 - If max score is achievable only through the critical path, the game lacks optional content.
-- If 80%+ of the score comes from lore, the game lacks mechanical depth.
+- If 80%+ of the score comes from quest completion with no puzzle or exploration rewards, the game lacks mechanical texture.
 - A well-balanced game should have roughly 50% critical-path score and 50% optional-content score.
 
 ---
@@ -389,8 +383,8 @@ The generation pipeline should evaluate its output against these quality criteri
 ### Interconnectedness
 
 - Every room connects to at least one other room (no orphans).
-- Every item is either useful for a puzzle, a key for a lock, a lore carrier, or meaningful scenery. No item exists without purpose.
-- Every NPC contributes something: information, a trade, a gate, or lore. No NPCs exist as empty decoration.
+- Every item is either useful for a puzzle, a key for a lock, part of a quest/objective, or meaningful scenery. No item exists without purpose.
+- Every NPC contributes something: information, a trade, a gate, a trigger, or a quest. No NPC exists as empty decoration.
 - Puzzles reference items, rooms, and NPCs from across the world, not just their immediate vicinity.
 
 ### Pacing
@@ -412,7 +406,7 @@ The generation pipeline should evaluate its output against these quality criteri
 - Room descriptions are internally consistent (a room described as small doesn't have six exits).
 - Items make sense in their locations (a ship's wheel in a harbor, not a library).
 - NPC dialogue reflects the world's tone and the NPC's role.
-- Lore across all three tiers tells a consistent, layered story — not contradictory fragments.
+- Quests, clues, room text, and dialogue all reinforce the same underlying story instead of pulling in different directions.
 
 ### Mechanical Clarity
 

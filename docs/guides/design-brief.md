@@ -2,91 +2,91 @@
 
 ## The Problem
 
-Using an LLM to play a text adventure in real-time doesn't work well:
+Using an LLM to run a text adventure in real time fails in the same ways over and over:
 
-1. **Context loss** — the LLM forgets rooms, items, and world state as the conversation grows
-2. **State inconsistency** — the LLM hallucinates what the player can/can't do. It lets you open doors that should be locked, use items you don't have, or walk through walls
-3. **World drift** — room descriptions change between visits, NPCs forget conversations, puzzles change their solutions mid-game
+1. Context loss: the model forgets rooms, items, flags, and prior conversations.
+2. State inconsistency: it lets the player do things that should be impossible.
+3. World drift: descriptions, puzzle logic, and NPC behavior change over time.
 
-The core issue: the LLM is simultaneously the world database, the game engine, and the narrator. It's bad at the first two.
+The core issue is role overload. A single model is trying to be the world database, the game engine, and the narrator at once.
 
 ## The Solution
 
-Split the responsibilities:
+Split the system into two phases:
 
-1. **The LLM generates the world** — rooms, exits, items, NPCs, puzzles, lore, and the *commands* that wire them together. All of this is stored as structured data in a SQLite database (a `.zork` file).
-2. **A deterministic engine runs the game** — it reads from the database, evaluates commands as structured rules, and manages player state. No LLM involved. No hallucination possible.
+1. The LLM generates a world as structured data: rooms, exits, locks, items, NPCs, interaction rules, puzzles, commands, quests, and triggers. That data is stored in a portable SQLite `.zork` file.
+2. A deterministic engine runs the game: it reads the database, evaluates DSL rules, applies state changes, and renders output consistently.
 
-The LLM is used where it's strong (creative generation) and removed from where it's weak (state management, consistency).
+The LLM is used once for creativity. The engine handles all runtime state.
 
-## Why a Command DSL Instead of Generated Code
+## Why a DSL Instead of Generated Code
 
-The LLM could generate Python code for each command, but that's fragile and a security risk. Instead, commands are structured **precondition/effect rules** stored as JSON in the database:
+Commands are stored as structured precondition/effect rules instead of generated Python:
 
-```
+```text
 verb: "use"
 pattern: "use {item} on {target}"
 preconditions: [player has "rusty_key", player in "dungeon_entrance"]
 effects: [remove "rusty_key", unlock "dungeon_door", print "The door creaks open..."]
 ```
 
-The engine interprets these deterministically. The DSL is expressive enough for complex puzzles but impossible to hallucinate at runtime — every command either matches its preconditions or it doesn't.
+This keeps runtime deterministic, auditable, and safe. The model can compose valid mechanics, but it cannot invent arbitrary executable behavior.
 
 ## Why Multi-Pass Generation
 
-Generating an entire game world in one LLM call is unreliable. Instead, generation happens in passes, each one focused and building on the last:
+A whole game generated in one call is fragile. AnyZork breaks generation into focused passes so each step can validate and retry independently.
 
-1. **World concept** — interpret the user's prompt, set theme/tone/scale
-2. **Room graph** — generate rooms and connections (the spatial layout)
-3. **Locks & gates** — add locks to exits, creating the progression structure
-4. **Items** — populate rooms with objects, keys, tools
-5. **NPCs** — add characters with dialogue and behavior
-6. **Puzzles** — create multi-step challenges with solutions and rewards
-7. **Commands** — generate DSL rules that wire everything together
-8. **Lore** — layer in discoverable text at three tiers
-9. **Validation** — verify consistency (all exits connect, all locks solvable, no orphans)
+Current pipeline:
 
-Each pass has focused context (just the relevant slice of the world), can validate against what already exists, and can be retried independently if it fails.
+1. World concept
+2. Room graph
+3. Locks and gates
+4. Items
+5. NPCs and dialogue
+6. Interaction responses
+7. Puzzles
+8. Commands
+9. Quests
+10. Triggers
+11. Validation
+
+This keeps prompts smaller, reduces cascading failures, and makes retries cheap.
 
 ## Why SQLite
 
-A single `.zork` file = one complete, portable game. Copy it, email it, put it on a USB stick. No server, no connection string, no setup. SQLite gives us:
+A single `.zork` file is a complete game and a save file:
 
-- ACID transactions (game state is always consistent)
-- Foreign keys (rooms reference rooms, items reference rooms, etc.)
-- Indexes for fast lookups (find items in a room, commands for a verb)
-- WAL mode for concurrent reads during narrator mode
-- Zero dependencies (built into Python)
+- Portable: copy it, share it, archive it.
+- Transactional: generation passes can commit or roll back cleanly.
+- Relational: rooms, exits, items, quests, and triggers reference each other safely.
+- Fast enough: the game world is small, but lookups still benefit from indexes.
 
-## The Narrator Mode
+## Narrator Mode
 
-The engine outputs deterministic text: "You are in the Dungeon Entrance. There is a rusty door to the north." This is functional but bland.
+Narrator mode is an optional read-only LLM layer on top of deterministic output. It can rewrite presentation, but it cannot change state, outcomes, inventory, exits, or quest progress.
 
-**Narrator mode** is an optional thin LLM layer that takes the deterministic output and flavors it with prose: "The air is thick with the smell of damp stone. Before you, a door of rusted iron hangs on a single hinge, groaning softly in a draft you can't feel."
-
-Critically, the narrator **cannot change game state**. It receives the engine's output as read-only context and produces flavored text. If the narrator hallucinates, the game still works correctly — you just get colorful lies alongside accurate state.
+If narrator mode fails, the deterministic engine output is still enough to play.
 
 ## Provider Strategy
 
-We support three API providers (bring your own key):
-- **Claude** (Anthropic API)
-- **OpenAI** (OpenAI API)
-- **Gemini** (Google GenAI API)
+The generator and narrator both use the same provider abstraction. Today the supported providers are:
 
-These make direct API calls with structured prompts. The user sets their API key via env var. The generator's orchestrator calls the same interface regardless of which provider is active.
+- Claude
+- OpenAI
+- Gemini
 
-> **Future:** CLI providers (Claude Code, Codex) that invoke agentic tools as subprocesses are deferred to a future version.
+Users bring their own API keys. Provider choice is configuration, not architecture.
 
 ## Additional Features
 
 ### Save/Load
-Trivial — the `.zork` file *is* the save. The player state table tracks position, inventory, health, score, moves, and flags. Copy the file to save, restore it to load.
 
-### Game Export & Sharing
-`.zork` files are self-contained. Share them however you want. The engine just needs the file path.
+The `.zork` file is the save. Runtime tables track room position, inventory, health, score, moves, quest status, flags, and trigger execution state.
 
 ### Seed System
-Same user prompt + same seed = same generated world (assuming the same provider/model). Seeds are passed through to the LLM's temperature/seed parameters where supported.
+
+The same prompt plus the same seed should produce the same world shape, subject to provider/model determinism.
 
 ### Scoring
-The command DSL supports `add_score` effects. The generator assigns point values to puzzle solutions, lore discoveries, and optional challenges.
+
+The DSL supports `add_score`, and the engine records score events deterministically. Typical score sources are puzzle solutions, optional discoveries, quest completion, and bonus objectives.

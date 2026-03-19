@@ -86,7 +86,7 @@ class EngineOutput:
 The narrator LLM call receives two inputs:
 
 1. **System prompt** -- voice and constraint instructions (see section 6).
-2. **User prompt** -- the serialized `EngineOutput` plus narrator context (theme, tone, room lore, recent action history).
+2. **User prompt** -- the serialized `EngineOutput` plus narrator context (theme, tone, room context notes, recent action history).
 
 The narrator returns a single prose string. The engine does not parse, validate, or transform this string -- it displays it directly.
 
@@ -180,7 +180,7 @@ class NarratorTurnContext:
     # Room context (changes on room enter)
     room_name: str
     room_description: str      # the engine's raw description
-    room_lore: str | None      # tier 1-2 lore associated with this room
+    room_context_notes: str | None  # extra optional flavor context derived from current room state
 
     # Turn context (changes every turn)
     engine_output: EngineOutput
@@ -197,7 +197,7 @@ class NarratorTurnContext:
 | `game_title` | `metadata.title` | `db.get_meta("title")` |
 | `theme`, `tone`, `era`, `setting`, `vocabulary_hints` | `metadata.author_prompt` (JSON containing the concept dict) | `json.loads(db.get_meta("author_prompt"))["concept"]` |
 | `room_name`, `room_description` | `rooms` table | `db.get_room(room_id)` |
-| `room_lore` | `lore` table (when implemented) | Query lore by `location_id = room_id`, tiers 1 and 2 |
+| `room_context_notes` | Current room, NPC, and item state | Derived from the same deterministic room payload already being rendered |
 | `engine_output` | Constructed by the engine during turn processing | Passed directly to narrator |
 | `recent_actions` | In-memory ring buffer on the `Narrator` instance | Appended each turn |
 
@@ -213,7 +213,7 @@ The narrator prompt should fit comfortably in a small context window. Estimated 
 |---|---|
 | System prompt (voice instructions) | ~200 |
 | Game identity context | ~150 |
-| Room context + lore | ~200 |
+| Room context notes | ~200 |
 | Engine output (serialized) | ~100-300 |
 | Recent actions (3-5 entries) | ~50-100 |
 | **Total input** | **~700-950** |
@@ -271,7 +271,7 @@ The `NarratorContext` dataclass is already defined:
 class NarratorContext:
     theme: str = ""
     tone: str = ""
-    room_lore: str = ""
+    room_context_notes: str = ""
     seed: int | None = None
     temperature: float = 0.9
     max_tokens: int = 2_048
@@ -366,7 +366,7 @@ The user prompt changes every turn. It contains the engine output and contextual
 NARRATOR_TURN_TEMPLATE = """\
 Current room: {room_name}
 Room description: {room_description}
-{lore_block}
+{room_context_block}
 Engine output to narrate:
 {engine_output_text}
 

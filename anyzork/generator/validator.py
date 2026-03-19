@@ -1,4 +1,4 @@
-"""Pass 9: Validation — deterministic post-generation integrity checks.
+"""Final validation step — deterministic post-generation integrity checks.
 
 This module runs after all LLM generation passes have populated the .zork
 database.  It performs structural and logical checks to catch

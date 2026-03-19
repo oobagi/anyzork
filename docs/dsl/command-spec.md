@@ -462,19 +462,19 @@ Marks a puzzle as solved. This is a permanent state change that can be checked b
 }
 ```
 
-### 4.11 `discover_lore`
+### 4.11 `discover_quest`
 
-Marks a lore entry as discovered by the player. The lore entry's text becomes available in the player's lore journal.
+Discovers a quest by setting its discovery flag. This causes the quest to appear in the player's quest log on the next engine tick.
 
 | Field  | Type   | Required | Description |
 |--------|--------|----------|-------------|
-| `type` | string | yes      | `"discover_lore"` |
-| `lore` | string | yes      | The lore entry ID to mark as discovered. |
+| `type` | string | yes      | `"discover_quest"` |
+| `quest` | string | yes      | The quest ID to discover. |
 
 ```json
 {
-  "type": "discover_lore",
-  "lore": "legend_of_the_fallen_king"
+  "type": "discover_quest",
+  "quest": "the_hermits_bargain"
 }
 ```
 
@@ -511,7 +511,7 @@ Just as with preconditions, any string field in an effect can use `{slot_name}` 
 
 ## 5. One-Shot Commands
 
-Some commands should only fire once. A key can only unlock a door once. A lore discovery only happens once. An NPC's first greeting is different from subsequent ones.
+Some commands should only fire once. A key can only unlock a door once. A quest discovery only happens once. An NPC's first greeting is different from subsequent ones.
 
 Setting `"one_shot": true` on a command causes the engine to:
 
@@ -524,7 +524,7 @@ The `executed` flag is stored per-command in the commands table. It persists acr
 ### When to Use One-Shot
 
 - **Key-and-lock puzzles** — the key is consumed and the door opens. Should not repeat.
-- **Lore discoveries** — reading the ancient inscription for the "first time" should only happen once.
+- **Quest discoveries** — finding the hermit's journal for the first time should only add the side quest once.
 - **NPC quest hand-offs** — the wizard gives you the amulet once. Not every time you talk to him.
 - **Puzzle solutions** — solving the mirror puzzle awards points once.
 - **Trap triggers** — the floor collapses once.
@@ -539,23 +539,23 @@ The `executed` flag is stored per-command in the commands table. It persists acr
 
 ```json
 {
-  "id": "read_ancient_inscription",
+  "id": "read_hermits_journal",
   "verb": "read",
   "pattern": "read {target}",
   "preconditions": [
-    { "type": "in_room", "room": "temple_antechamber" },
-    { "type": "item_in_room", "item": "ancient_inscription", "room": "_current" }
+    { "type": "in_room", "room": "abandoned_hut" },
+    { "type": "item_in_room", "item": "hermits_journal", "room": "_current" }
   ],
   "effects": [
-    { "type": "discover_lore", "lore": "prophecy_of_the_sealed_king" },
+    { "type": "discover_quest", "quest": "the_hermits_bargain" },
     { "type": "add_score", "points": 5 },
-    { "type": "print", "message": "You trace the faded glyphs with your finger. The prophecy speaks of a king sealed beneath the mountain, waiting for the one who carries the threefold key." }
+    { "type": "print", "message": "The journal describes a hermit trapped beyond the briar grove, willing to trade a hidden shortcut for a silver mirror." }
   ],
   "one_shot": true
 }
 ```
 
-The first time the player reads the inscription, they discover the lore, gain 5 points, and see the message. If they type `read inscription` again, the engine skips this command. A separate, non-one-shot command can provide a shorter reminder message for repeat reads.
+The first time the player reads the journal, they discover the side quest, gain 5 points, and see the message. If they type `read journal` again, the engine skips this command. A separate, non-one-shot command can provide a shorter reminder message for repeat reads.
 
 ---
 
@@ -657,7 +657,7 @@ All effects in a command execute within a single database transaction. If the en
 
 ### 7.3 NPC Conversation Trigger
 
-**Scenario**: The player talks to an old wizard for the first time. The wizard reveals lore about the sealed king, gives the player an enchanted amulet, and sets a flag that unlocks new dialogue options elsewhere.
+**Scenario**: The player talks to an old wizard for the first time. The wizard reveals the existence of a larger task, gives the player an enchanted amulet, and sets a flag that unlocks new dialogue options elsewhere.
 
 ```json
 {
@@ -670,7 +670,7 @@ All effects in a command execute within a single database transaction. If the en
   ],
   "effects": [
     { "type": "set_flag", "flag": "spoke_to_wizard" },
-    { "type": "discover_lore", "lore": "wizard_tale_of_sealed_king" },
+    { "type": "discover_quest", "quest": "seal_the_mountain_gate" },
     { "type": "spawn_item", "item": "enchanted_amulet", "location": "_inventory" },
     { "type": "add_score", "points": 10 },
     { "type": "print", "message": "The old wizard studies you for a long moment. \"You have the look,\" he says. \"The look of someone who doesn't know what they've walked into.\" He tells you of the Sealed King — a ruler entombed beneath the mountain centuries ago, bound by three locks that no single key can open. He presses a cold amulet into your hand. \"You'll need this. Don't ask me why. You'll know when the time comes.\"" }
@@ -850,7 +850,7 @@ A follow-up command for re-examining the bookshelf after the passage is revealed
 | `add_score` | `points` | Add to player score |
 | `reveal_exit` | `exit` | Make a hidden exit visible |
 | `solve_puzzle` | `puzzle` | Mark puzzle as solved |
-| `discover_lore` | `lore` | Mark lore entry as discovered |
+| `discover_quest` | `quest` | Set a quest's discovery flag |
 | `print` | `message` | Display text to the player |
 
 ### Special Location Constants

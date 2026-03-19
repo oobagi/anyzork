@@ -1,7 +1,6 @@
-"""Pass 8: Quests -- Generate player-facing objectives with trackable progress.
+"""Pass 9: Quests -- Generate player-facing objectives with trackable progress.
 
-Replaces the lore pass. Reads everything from prior passes, then prompts
-the LLM to generate quests that organize the player's experience into
+Reads everything from prior passes, then prompts the LLM to generate quests that organize the player's experience into
 clear objectives.
 
 Every game has exactly one main quest (the win condition) and 2-4 side

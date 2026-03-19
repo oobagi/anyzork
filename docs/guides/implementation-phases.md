@@ -37,7 +37,7 @@
 **Agents:**
 - Narrative Designer agent → command DSL interpreter (they wrote the DSL spec)
 - Game Designer agent → game loop + state management
-- Level Designer agent → hand-crafted test game (room layout, puzzles, items, lore)
+- Level Designer agent → hand-crafted test game (room layout, puzzles, items, quests)
 
 **Key docs to reference:**
 - `docs/dsl/command-spec.md` — all precondition/effect types, pattern matching
@@ -103,7 +103,7 @@
 - [x] `anyzork/generator/providers/openai_provider.py` — OpenAI API provider
 - [x] `anyzork/generator/providers/gemini.py` — Google GenAI provider
 - [x] `anyzork/generator/orchestrator.py` — multi-pass generation coordinator
-- [x] `anyzork/generator/passes/` — all 8 passes (concept, rooms, locks, items, npcs, puzzles, commands, lore)
+- [x] `anyzork/generator/passes/` — concept, rooms, locks, items, npcs, interactions, puzzles, commands, quests, triggers
 - [x] `anyzork/generator/validator.py` — post-generation consistency checks
 - [x] Wire `generate` command into CLI
 - [x] End-to-end test — generated "haunted lighthouse" game with 12 rooms, all validation passed
@@ -111,11 +111,11 @@
 **Agents:**
 - Software Architect agent → provider abstraction, orchestrator skeleton
 - Game Designer agent → generation pass prompts, validation rules
-- Narrative Designer agent → lore pass, command pass (ensuring DSL compliance)
+- Narrative Designer agent → quest pass, command pass (ensuring DSL compliance)
 - Level Designer agent → room graph pass, lock/gate pass, spatial flow
 
 **Key docs to reference:**
-- `docs/architecture/generation-pipeline.md` — all 9 passes, dependencies, validation
+- `docs/architecture/generation-pipeline.md` — all generation passes, dependencies, validation
 - `docs/providers/integration.md` — provider interface, adding new providers
 - `docs/dsl/command-spec.md` — what valid commands look like
 - `docs/game-design/world-schema.md` — what the LLM must produce
@@ -130,7 +130,7 @@
 
 **Tasks:**
 - [x] `anyzork/engine/narrator.py` — optional LLM layer that flavors engine output with prose (read-only, can't mutate state)
-- [x] Seed system — pass seeds through to providers, store in game meta, auto-generate if not provided
+- [x] Seed system — pass seeds through to providers, store in game metadata, auto-generate if not provided
 - [x] `anyzork list` CLI command — list saved games with version/title/date/score
 - [x] Game info display — show engine vs save version (outdated warning), seed, date, max score
 - [x] Polish pass — Reality Checker audit: 12 fixes (3 critical, 3 high, 6 medium)
@@ -227,11 +227,29 @@
 - Player attacks something → nearby NPC responds
 
 **Tasks:**
+- [x] Design doc — `docs/game-design/trigger-system.md`
+- [x] Schema: triggers table with event_type, event_data, preconditions, effects
+- [x] Engine: `_emit_event()` with deferred queue, cascade protection, 6 event types
+- [x] Generation: triggers pass added to pipeline (after quests, before validation)
+- [x] Test world: crate key via dialogue_node trigger, exit unlock via flag_set triggers
+
+---
+
+## Phase 5f: Narrator = Immersive Mode
+
+**Goal:** Narrator mode becomes a fully immersive "talking to a book" experience.
+
+**Two modes:**
+- **Standard** (`anyzork play`) — no narrator, engine UI only. Panels, tables, styled text. What we have now.
+- **Narrator** (`anyzork play --narrator`) — fully immersive. EVERY input/output narrated. No UI chrome (no panels, tables, exit lists, inventory tables, score display). Just prose. Like reading a novel you control. The deterministic engine still runs underneath.
+
+**Tasks:**
 - [ ] Design doc
-- [ ] Schema: triggers table (event_type, conditions, effects)
-- [ ] Engine: trigger evaluation in `_tick()` and event hooks
-- [ ] Generation: LLM generates triggers alongside commands
-- [ ] Test world: fix crate key spawn via trigger, add room-enter events
+- [ ] Narrator narrates ALL output (rooms, actions, examine, dialogue, inventory, quests — everything)
+- [ ] UI suppression in narrator mode (no Rich panels, tables, styled text)
+- [ ] Compact structured input format for LLM (minimize tokens)
+- [ ] Aggressive caching for all narrated output
+- [ ] Graceful fallback if narrator fails (show engine output briefly)
 
 ---
 

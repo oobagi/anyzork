@@ -1,6 +1,6 @@
-"""Pass 7.5: Triggers -- Generate reactive events that fire on game state changes.
+"""Pass 10: Triggers -- Generate reactive events that fire on game state changes.
 
-Runs after quests (Pass 8) and before validation.  Reads everything from
+Runs after quests and before validation. Reads everything from
 prior passes -- rooms, items, NPCs, dialogue nodes, flags, locks, exits,
 puzzles, commands, and quests -- then prompts the LLM to generate triggers
 that wire reactive game behavior.
@@ -788,9 +788,9 @@ def _insert_triggers(db: GameDB, triggers: list[dict]) -> list[dict]:
 
 
 def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
-    """Run Pass 7.5: Triggers.  Returns updated context with trigger data."""
+    """Run Pass 10: Triggers. Returns updated context with trigger data."""
 
-    logger.info("Pass 7.5: Generating triggers...")
+    logger.info("Pass 10: Generating triggers...")
 
     # Fetch dialogue nodes from the DB since the NPC pass does not include
     # them in its context summary.  Triggers need dialogue node IDs to wire
@@ -832,7 +832,7 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
     ]
 
     logger.info(
-        "Pass 7.5 complete: %d triggers generated.",
+        "Pass 10 complete: %d triggers generated.",
         len(inserted),
     )
     return {"triggers": triggers_summary}

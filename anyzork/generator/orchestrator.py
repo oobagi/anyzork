@@ -1,9 +1,9 @@
 """Multi-pass generation orchestrator.
 
-Coordinates the nine-pass pipeline that turns a user prompt into a
-populated ``.zork`` SQLite database.  Each pass is a separate module
-under ``anyzork.generator.passes``; the orchestrator sequences them,
-assembles context, handles retries, and reports progress.
+Coordinates the current ten-pass pipeline that turns a user prompt into a
+populated ``.zork`` SQLite database. Each pass is a separate module under
+``anyzork.generator.passes``; the orchestrator sequences them, assembles
+context, handles retries, and reports progress.
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ def _build_context(pass_name: str, results: dict[str, dict]) -> dict:
 
 
 def _run_validation(db: GameDB) -> list[str]:
-    """Pass 9 — deterministic cross-referential integrity checks.
+    """Final validation step — deterministic cross-referential integrity checks.
 
     Delegates to the real ``validate_game`` in ``anyzork.generator.validator``
     and converts the structured ``ValidationError`` results into plain
@@ -173,7 +173,7 @@ def generate_game(
         TimeElapsedColumn(),
         console=console,
     ) as progress:
-        total_passes = len(_PASSES) + 1  # +1 for validation
+        total_passes = len(_PASSES) + 1  # +1 for deterministic validation
         main_task = progress.add_task("Generating world...", total=total_passes)
 
         for pass_name, module_path in _PASSES:
@@ -215,7 +215,7 @@ def generate_game(
 
             progress.advance(main_task)
 
-        # --- Pass 9: Validation (deterministic, no LLM) ---
+        # --- Final validation step (deterministic, no LLM) ---
         progress.update(main_task, description="Pass: validation")
         validation_errors = _run_validation(db)
         if validation_errors:

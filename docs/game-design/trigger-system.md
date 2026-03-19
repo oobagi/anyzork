@@ -564,9 +564,9 @@ Trigger evaluation does NOT increment the move counter. The move counter increme
 
 ## 8. Generation Pipeline
 
-### 8.1 New pass: Pass 7.5 (Triggers)
+### 8.1 Current pass: Pass 10 (Triggers)
 
-Triggers are generated in a new pass that runs **after** Pass 7 (Commands) and **before** Pass 8 (Lore). This pass is numbered 7.5 to indicate its position without renumbering existing passes.
+Triggers are generated after commands and quests, then validated with the rest of the world. In the current pipeline they run as **Pass 10**, immediately before final validation.
 
 **Why a separate pass (not part of Pass 7):**
 
@@ -623,7 +623,7 @@ Triggers are generated in a new pass that runs **after** Pass 7 (Commands) and *
 
 ### 8.3 Validation
 
-The validation pass (Pass 9) should check:
+The final validation step should check:
 
 - [ ] All `event_data` references point to valid IDs (room IDs, item IDs, NPC IDs, node IDs, flag names).
 - [ ] All precondition references point to valid entities.
@@ -896,7 +896,7 @@ Same policy as DSL commands: if an effect fails (e.g., trying to spawn an item t
 
 ### Phase 4: Generation pipeline
 
-1. Create the Pass 7.5 prompt template for trigger generation.
+1. Create the trigger generation prompt template for the current pipeline slot.
 2. Add trigger output parsing and database insertion to the generation orchestrator.
 3. Add trigger validation to Pass 9 (entity reference checks, circular dependency detection).
 4. Test end-to-end: generate a game with triggers, play it, verify triggers fire.
