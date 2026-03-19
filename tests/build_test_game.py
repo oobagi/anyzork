@@ -1240,28 +1240,9 @@ def build_test_game() -> Path:
         done_message="",
     )
 
-    # 6.11 Spawn Crate Key (triggered by dialogue flag)
-    db.insert_command(
-        id="spawn_crate_key",
-        verb="talk",
-        pattern="talk to {npc}",
-        preconditions=json.dumps([
-            {"type": "npc_in_room", "npc": "sgt_chen", "room": "_current"},
-            {"type": "has_flag", "flag": "has_crate_key"},
-            {"type": "not_flag", "flag": "crate_key_given"},
-        ]),
-        effects=json.dumps([
-            {"type": "spawn_item", "item": "crate_key", "location": "_inventory"},
-            {"type": "set_flag", "flag": "crate_key_given"},
-            {"type": "print", "message": ""},
-        ]),
-        success_message="",
-        failure_message="",
-        context_room_ids=json.dumps(["range_office"]),
-        priority=100,
-        one_shot=1,
-        done_message="",
-    )
+    # 6.11 [REMOVED] spawn_crate_key DSL command — replaced by trigger
+    # (see trigger_crate_key below).  The DSL command never fired because
+    # "talk to" is intercepted by the dialogue handler before DSL resolution.
 
     # 6.12 Take Ear Protection (quest tracking)
     db.insert_command(
@@ -1399,6 +1380,64 @@ def build_test_game() -> Path:
         item_tag="*",
         target_category="*",
         response="Nothing interesting happens.",
+    )
+
+    # ------------------------------------------------------------------
+    # Triggers
+    # ------------------------------------------------------------------
+
+    # Crate key spawn: when the chen_supply dialogue node is displayed,
+    # spawn the crate key into the player's inventory.  This replaces
+    # the broken spawn_crate_key DSL command that never fired because
+    # "talk to" is intercepted by the dialogue handler.
+    db.insert_trigger(
+        id="trigger_crate_key",
+        event_type="dialogue_node",
+        event_data=json.dumps({"node_id": "chen_supply"}),
+        preconditions=json.dumps([{"type": "not_flag", "flag": "crate_key_given"}]),
+        effects=json.dumps([
+            {"type": "spawn_item", "item": "crate_key", "location": "_inventory"},
+            {"type": "set_flag", "flag": "crate_key_given"},
+        ]),
+        message="Chen tosses you a small brass key.",
+        one_shot=1,
+    )
+
+    # Exit unlock: when ar15_qualified is set AND p226_qualified is
+    # already true, unlock the range exit.  (Player qualified AR-15 last.)
+    db.insert_trigger(
+        id="trigger_exit_unlock",
+        event_type="flag_set",
+        event_data=json.dumps({"flag": "ar15_qualified"}),
+        preconditions=json.dumps([
+            {"type": "has_flag", "flag": "p226_qualified"},
+            {"type": "has_flag", "flag": "ar15_qualified"},
+        ]),
+        effects=json.dumps([
+            {"type": "unlock", "lock": "range_exit_lock"},
+            {"type": "set_flag", "flag": "qualification_complete"},
+        ]),
+        message="You hear a heavy lock disengage from the south exit. Both qualifications complete.",
+        one_shot=1,
+    )
+
+    # Exit unlock (alternate): when p226_qualified is set AND
+    # ar15_qualified is already true, unlock the range exit.
+    # (Player qualified P226 last.)
+    db.insert_trigger(
+        id="trigger_exit_unlock_alt",
+        event_type="flag_set",
+        event_data=json.dumps({"flag": "p226_qualified"}),
+        preconditions=json.dumps([
+            {"type": "has_flag", "flag": "p226_qualified"},
+            {"type": "has_flag", "flag": "ar15_qualified"},
+        ]),
+        effects=json.dumps([
+            {"type": "unlock", "lock": "range_exit_lock"},
+            {"type": "set_flag", "flag": "qualification_complete"},
+        ]),
+        message="You hear a heavy lock disengage from the south exit. Both qualifications complete.",
+        one_shot=1,
     )
 
     # ------------------------------------------------------------------

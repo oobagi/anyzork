@@ -336,6 +336,24 @@ CREATE TABLE IF NOT EXISTS interaction_responses (
     flag_to_set     TEXT                -- Optional flag to set on interaction
 );
 CREATE INDEX IF NOT EXISTS idx_interactions_tag_cat ON interaction_responses(item_tag, target_category);
+
+-- -------------------------------------------------------
+-- triggers: reactive rules that fire on game events
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS triggers (
+    id              TEXT PRIMARY KEY,
+    event_type      TEXT    NOT NULL,       -- room_enter | flag_set | dialogue_node | item_taken | item_dropped | npc_killed
+    event_data      TEXT    NOT NULL DEFAULT '{}',  -- JSON: partial match against emitted event data
+    preconditions   TEXT    NOT NULL DEFAULT '[]',  -- JSON array, same format as DSL commands
+    effects         TEXT    NOT NULL DEFAULT '[]',  -- JSON array, same format as DSL commands
+    message         TEXT,                           -- Optional text to display when trigger fires
+    priority        INTEGER NOT NULL DEFAULT 0,     -- Higher = evaluated first
+    one_shot        INTEGER NOT NULL DEFAULT 0,     -- 1 = fire only once
+    executed        INTEGER NOT NULL DEFAULT 0,     -- 1 = already fired (for one-shot)
+    is_enabled      INTEGER NOT NULL DEFAULT 1      -- 0 = disabled
+);
+CREATE INDEX IF NOT EXISTS idx_triggers_event_type ON triggers(event_type);
+CREATE INDEX IF NOT EXISTS idx_triggers_event_data ON triggers(event_data);
 """
 
 
@@ -1590,4 +1608,34 @@ class GameDB:
         self._mutate(
             f"INSERT INTO interaction_responses ({cols}) VALUES ({placeholders})",  # noqa: S608
             tuple(fields.values()),
+        )
+
+    # ------------------------------------------------------------ triggers
+
+    def insert_trigger(self, **fields: Any) -> None:
+        """Insert a single trigger row."""
+        cols = ", ".join(fields.keys())
+        placeholders = ", ".join("?" for _ in fields)
+        self._mutate(
+            f"INSERT INTO triggers ({cols}) VALUES ({placeholders})",  # noqa: S608
+            tuple(fields.values()),
+        )
+
+    def get_triggers_for_event(self, event_type: str) -> list[dict]:
+        """Return all enabled, non-executed-one-shot triggers for *event_type*.
+
+        Ordered by ``priority`` descending.  One-shot triggers that have
+        already fired (``executed = 1``) are excluded.
+        """
+        return self._fetchall(
+            "SELECT * FROM triggers WHERE event_type = ? AND is_enabled = 1 "
+            "AND (one_shot = 0 OR executed = 0) ORDER BY priority DESC",
+            (event_type,),
+        )
+
+    def mark_trigger_executed(self, trigger_id: str) -> None:
+        """Mark a one-shot trigger as executed so it won't fire again."""
+        self._mutate(
+            "UPDATE triggers SET executed = 1 WHERE id = ?",
+            (trigger_id,),
         )

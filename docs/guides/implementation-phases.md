@@ -214,6 +214,27 @@
 
 ---
 
+## Phase 5e: Trigger/Event System
+
+**Goal:** Reactive side effects that fire automatically on game state changes, not player input.
+
+**Problem:** The DSL only fires on player-typed commands. There's no way to say "when X happens, do Y" — e.g., dialogue node spawns an item, entering a room triggers NPC dialogue, setting a flag unlocks a door.
+
+**Examples:**
+- Dialogue node reached → spawn item to inventory
+- Player enters a room → NPC says something
+- Flag gets set → unlock door, spawn item, NPC reacts
+- Player attacks something → nearby NPC responds
+
+**Tasks:**
+- [ ] Design doc
+- [ ] Schema: triggers table (event_type, conditions, effects)
+- [ ] Engine: trigger evaluation in `_tick()` and event hooks
+- [ ] Generation: LLM generates triggers alongside commands
+- [ ] Test world: fix crate key spawn via trigger, add room-enter events
+
+---
+
 ## Phase 6: Combat
 
 **Goal:** Deterministic turn-based combat with equip slots and weakness system.

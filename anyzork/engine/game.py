@@ -104,6 +104,10 @@ class GameEngine:
         self._narrator_model_override = narrator_model
         self._shown_shortcut_bar = False
         self._has_seen_help = False
+        # Event / trigger system — deferred event queue for cascade-safe
+        # processing.  See _emit_event() and _process_event().
+        self._event_queue: list[tuple[str, dict[str, str]]] = []
+        self._processing_events: bool = False
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -187,6 +191,7 @@ class GameEngine:
         # Display the starting room.
         assert player is not None
         self.display_room(player["current_room_id"])
+        self._emit_event("room_enter", room_id=player["current_room_id"])
 
         # Show shortcut bar once after the very first room display.
         if not self._shown_shortcut_bar:
@@ -304,7 +309,10 @@ class GameEngine:
 
             dsl_handled = False
             if resolve_command is not None:
-                result = resolve_command(raw, self.db, player["current_room_id"])
+                result = resolve_command(
+                    raw, self.db, player["current_room_id"],
+                    emit_event=self._emit_event,
+                )
                 if result.success:
                     for msg in result.messages:
                         self.console.print(msg)
@@ -449,7 +457,10 @@ class GameEngine:
             if verb in ("put", "place") and len(tokens) >= 4:
                 # Try DSL first (catches placement puzzles like "put crystal on altar")
                 if resolve_command is not None:
-                    result = resolve_command(raw, self.db, player["current_room_id"])
+                    result = resolve_command(
+                        raw, self.db, player["current_room_id"],
+                        emit_event=self._emit_event,
+                    )
                     if result.success:
                         for msg in result.messages:
                             self.console.print(msg)
@@ -719,6 +730,7 @@ class GameEngine:
         dest_room_id = exit_row["to_room_id"]
         self.db.update_player(current_room_id=dest_room_id)
         self.display_room(dest_room_id)
+        self._emit_event("room_enter", room_id=dest_room_id)
 
     # ------------------------------------------------------------------
     # Inventory
@@ -1041,6 +1053,7 @@ class GameEngine:
             db.move_item(item["id"], "inventory", "")
             msg = item.get("take_message") or "Taken."
             self.console.print(msg)
+            self._emit_event("item_taken", item_id=item["id"])
             return
 
         # Not found directly in room — search inside open containers.
@@ -1054,6 +1067,7 @@ class GameEngine:
                 db.take_item_from_container(found["id"])
                 msg = found.get("take_message") or "Taken."
                 self.console.print(msg)
+                self._emit_event("item_taken", item_id=found["id"])
                 return
 
         # Maybe they already have it?
@@ -1075,6 +1089,7 @@ class GameEngine:
         db.move_item(item["id"], "room", current_room_id)
         msg = item.get("drop_message") or "Dropped."
         self.console.print(msg)
+        self._emit_event("item_dropped", item_id=item["id"], room_id=current_room_id)
 
     def _handle_examine(
         self, target_name: str, current_room_id: str, *, prefer_read: bool = False
@@ -1449,6 +1464,7 @@ class GameEngine:
             self.console.print(msg)
         else:
             self.console.print("Taken.")
+        self._emit_event("item_taken", item_id=found["id"])
 
     def _handle_put_in(
         self, item_name: str, container_name: str, current_room_id: str
@@ -1710,7 +1726,10 @@ class GameEngine:
         # Set flag if specified.
         flag = response.get("flag_to_set")
         if flag:
+            was_set = db.has_flag(flag)
             db.set_flag(flag, "true")
+            if not was_set:
+                self._emit_event("flag_set", flag=flag)
 
         return True
 
@@ -1743,8 +1762,9 @@ class GameEngine:
                 )
             return
 
-        # Apply root node flags on entry.
+        # Apply root node flags on entry and emit dialogue_node event.
         self._apply_node_flags(root_node)
+        self._emit_event("dialogue_node", node_id=root_node["id"], npc_id=npc["id"])
 
         current_node = root_node
         in_dialogue = True
@@ -1807,8 +1827,9 @@ class GameEngine:
                 self.console.print()
                 break
 
-            # Apply the new node's set_flags.
+            # Apply the new node's set_flags and emit dialogue_node event.
             self._apply_node_flags(next_node)
+            self._emit_event("dialogue_node", node_id=next_node["id"], npc_id=npc["id"])
             current_node = next_node
 
     def _get_visible_options(self, node_id: str) -> list[dict]:
@@ -1905,7 +1926,10 @@ class GameEngine:
         except (json.JSONDecodeError, TypeError):
             return
         for flag in flags:
+            was_set = self.db.has_flag(flag)
             self.db.set_flag(flag, "true")
+            if not was_set:
+                self._emit_event("flag_set", flag=flag)
 
     def _apply_option_flags(self, option: dict) -> None:
         """Set any flags defined in a dialogue option's set_flags field."""
@@ -1917,7 +1941,10 @@ class GameEngine:
         except (json.JSONDecodeError, TypeError):
             return
         for flag in flags:
+            was_set = self.db.has_flag(flag)
             self.db.set_flag(flag, "true")
+            if not was_set:
+                self._emit_event("flag_set", flag=flag)
 
     # ------------------------------------------------------------------
     # End conditions
@@ -1984,6 +2011,110 @@ class GameEngine:
             )
             self._show_score()
             self._running = False
+
+    # ------------------------------------------------------------------
+    # Event / trigger system
+    # ------------------------------------------------------------------
+
+    def _emit_event(self, event_type: str, **event_data: str) -> None:
+        """Emit a game event and evaluate matching triggers.
+
+        Events are queued and processed iteratively to prevent deep
+        recursion from flag cascades.  Re-entrant calls (e.g. a trigger
+        effect setting a flag that emits another ``flag_set`` event) are
+        appended to the queue and processed by the outer loop.
+
+        A hard limit of 20 queue-drain iterations prevents infinite loops
+        from circular flag dependencies.
+        """
+        self._event_queue.append((event_type, event_data))
+
+        if self._processing_events:
+            return  # will be processed by the outer loop
+
+        self._processing_events = True
+        iterations = 0
+        try:
+            while self._event_queue and iterations < 20:
+                ev_type, ev_data = self._event_queue.pop(0)
+                self._process_event(ev_type, ev_data)
+                iterations += 1
+            if self._event_queue:
+                logger.warning(
+                    "Event cascade limit (20) reached — %d events discarded: %s",
+                    len(self._event_queue),
+                    self._event_queue,
+                )
+                self._event_queue.clear()
+        finally:
+            self._processing_events = False
+
+    def _process_event(self, event_type: str, event_data: dict[str, str]) -> None:
+        """Find and execute all triggers matching this event."""
+        from anyzork.engine.commands import apply_effect, check_precondition
+
+        db = self.db
+
+        # 1. Fetch candidate triggers (enabled, non-executed one-shots).
+        triggers = db.get_triggers_for_event(event_type)
+
+        # 2. Filter by event_data partial match.
+        matching: list[dict] = []
+        for trigger in triggers:
+            try:
+                trigger_data = json.loads(trigger["event_data"]) if trigger["event_data"] else {}
+            except (json.JSONDecodeError, TypeError):
+                trigger_data = {}
+            if all(event_data.get(k) == v for k, v in trigger_data.items()):
+                matching.append(trigger)
+
+        # 3. Already sorted by priority DESC from the query, but ensure it.
+        matching.sort(key=lambda t: -t["priority"])
+
+        # 4. Evaluate each trigger.
+        for trigger in matching:
+            # Double-check one-shot execution (defensive).
+            if trigger["one_shot"] and trigger["executed"]:
+                continue
+
+            # Check preconditions.
+            try:
+                preconditions = json.loads(trigger["preconditions"]) if trigger["preconditions"] else []
+            except (json.JSONDecodeError, TypeError):
+                preconditions = []
+
+            all_pass = all(
+                check_precondition(cond, db) for cond in preconditions
+            )
+            if not all_pass:
+                continue
+
+            # Fire the trigger — display message, apply effects.
+            if trigger.get("message"):
+                self.console.print(trigger["message"])
+
+            try:
+                effects = json.loads(trigger["effects"]) if trigger["effects"] else []
+            except (json.JSONDecodeError, TypeError):
+                effects = []
+
+            for effect in effects:
+                try:
+                    msgs = apply_effect(
+                        effect, db,
+                        command_id=f"trigger:{trigger['id']}",
+                        emit_event=self._emit_event,
+                    )
+                    for msg in msgs:
+                        self.console.print(msg)
+                except Exception:
+                    logger.exception(
+                        "Trigger effect failed: %s in %s", effect, trigger["id"]
+                    )
+
+            # Mark one-shot as executed.
+            if trigger["one_shot"]:
+                db.mark_trigger_executed(trigger["id"])
 
     # ------------------------------------------------------------------
     # Internal helpers

@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from anyzork.db.schema import GameDB
@@ -329,6 +330,7 @@ def apply_effect(
     db: GameDB,
     slots: dict[str, str] | None = None,
     command_id: str = "",
+    emit_event: Callable[..., None] | None = None,
 ) -> list[str]:
     """Apply a single effect and return any messages to display.
 
@@ -345,6 +347,10 @@ def apply_effect(
         slots: Resolved slot values from pattern matching.
         command_id: The parent command's ID, used for deterministic score
             entry deduplication.
+        emit_event: Optional callback to emit game events from state changes.
+            When provided, ``apply_effect`` calls it for ``set_flag``,
+            ``move_player``, ``spawn_item`` (to inventory), and ``move_item``
+            transitions that warrant events.
 
     Returns a list of messages (usually 0 or 1 strings).
     """
@@ -367,10 +373,16 @@ def apply_effect(
 
         if to_loc == "_inventory":
             db.move_item(item_id, "inventory", "")
+            if emit_event is not None:
+                emit_event("item_taken", item_id=item_id)
         elif to_loc == "_current":
             db.move_item(item_id, "room", current_room)
+            if emit_event is not None and from_loc == "_inventory":
+                emit_event("item_dropped", item_id=item_id, room_id=current_room)
         else:
             db.move_item(item_id, "room", to_loc)
+            if emit_event is not None and from_loc == "_inventory":
+                emit_event("item_dropped", item_id=item_id, room_id=to_loc)
 
     elif effect_type == "remove_item":
         item_ref = _substitute_slots(effect["item"], slots)
@@ -383,7 +395,10 @@ def apply_effect(
         if value is False or value == "false":
             db.clear_flag(flag)
         else:
+            was_set = db.has_flag(flag)
             db.set_flag(flag, "true")
+            if emit_event is not None and not was_set:
+                emit_event("flag_set", flag=flag)
 
     elif effect_type == "unlock":
         lock_ref = _substitute_slots(effect["lock"], slots)
@@ -394,6 +409,8 @@ def apply_effect(
     elif effect_type == "move_player":
         room_ref = _substitute_slots(effect["room"], slots)
         db.update_player(current_room_id=room_ref)
+        if emit_event is not None:
+            emit_event("room_enter", room_id=room_ref)
 
     elif effect_type == "spawn_item":
         item_ref = _substitute_slots(effect["item"], slots)
@@ -402,6 +419,8 @@ def apply_effect(
 
         if location == "_inventory":
             db.spawn_item(item_id, "inventory")
+            if emit_event is not None:
+                emit_event("item_taken", item_id=item_id)
         elif location == "_current":
             db.spawn_item(item_id, "room", current_room)
         else:
@@ -430,7 +449,10 @@ def apply_effect(
         quest_ref = _substitute_slots(effect["quest"], slots)
         quest = db.get_quest(quest_ref)
         if quest and quest.get("discovery_flag"):
+            was_set = db.has_flag(quest["discovery_flag"])
             db.set_flag(quest["discovery_flag"], "true")
+            if emit_event is not None and not was_set:
+                emit_event("flag_set", flag=quest["discovery_flag"])
 
     elif effect_type == "open_container":
         container_ref = _substitute_slots(effect["container"], slots)
@@ -486,7 +508,10 @@ def apply_effect(
 # ---------------------------------------------------------------------------
 
 def resolve_command(
-    raw_input: str, db: GameDB, current_room_id: str | None = None
+    raw_input: str,
+    db: GameDB,
+    current_room_id: str | None = None,
+    emit_event: Callable[..., None] | None = None,
 ) -> CommandResult:
     """Resolve a player's text input against the command database.
 
@@ -513,6 +538,7 @@ def resolve_command(
         db: The game database connection.
         current_room_id: The player's current room ID.  When provided,
             commands scoped to other rooms are excluded from resolution.
+        emit_event: Optional callback to emit game events from effects.
     """
     raw_input = raw_input.strip()
     if not raw_input:
@@ -587,7 +613,11 @@ def resolve_command(
 
         for eff in effects:
             try:
-                msgs = apply_effect(eff, db, resolved_slots, command_id=cmd["id"])
+                msgs = apply_effect(
+                    eff, db, resolved_slots,
+                    command_id=cmd["id"],
+                    emit_event=emit_event,
+                )
                 applied.append(eff["type"])
                 all_messages.extend(msgs)
             except Exception:
