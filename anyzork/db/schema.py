@@ -17,7 +17,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from anyzork import __version__
+from anyzork.versioning import (
+    APP_VERSION,
+    RUNTIME_COMPAT_VERSION,
+    is_runtime_compat_version,
+)
 
 # ---------------------------------------------------------------------------
 # Schema SQL
@@ -35,7 +39,9 @@ CREATE TABLE IF NOT EXISTS metadata (
     title           TEXT    NOT NULL,
     author_prompt   TEXT    NOT NULL,
     seed            TEXT,
-    version         TEXT    NOT NULL DEFAULT '1.0',
+    version         TEXT    NOT NULL DEFAULT 'r1',   -- runtime compatibility version
+    app_version     TEXT,                            -- AnyZork app version that wrote the file
+    prompt_system_version TEXT,                      -- prompt-generation system fingerprint
     created_at      TEXT    NOT NULL,
     max_score       INTEGER NOT NULL DEFAULT 0,
     win_conditions  TEXT    NOT NULL DEFAULT '[]',   -- JSON array of flag IDs
@@ -379,6 +385,8 @@ _METADATA_FIELDS: frozenset[str] = frozenset(
         "author_prompt",
         "seed",
         "version",
+        "app_version",
+        "prompt_system_version",
         "created_at",
         "max_score",
         "win_conditions",
@@ -399,7 +407,9 @@ _METADATA_FIELDS: frozenset[str] = frozenset(
 )
 
 _METADATA_MIGRATIONS: dict[str, str] = {
+    "app_version": "TEXT",
     "game_id": "TEXT",
+    "prompt_system_version": "TEXT",
     "source_game_id": "TEXT",
     "source_path": "TEXT",
     "save_slot": "TEXT",
@@ -457,7 +467,8 @@ class GameDB:
                 )
 
         row = self._conn.execute(
-            "SELECT id, game_id, is_template FROM metadata WHERE id = 1"
+            "SELECT id, game_id, is_template, version, app_version "
+            "FROM metadata WHERE id = 1"
         ).fetchone()
         if row is not None:
             if not row["game_id"]:
@@ -469,6 +480,16 @@ class GameDB:
                 self._conn.execute(
                     "UPDATE metadata SET is_template = 0 WHERE id = 1"
                 )
+            if row["app_version"] is None and row["version"]:
+                self._conn.execute(
+                    "UPDATE metadata SET app_version = ? WHERE id = 1",
+                    (row["version"],),
+                )
+            if not is_runtime_compat_version(row["version"]):
+                self._conn.execute(
+                    "UPDATE metadata SET version = ? WHERE id = 1",
+                    (RUNTIME_COMPAT_VERSION,),
+                )
 
         self._conn.commit()
 
@@ -479,6 +500,7 @@ class GameDB:
         prompt: str,
         *,
         seed: str | None = None,
+        app_version: str | None = None,
         intro_text: str = "",
         win_text: str = "",
         lose_text: str | None = None,
@@ -488,6 +510,8 @@ class GameDB:
         region_count: int = 0,
         room_count: int = 0,
         game_id: str | None = None,
+        prompt_system_version: str | None = None,
+        runtime_compat_version: str | None = None,
         source_game_id: str | None = None,
         source_path: str | None = None,
         save_slot: str | None = None,
@@ -499,18 +523,23 @@ class GameDB:
         self._conn.execute(
             """
             INSERT OR REPLACE INTO metadata
-                (id, title, author_prompt, seed, version, created_at,
+                (id, title, author_prompt, seed, version, app_version, prompt_system_version,
+                 created_at,
                  max_score, win_conditions, lose_conditions,
                  intro_text, win_text, lose_text,
                  region_count, room_count, game_id, source_game_id,
                  source_path, save_slot, last_played_at, is_template)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (
+                1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            )
             """,
             (
                 game_name,
                 prompt,
                 seed,
-                __version__,
+                runtime_compat_version or RUNTIME_COMPAT_VERSION,
+                app_version or APP_VERSION,
+                prompt_system_version,
                 datetime.now(UTC).isoformat(),
                 max_score,
                 win_conditions,

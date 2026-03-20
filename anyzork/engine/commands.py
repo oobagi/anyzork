@@ -747,6 +747,14 @@ def resolve_command(
                 logger.exception("Effect failed: %s", eff)
                 applied.append(eff["type"])
 
+        if not effects and not all_messages:
+            fallback = cmd.get("failure_message") or "Nothing happens."
+            return CommandResult(
+                success=False,
+                messages=[fallback],
+                command_id=cmd["id"],
+            )
+
         # Mark one-shot commands as executed
         if cmd["one_shot"]:
             db.mark_command_executed(cmd["id"])

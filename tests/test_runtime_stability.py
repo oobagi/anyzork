@@ -115,6 +115,25 @@ def test_room_display_weaves_fallback_items_and_npcs_into_body(
     assert "Nearby, Curator Rowan lingers." in output
 
 
+def test_room_display_skips_dynamic_item_prose_when_base_room_already_mentions_item(
+    game_db: GameDB, engine: GameEngine
+) -> None:
+    game_db._mutate(
+        "UPDATE rooms SET description = ? WHERE id = ?",
+        (
+            "A compact foyer where a brass key hangs from a labeled hook behind the desk.",
+            "entrance_hall",
+        ),
+    )
+
+    engine.display_room("entrance_hall", force_full=True)
+    output = " ".join(_output(engine).split()).lower()
+
+    assert output.count(
+        "a compact foyer where a brass key hangs from a labeled hook behind the desk."
+    ) == 1
+
+
 def test_help_summarizes_special_verbs_without_spoiling_raw_patterns(
     game_db: GameDB, engine: GameEngine
 ) -> None:
@@ -411,3 +430,22 @@ def test_resolve_command_respects_non_empty_room_scope(game_db: GameDB) -> None:
     assert wrong_room.messages == ["I don't understand that."]
     assert right_room.success is True
     assert right_room.messages == ["You read the star chart."]
+
+
+def test_resolve_command_uses_failure_message_for_blank_no_op_successes(game_db: GameDB) -> None:
+    game_db.insert_command(
+        id="blank_shake",
+        verb="shake",
+        pattern="shake {target}",
+        preconditions="[]",
+        effects="[]",
+        success_message="",
+        failure_message="Nothing happens when you shake that.",
+        context_room_ids=None,
+        is_enabled=1,
+    )
+
+    result = resolve_command("shake lantern", game_db, current_room_id="entrance_hall")
+
+    assert result.success is False
+    assert result.messages == ["Nothing happens when you shake that."]

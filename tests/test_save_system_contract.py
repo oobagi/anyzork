@@ -9,6 +9,7 @@ from click.testing import CliRunner
 
 from anyzork import cli as cli_module
 from anyzork.db.schema import GameDB
+from anyzork.versioning import RUNTIME_COMPAT_VERSION
 from tests.build_test_game import build_test_game
 
 
@@ -35,7 +36,9 @@ def _stamp_future_metadata(
 ) -> None:
     """Add future save metadata columns to a fixture file."""
     columns = {
+        "app_version": "TEXT",
         "game_id": "TEXT",
+        "prompt_system_version": "TEXT",
         "source_game_id": "TEXT",
         "source_path": "TEXT",
         "save_slot": "TEXT",
@@ -108,7 +111,9 @@ def test_metadata_migration_backfills_future_save_columns(tmp_path: Path) -> Non
     try:
         meta_columns = {row["name"] for row in db._fetchall("PRAGMA table_info(metadata)")}
         assert {
+            "app_version",
             "game_id",
+            "prompt_system_version",
             "source_game_id",
             "source_path",
             "save_slot",
@@ -123,6 +128,54 @@ def test_metadata_migration_backfills_future_save_columns(tmp_path: Path) -> Non
         assert meta["save_slot"] is None
         assert meta["last_played_at"] is None
         assert meta["is_template"] == 0
+    finally:
+        db.close()
+
+
+def test_metadata_migration_backfills_runtime_compat_for_legacy_version_field(
+    tmp_path: Path,
+) -> None:
+    legacy_path = tmp_path / "legacy_version.zork"
+
+    with sqlite3.connect(legacy_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE metadata (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                title TEXT NOT NULL,
+                author_prompt TEXT NOT NULL,
+                seed TEXT,
+                version TEXT NOT NULL DEFAULT '0.1.0',
+                created_at TEXT NOT NULL,
+                max_score INTEGER NOT NULL DEFAULT 0,
+                win_conditions TEXT NOT NULL DEFAULT '[]',
+                lose_conditions TEXT,
+                intro_text TEXT NOT NULL DEFAULT '',
+                win_text TEXT NOT NULL DEFAULT '',
+                lose_text TEXT,
+                region_count INTEGER NOT NULL DEFAULT 0,
+                room_count INTEGER NOT NULL DEFAULT 0,
+                realism TEXT NOT NULL DEFAULT 'medium'
+            );
+            INSERT INTO metadata (
+                id, title, author_prompt, seed, version, created_at,
+                max_score, win_conditions, lose_conditions,
+                intro_text, win_text, lose_text,
+                region_count, room_count, realism
+            ) VALUES (
+                1, 'Legacy World', 'Old prompt', NULL, '0.1.0', '2026-03-20T00:00:00+00:00',
+                0, '[]', NULL, '', '', NULL, 1, 1, 'medium'
+            );
+            """
+        )
+        conn.commit()
+
+    db = GameDB(legacy_path)
+    try:
+        meta = db.get_all_meta() or {}
+        assert meta["app_version"] == "0.1.0"
+        assert meta["version"] == RUNTIME_COMPAT_VERSION
+        assert meta["prompt_system_version"] is None
     finally:
         db.close()
 

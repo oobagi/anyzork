@@ -17,6 +17,8 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
+from anyzork.versioning import RUNTIME_COMPAT_VERSION
+
 if TYPE_CHECKING:
     from anyzork.db.schema import GameDB
     from anyzork.engine.narrator import Narrator
@@ -161,16 +163,17 @@ class GameEngine:
             )
 
             # Compact game info line below the title.
-            from anyzork import __version__ as engine_version
-
             info_parts: list[str] = []
-            save_version = meta.get("version", "?")
-            if save_version == engine_version:
-                info_parts.append(f"v{engine_version}")
+            runtime_version = str(meta.get("version", "?"))
+            if runtime_version == RUNTIME_COMPAT_VERSION:
+                info_parts.append(f"Runtime {RUNTIME_COMPAT_VERSION}")
             else:
                 info_parts.append(
-                    f"Engine v{engine_version} | Save v{save_version} \\[outdated]"
+                    f"Engine {RUNTIME_COMPAT_VERSION} | Game {runtime_version} \\[outdated]"
                 )
+            prompt_version = meta.get("prompt_system_version")
+            if prompt_version:
+                info_parts.append(f"Prompt {prompt_version}")
             seed = meta.get("seed")
             if seed:
                 info_parts.append(f"Seed: {seed}")
@@ -759,12 +762,18 @@ class GameEngine:
         list_items: list[dict] = []
         for it in items:
             home = it.get("home_room_id")
+            prose: str | None = None
             if home == room_id and it.get("room_description"):
                 # Item is in its authored home — use bespoke prose
-                prose_items.append(it["room_description"])
+                prose = it["room_description"]
             elif it.get("drop_description"):
                 # Item is away from home (or has no home) — use generic prose
-                prose_items.append(it["drop_description"])
+                prose = it["drop_description"]
+
+            if prose:
+                current_scene = "\n\n".join(parts + prose_items)
+                if not self._scene_mentions_name(current_scene, it["name"]):
+                    prose_items.append(prose)
             else:
                 # No prose at all — fall back to name list
                 list_items.append(it)
