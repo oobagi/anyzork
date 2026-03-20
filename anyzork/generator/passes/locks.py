@@ -91,6 +91,15 @@ LOCKS_SCHEMA: dict = {
                             "passing through this lock. NULL for non-key locks."
                         ),
                     },
+                    "key_hiding_spot_hint": {
+                        "type": ["string", "null"],
+                        "description": (
+                            "For key-type locks: a short flavorful idea for "
+                            "how the key is hidden or presented in the world. "
+                            "Example: 'inside a wall-mounted key box' or "
+                            "'taped beneath the receptionist desk'."
+                        ),
+                    },
                     "locked_message": {
                         "type": "string",
                         "description": (
@@ -237,6 +246,9 @@ Return a single JSON object matching this schema:
 
 For key-type locks, always provide both `key_item_id` (the item name to \
 be created) and `key_location_room_id` (where to place it).
+Also provide `key_hiding_spot_hint` for key locks when you can: a short,
+flavorful note about how the key should be hidden or presented so the Items
+pass can make the placement feel authored and specific.
 
 Produce ONLY the JSON object. No commentary, no markdown fences.
 """
@@ -337,64 +349,249 @@ def _validate_reachability(
     exits_list: list[dict],
     errors: list[str],
 ) -> None:
-    """Check that every key-type lock's key is reachable without that lock."""
+    """Check that key locks are solvable in some valid unlock order."""
     room_ids = {r["id"] for r in rooms}
-    start_rooms = [r for r in rooms if r.get("is_start")]
-    if not start_rooms:
-        return  # Can't check without a start room
-    start_id = start_rooms[0]["id"]
-
-    # For each key-type lock, BFS from start excluding that lock's exit
     key_locks = [lock for lock in locks if lock.get("lock_type") == "key"]
 
     for lock in key_locks:
-        target_exit_id = lock.get("target_exit_id", "")
         key_room = lock.get("key_location_room_id", "")
-
         if not key_room or key_room not in room_ids:
-            continue  # Already caught above
+            continue
 
-        # Build adjacency excluding the locked exit (and any exit with
-        # the same from->to pair in either direction, since the reverse
-        # might also be blocked by this lock)
-        # Find the exit to get from/to room info
-        locked_exit_info = None
-        for ex in exits_list:
-            if ex["id"] == target_exit_id:
-                locked_exit_info = ex
-                break
-
-        blocked_pairs: set[tuple[str, str]] = set()
-        if locked_exit_info:
-            blocked_pairs.add(
-                (locked_exit_info["from_room_id"], locked_exit_info["to_room_id"])
-            )
-
-        adjacency: dict[str, set[str]] = {rid: set() for rid in room_ids}
-        for ex in exits_list:
-            pair = (ex["from_room_id"], ex["to_room_id"])
-            if pair not in blocked_pairs:
-                adjacency[ex["from_room_id"]].add(ex["to_room_id"])
-
-        # BFS from start
-        visited: set[str] = set()
-        queue: deque[str] = deque([start_id])
-        while queue:
-            current = queue.popleft()
-            if current in visited:
-                continue
-            visited.add(current)
-            for neighbor in adjacency.get(current, set()):
-                if neighbor not in visited:
-                    queue.append(neighbor)
-
-        if key_room not in visited:
+        reachable_before = _reachable_rooms_before_lock(
+            lock,
+            locks,
+            rooms,
+            exits_list,
+        )
+        if key_room not in reachable_before:
             errors.append(
                 f"Key-gate violation: lock '{lock['id']}' requires key "
                 f"'{lock.get('key_item_id')}' in room '{key_room}', but "
-                f"that room is not reachable from start without passing "
-                f"through the locked exit '{target_exit_id}'."
+                "that room is not reachable before this lock in any valid "
+                "unlock order."
             )
+
+    _, _, unlocked_key_locks = _simulate_key_lock_progression(
+        locks,
+        rooms,
+        exits_list,
+    )
+    unresolved = [
+        lock["id"]
+        for lock in key_locks
+        if lock.get("id") and lock["id"] not in unlocked_key_locks
+    ]
+    if unresolved:
+        errors.append(
+            "No valid unlock order exists for key locks: "
+            + ", ".join(sorted(unresolved))
+        )
+
+
+def _start_room_id(rooms: list[dict]) -> str | None:
+    """Return the start room id, if one exists."""
+    start_rooms = [r for r in rooms if r.get("is_start")]
+    if not start_rooms:
+        return None
+
+    return start_rooms[0]["id"]
+
+
+def _reachable_rooms_with_unlocked_locks(
+    locks: list[dict],
+    rooms: list[dict],
+    exits_list: list[dict],
+    unlocked_lock_ids: set[str],
+) -> tuple[str | None, set[str]]:
+    """Return rooms reachable after unlocking the provided lock IDs."""
+    room_ids = {r["id"] for r in rooms}
+    start_id = _start_room_id(rooms)
+    if not start_id:
+        return None, set()
+
+    exit_to_lock_id = {
+        lock["target_exit_id"]: lock["id"]
+        for lock in locks
+        if lock.get("target_exit_id") and lock.get("id")
+    }
+
+    adjacency: dict[str, set[str]] = {rid: set() for rid in room_ids}
+    for ex in exits_list:
+        lock_id = exit_to_lock_id.get(ex["id"])
+        if lock_id and lock_id not in unlocked_lock_ids:
+            continue
+        adjacency[ex["from_room_id"]].add(ex["to_room_id"])
+
+    visited: set[str] = set()
+    queue: deque[str] = deque([start_id])
+    while queue:
+        current = queue.popleft()
+        if current in visited:
+            continue
+        visited.add(current)
+        for neighbor in adjacency.get(current, set()):
+            if neighbor not in visited:
+                queue.append(neighbor)
+
+    return start_id, visited
+
+
+def _simulate_key_lock_progression(
+    locks: list[dict],
+    rooms: list[dict],
+    exits_list: list[dict],
+    *,
+    excluded_lock_id: str | None = None,
+) -> tuple[str | None, set[str], set[str]]:
+    """Simulate unlocking key locks whose keys become reachable.
+
+    This allows valid nested chains:
+    start -> get key A -> unlock A -> reach key B -> unlock B.
+
+    If ``excluded_lock_id`` is provided, that lock is never unlocked during
+    the simulation. The resulting reachable-room set answers the question:
+    "Where could this key live before the player opens that lock?"
+    """
+    unlocked_lock_ids: set[str] = set()
+    considered_key_locks = [
+        lock
+        for lock in locks
+        if lock.get("lock_type") == "key" and lock.get("id")
+    ]
+
+    while True:
+        start_id, reachable_rooms = _reachable_rooms_with_unlocked_locks(
+            locks,
+            rooms,
+            exits_list,
+            unlocked_lock_ids,
+        )
+        if not start_id:
+            return None, set(), unlocked_lock_ids
+
+        progressed = False
+        for lock in considered_key_locks:
+            lock_id = lock["id"]
+            if lock_id == excluded_lock_id or lock_id in unlocked_lock_ids:
+                continue
+
+            key_room = lock.get("key_location_room_id")
+            if key_room and key_room in reachable_rooms:
+                unlocked_lock_ids.add(lock_id)
+                progressed = True
+
+        if not progressed:
+            return start_id, reachable_rooms, unlocked_lock_ids
+
+
+def _reachable_rooms_before_lock(
+    lock: dict,
+    locks: list[dict],
+    rooms: list[dict],
+    exits_list: list[dict],
+) -> set[str]:
+    """Return rooms reachable before unlocking ``lock`` in some valid order."""
+    _, reachable_rooms, _ = _simulate_key_lock_progression(
+        locks,
+        rooms,
+        exits_list,
+        excluded_lock_id=lock.get("id"),
+    )
+    return reachable_rooms
+
+
+def _repair_key_locations(
+    locks: list[dict],
+    rooms: list[dict],
+    exits_list: list[dict],
+) -> None:
+    """Relocate impossible key rooms into the reachable unlocked subgraph.
+
+    Gemini is good at thematic lock ideas but occasionally poor at graph
+    solvability. Rather than burn retries on simple placement mistakes, pin
+    impossible key locations to reachable rooms before validation.
+    """
+    rooms_by_id = {room["id"]: room for room in rooms}
+    exits_by_id = {exit_row["id"]: exit_row for exit_row in exits_list}
+
+    for lock in locks:
+        if lock.get("lock_type") != "key":
+            continue
+
+        key_room = lock.get("key_location_room_id")
+        candidate_rooms = _key_candidate_rooms(lock, locks, rooms, exits_list)
+        if key_room in candidate_rooms:
+            continue
+
+        target_exit = exits_by_id.get(lock.get("target_exit_id", ""))
+        source_room = target_exit["from_room_id"] if target_exit else None
+        source_region = (
+            rooms_by_id.get(source_room, {}).get("region") if source_room else None
+        )
+
+        candidate_room = None
+        if source_room in candidate_rooms:
+            candidate_room = source_room
+        elif source_region:
+            for room_id in candidate_rooms:
+                if rooms_by_id.get(room_id, {}).get("region") == source_region:
+                    candidate_room = room_id
+                    break
+
+        if candidate_room is None:
+            candidate_room = candidate_rooms[0] if candidate_rooms else _start_room_id(rooms)
+        if candidate_room is None:
+            continue
+
+        logger.warning(
+            "Repairing key location for lock %s: %r -> %r",
+            lock.get("id", "<unknown>"),
+            key_room,
+            candidate_room,
+        )
+        lock["key_location_room_id"] = candidate_room
+
+
+def _key_candidate_rooms(
+    lock: dict,
+    locks: list[dict],
+    rooms: list[dict],
+    exits_list: list[dict],
+) -> list[str]:
+    """Return ordered rooms reachable before this lock in a valid unlock order."""
+    reachable_rooms = _reachable_rooms_before_lock(lock, locks, rooms, exits_list)
+    if not reachable_rooms:
+        return []
+
+    rooms_by_id = {room["id"]: room for room in rooms}
+    exits_by_id = {exit_row["id"]: exit_row for exit_row in exits_list}
+    target_exit = exits_by_id.get(lock.get("target_exit_id", ""))
+    source_room = target_exit["from_room_id"] if target_exit else None
+    source_region = (
+        rooms_by_id.get(source_room, {}).get("region") if source_room else None
+    )
+
+    ordered: list[str] = []
+    if source_room in reachable_rooms:
+        ordered.append(source_room)
+
+    if source_region:
+        for room in rooms:
+            room_id = room["id"]
+            if (
+                room_id in reachable_rooms
+                and room_id != source_room
+                and room.get("region") == source_region
+            ):
+                ordered.append(room_id)
+
+    for room in rooms:
+        room_id = room["id"]
+        if room_id in reachable_rooms and room_id not in ordered:
+            ordered.append(room_id)
+
+    return ordered
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +678,8 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
         context=gen_ctx,
     )
 
+    _repair_key_locations(data.get("locks", []), rooms, exits_list)
+
     # Validate
     _validate(data, concept, rooms, exits_list)
 
@@ -516,9 +715,22 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
         # key_item_id is always NULL at this stage; we store the
         # intended key info in the context for the Items pass.
         if lock.get("lock_type") == "key" and lock.get("key_item_id"):
+            candidate_room_ids = _key_candidate_rooms(
+                lock,
+                locks,
+                rooms,
+                exits_list,
+            )
             lock_key_mapping[lock["id"]] = {
                 "key_item_id": lock["key_item_id"],
                 "key_location_room_id": lock.get("key_location_room_id"),
+                "candidate_room_ids": candidate_room_ids,
+                "fallback_room_id": (
+                    candidate_room_ids[0]
+                    if candidate_room_ids
+                    else lock.get("key_location_room_id")
+                ),
+                "key_hiding_spot_hint": lock.get("key_hiding_spot_hint"),
             }
 
         db.insert_lock(**fields)

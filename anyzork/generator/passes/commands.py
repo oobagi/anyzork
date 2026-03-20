@@ -25,6 +25,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import signal
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from anyzork.db.schema import GameDB
@@ -36,6 +42,15 @@ from anyzork.generator.validator import (
 )
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_STAGE_TIMEOUTS: dict[str, float] = {
+    "intents": 90.0,
+    "compile": 180.0,
+}
+
+
+class _StageTimeoutSignal(BaseException):
+    """Internal signal used to interrupt a stuck provider call."""
 
 # ---------------------------------------------------------------------------
 # JSON schema the LLM must conform to
@@ -314,6 +329,8 @@ Critical repair rules:
 - `toggle_state` is a PRECONDITION. `set_toggle_state` is an EFFECT.
 - `not_flag` is a PRECONDITION only. To clear a flag, use
   `{{"type": "set_flag", "flag": "some_flag", "value": false}}`.
+- To destroy or hide an item after use, use `remove_item`.
+  Do NOT move items to `_nowhere` or `nowhere`.
 - To take an item out of a container, use `take_item_from_container`.
   Do NOT use `move_item` with a container in `from`.
 - To place an item into a container, use `move_item_to_container`.
@@ -456,6 +473,7 @@ the player's phrasing doesn't block them.
 | `has_flag` | `flag` | World flag is set (truthy) |
 | `not_flag` | `flag` | World flag is NOT set |
 | `item_in_room` | `item`, `room` | Item exists in room. `"_current"` for current room |
+| `item_accessible` | `item` | Item is reachable now: room, inventory, or open container |
 | `npc_in_room` | `npc`, `room` | NPC is in room. `"_current"` for current room |
 | `lock_unlocked` | `lock` | Lock is unlocked |
 | `puzzle_solved` | `puzzle` | Puzzle is solved |
@@ -765,6 +783,146 @@ def _build_compile_prompt(context: dict, intents: list[dict]) -> str:
     )
 
 
+def _stage_timeout_seconds(stage: str, context: dict) -> float:
+    """Return the configured timeout for a command-generation stage."""
+    overrides = context.get("_command_stage_timeouts", {})
+    if stage in overrides:
+        return float(overrides[stage])
+
+    env_name = f"ANYZORK_COMMANDS_{stage.upper()}_TIMEOUT_SECONDS"
+    raw = os.getenv(env_name)
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            logger.warning(
+                "Ignoring invalid %s value %r; using default timeout.",
+                env_name,
+                raw,
+            )
+
+    return _DEFAULT_STAGE_TIMEOUTS.get(stage, 0.0)
+
+
+def _command_debug_dir(context: dict) -> Path:
+    """Return where command-pass debug artifacts should be written."""
+    override = context.get("_command_debug_dir")
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path.home() / ".anyzork" / "debug" / "commands"
+
+
+def _command_debug_run_id(context: dict) -> str:
+    """Return a stable run id for command-pass debug artifacts."""
+    run_id = context.get("_command_debug_run_id")
+    if run_id:
+        return str(run_id)
+
+    seed = context.get("seed")
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    run_id = f"seed-{seed if seed is not None else 'auto'}-{timestamp}"
+    context["_command_debug_run_id"] = run_id
+    return run_id
+
+
+def _persist_command_debug_artifact(stage: str, context: dict, payload: dict) -> Path:
+    """Persist a JSON artifact describing a failed or slow command stage."""
+    debug_dir = _command_debug_dir(context)
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{_command_debug_run_id(context)}-{stage}-{time.time_ns()}.json"
+    artifact_path = debug_dir / filename
+    artifact_path.write_text(
+        json.dumps(payload, indent=2, default=str),
+        encoding="utf-8",
+    )
+    context["_last_command_debug_artifact"] = str(artifact_path)
+    return artifact_path
+
+
+def _run_with_timeout(callable_obj: Any, *, timeout_seconds: float, label: str) -> Any:
+    """Run a blocking provider call with a best-effort hard timeout."""
+    if timeout_seconds <= 0:
+        return callable_obj()
+
+    if not hasattr(signal, "SIGALRM") or threading.current_thread() is not threading.main_thread():
+        logger.warning(
+            "Command stage timeout for %s is unsupported on this platform/thread; "
+            "running without a hard deadline.",
+            label,
+        )
+        return callable_obj()
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.setitimer(signal.ITIMER_REAL, 0.0)
+
+    def _handle_timeout(signum: int, frame: Any) -> None:
+        raise _StageTimeoutSignal(f"{label} timed out")
+
+    signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        return callable_obj()
+    except _StageTimeoutSignal as exc:
+        raise TimeoutError(
+            f"{label} timed out after {timeout_seconds:.1f} seconds"
+        ) from exc
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0.0)
+        signal.signal(signal.SIGALRM, previous_handler)
+        signal.setitimer(signal.ITIMER_REAL, *previous_timer)
+
+
+def _generate_stage(
+    provider: BaseProvider,
+    *,
+    stage: str,
+    prompt: str,
+    schema: dict,
+    gen_ctx: GenerationContext,
+    context: dict,
+    extra_artifact_payload: dict | None = None,
+) -> tuple[dict, float]:
+    """Run a provider-backed stage with timing, timeout, and debug artifacts."""
+    timeout_seconds = _stage_timeout_seconds(stage, context)
+    start = time.perf_counter()
+    logger.info(
+        "Pass 7 [%s]: requesting provider output (timeout %.1fs).",
+        stage,
+        timeout_seconds,
+    )
+
+    try:
+        result = _run_with_timeout(
+            lambda: provider.generate_structured(prompt, schema, gen_ctx),
+            timeout_seconds=timeout_seconds,
+            label=f"commands {stage} stage",
+        )
+    except Exception as exc:
+        payload = {
+            "stage": stage,
+            "seed": context.get("seed"),
+            "elapsed_seconds": round(time.perf_counter() - start, 3),
+            "timeout_seconds": timeout_seconds,
+            "error": str(exc),
+            "prompt": prompt,
+        }
+        if extra_artifact_payload:
+            payload.update(extra_artifact_payload)
+        artifact_path = _persist_command_debug_artifact(stage, context, payload)
+        raise type(exc)(
+            f"{exc} Debug artifact written to {artifact_path}."
+        ) from exc
+
+    elapsed = time.perf_counter() - start
+    logger.info(
+        "Pass 7 [%s]: provider returned in %.2fs.",
+        stage,
+        elapsed,
+    )
+    return result, elapsed
+
+
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
@@ -775,6 +933,7 @@ VALID_PRECONDITION_TYPES = {
     "has_flag",
     "not_flag",
     "item_in_room",
+    "item_accessible",
     "npc_in_room",
     "lock_unlocked",
     "puzzle_solved",
@@ -817,6 +976,8 @@ def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
         "current_room": "_current",
         "null": "_current",
         "none": "_current",
+        "nowhere": "_nowhere",
+        "_nowhere": "_nowhere",
     }
     lock_by_exit_id = {
         lock["target_exit_id"]: lock["id"]
@@ -828,11 +989,23 @@ def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
         for item in context.get("items", [])
         if item.get("is_container")
     }
+    portable_item_ids = {
+        item["id"]
+        for item in context.get("items", [])
+        if item.get("is_takeable")
+    }
 
     for cmd in commands:
         for pre in cmd.get("preconditions", []):
             if pre.get("type") == "set_toggle_state":
                 pre["type"] = "toggle_state"
+            elif (
+                pre.get("type") == "item_in_room"
+                and cmd.get("verb") in {"examine", "read"}
+                and pre.get("item") in portable_item_ids
+            ):
+                pre["type"] = "item_accessible"
+                pre.pop("room", None)
 
         for eff in cmd.get("effects", []):
             eff_type = eff.get("type")
@@ -855,7 +1028,11 @@ def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
 
                 from_loc = eff.get("from")
                 to_loc = eff.get("to")
-                if from_loc in container_ids and to_loc == "_inventory":
+                if to_loc == "_nowhere":
+                    eff["type"] = "remove_item"
+                    eff.pop("from", None)
+                    eff.pop("to", None)
+                elif from_loc in container_ids and to_loc == "_inventory":
                     eff["type"] = "take_item_from_container"
                     eff.pop("from", None)
                     eff.pop("to", None)
@@ -1118,13 +1295,35 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
             temperature=0.8,
             max_tokens=16_384,
         )
-        intents_result = provider.generate_structured(
-            intents_prompt,
-            COMMAND_INTENTS_SCHEMA,
-            intents_ctx,
+        logger.info(
+            "Pass 7 [intents]: building interaction intents for %d rooms, %d items, "
+            "%d NPCs, %d locks, and %d puzzles.",
+            len(context.get("rooms", [])),
+            len(context.get("items", [])),
+            len(context.get("npcs", [])),
+            len(context.get("locks", [])),
+            len(context.get("puzzles", [])),
+        )
+        intents_result, intents_elapsed = _generate_stage(
+            provider,
+            stage="intents",
+            prompt=intents_prompt,
+            schema=COMMAND_INTENTS_SCHEMA,
+            gen_ctx=intents_ctx,
+            context=context,
         )
         intents = intents_result.get("intents", [])
         context["_command_intents"] = intents
+        logger.info(
+            "Pass 7 [intents]: generated %d intents in %.2fs.",
+            len(intents),
+            intents_elapsed,
+        )
+    else:
+        logger.info(
+            "Pass 7 [intents]: reusing %d cached intents from prior attempt.",
+            len(intents),
+        )
 
     compile_prompt = _build_compile_prompt(context, intents)
     compile_ctx = GenerationContext(
@@ -1134,17 +1333,52 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
         max_tokens=32_768,
     )
 
-    result = provider.generate_structured(compile_prompt, COMMANDS_SCHEMA, compile_ctx)
+    logger.info(
+        "Pass 7 [compile]: compiling %d intents into strict DSL.",
+        len(intents),
+    )
+    result, compile_elapsed = _generate_stage(
+        provider,
+        stage="compile",
+        prompt=compile_prompt,
+        schema=COMMANDS_SCHEMA,
+        gen_ctx=compile_ctx,
+        context=context,
+        extra_artifact_payload={"intents": intents},
+    )
     commands: list[dict] = result.get("commands", [])
     flags: list[dict] = result.get("flags", [])
+    logger.info(
+        "Pass 7 [compile]: provider returned %d commands and %d flags in %.2fs.",
+        len(commands),
+        len(flags),
+        compile_elapsed,
+    )
 
     _normalize_command_aliases(commands, context)
 
     # Validate
     errors = _validate_commands(commands, flags, context)
     if errors:
+        artifact_path = _persist_command_debug_artifact(
+            "compile-validation",
+            context,
+            {
+                "stage": "compile-validation",
+                "seed": context.get("seed"),
+                "error_count": len(errors),
+                "errors": errors,
+                "intents": intents,
+                "commands": commands,
+                "flags": flags,
+                "prompt": compile_prompt,
+            },
+        )
         preview = "; ".join(errors[:8])
-        raise ValueError(f"Command validation failed: {preview}")
+        raise ValueError(
+            f"Command validation failed: {preview}. "
+            f"Debug artifact written to {artifact_path}."
+        )
 
     # Insert flags first (commands may reference them)
     _insert_flags(db, flags)

@@ -67,6 +67,8 @@ class FieldDef:
             return text
         if self.key == "scale":
             return f"World size: {text}"
+        if self.key == "realism":
+            return None
         if self.key == "story":
             return f"Main quest: {text}"
         if self.key == "special_requests":
@@ -95,6 +97,23 @@ SCALE_DETAIL = {
     "medium": "medium (16-30 rooms, 2-3 regions)",
     "large": "large (31-50 rooms, 4-6 regions)",
 }
+
+REALISM_OPTIONS = [
+    (
+        "Low",
+        "Arcade-friendly logic. Looser item behavior and simpler simulation.",
+    ),
+    (
+        "Medium",
+        "Balanced. Grounded behavior without overcomplicating interactions.",
+    ),
+    (
+        "High",
+        "More simulation-heavy. Stricter item dynamics and grounded interactions.",
+    ),
+]
+
+REALISM_VALUES = ["low", "medium", "high"]
 
 # ---------------------------------------------------------------------------
 # Tone and genre options
@@ -247,9 +266,21 @@ FIELDS: list[FieldDef] = [
         prompt_label="World size",
     ),
     FieldDef(
+        key="realism",
+        label="Realism",
+        step=10,
+        required=False,
+        field_type=FieldType.SELECT,
+        ask_text="How grounded should the simulation feel?",
+        guidance="Choose the item-dynamics realism level. Default is medium.",
+        options=[],
+        default_display="medium",
+        prompt_label="Realism",
+    ),
+    FieldDef(
         key="special_requests",
         label="Special Requests",
-        step=10,
+        step=11,
         required=False,
         field_type=FieldType.MULTILINE,
         ask_text="Anything else the generator should know?",

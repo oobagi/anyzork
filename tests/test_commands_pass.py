@@ -81,6 +81,29 @@ def test_normalize_command_aliases_maps_null_move_item_location() -> None:
     assert effect["to"] == "_inventory"
 
 
+def test_normalize_command_aliases_converts_nowhere_move_to_remove_item() -> None:
+    commands = [
+        {
+            "id": "use_usb_drive_apartment",
+            "effects": [
+                {
+                    "type": "move_item",
+                    "item": "usb_drive",
+                    "from": "_inventory",
+                    "to": "_nowhere",
+                }
+            ],
+        }
+    ]
+
+    _normalize_command_aliases(commands, {"locks": [], "items": []})
+
+    assert commands[0]["effects"][0] == {
+        "type": "remove_item",
+        "item": "usb_drive",
+    }
+
+
 def test_normalize_command_aliases_converts_toggle_precondition_alias() -> None:
     commands = [
         {
@@ -99,6 +122,36 @@ def test_normalize_command_aliases_converts_toggle_precondition_alias() -> None:
     _normalize_command_aliases(commands, {"locks": [], "items": []})
 
     assert commands[0]["preconditions"][0]["type"] == "toggle_state"
+
+
+def test_normalize_command_aliases_converts_portable_examine_to_item_accessible() -> None:
+    commands = [
+        {
+            "id": "examine_wallet_clue",
+            "verb": "examine",
+            "preconditions": [
+                {
+                    "type": "item_in_room",
+                    "item": "jaden_wallet",
+                    "room": "chico_master_bedroom",
+                }
+            ],
+            "effects": [],
+        }
+    ]
+
+    _normalize_command_aliases(
+        commands,
+        {
+            "locks": [],
+            "items": [{"id": "jaden_wallet", "is_takeable": 1}],
+        },
+    )
+
+    assert commands[0]["preconditions"][0] == {
+        "type": "item_accessible",
+        "item": "jaden_wallet",
+    }
 
 
 def test_normalize_command_aliases_converts_not_flag_effect_to_clear_flag() -> None:

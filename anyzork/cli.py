@@ -38,7 +38,12 @@ def cli() -> None:
     help="LLM provider for narrator mode (overrides ANYZORK_PROVIDER).",
 )
 @click.option("--model", type=str, default=None, help="Model for narrator mode.")
-def play(zork_file: Path, narrator: bool, provider: str | None, model: str | None) -> None:
+def play(
+    zork_file: Path,
+    narrator: bool,
+    provider: str | None,
+    model: str | None,
+) -> None:
     """Play an existing .zork game file."""
     from anyzork.db.schema import GameDB
     from anyzork.engine.game import GameEngine
@@ -138,10 +143,12 @@ def generate(
         return
 
     # ── Resolve prompt: freeform, wizard, or preset ────────────────────
-    resolved_prompt = _resolve_prompt(prompt, guided, preset, no_edit, console)
-    if resolved_prompt is None:
+    resolved = _resolve_generation_inputs(prompt, guided, preset, no_edit, console)
+    if resolved is None:
         # User quit the wizard or Ctrl+C.
         sys.exit(0)
+    resolved_prompt, resolved_realism = resolved
+    realism = resolved_realism or realism
 
     # ── Build configuration from environment ──────────────────────────
     overrides: dict[str, object] = {}
@@ -214,16 +221,16 @@ def generate(
         sys.exit(1)
 
 
-def _resolve_prompt(
+def _resolve_generation_inputs(
     prompt: str | None,
     guided: bool,
     preset_name: str | None,
     no_edit: bool,
     console: Console,
-) -> str | None:
-    """Determine the final prompt string based on CLI arguments.
+) -> tuple[str, str | None] | None:
+    """Determine the final prompt string and realism based on CLI arguments.
 
-    Returns the prompt string, or None if the user quit.
+    Returns ``(prompt, realism_override)`` or ``None`` if the user quit.
     """
     from anyzork.wizard import run_wizard
     from anyzork.wizard.assembler import assemble_prompt
@@ -239,14 +246,14 @@ def _resolve_prompt(
 
         if no_edit:
             # Skip wizard, generate immediately from preset values.
-            return assemble_prompt(preset_fields)
+            return assemble_prompt(preset_fields), preset_fields.get("realism")
 
         # Launch wizard with preset values pre-filled.
         return run_wizard(console, preset=preset_fields)
 
     # Case 2: Freeform prompt provided without --guided.
     if prompt is not None and not guided:
-        return prompt
+        return prompt, None
 
     # Case 3: Freeform prompt provided WITH --guided — seed the wizard.
     if prompt is not None and guided:
@@ -496,12 +503,14 @@ def _get_key_source(cfg: Config) -> str:
 @cli.command("list")
 def list_games() -> None:
     """List saved games in the default game directory."""
-    from anyzork.config import Config
+    from rich.table import Table
+
     from anyzork.db.schema import GameDB
 
     cfg = Config()
-    games_dir = cfg.games_dir
+    from anyzork import __version__ as engine_version
 
+    games_dir = cfg.games_dir
     if not games_dir.exists():
         console.print(f"[dim]No games directory found at {games_dir}[/dim]")
         console.print("[dim]Generate your first game with:[/dim]  anyzork generate")
@@ -512,10 +521,6 @@ def list_games() -> None:
         console.print(f"[dim]No .zork files found in {games_dir}[/dim]")
         console.print("[dim]Generate your first game with:[/dim]  anyzork generate")
         return
-
-    from rich.table import Table
-
-    from anyzork import __version__ as engine_version
 
     table = Table(title="Saved Games", show_lines=False)
     table.add_column("File", style="cyan", no_wrap=True)

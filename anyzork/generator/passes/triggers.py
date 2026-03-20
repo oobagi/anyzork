@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from anyzork.db.schema import GameDB
@@ -37,6 +38,7 @@ VALID_PRECONDITION_TYPES = {
     "has_flag",
     "not_flag",
     "item_in_room",
+    "item_accessible",
     "npc_in_room",
     "lock_unlocked",
     "puzzle_solved",
@@ -83,104 +85,191 @@ VALID_EVENT_TYPES = {
 # JSON schema the LLM must conform to
 # ---------------------------------------------------------------------------
 
-TRIGGERS_SCHEMA: dict[str, Any] = {
+TRIGGER_INTENTS_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["triggers"],
+    "required": ["trigger_intents"],
     "properties": {
-        "triggers": {
+        "trigger_intents": {
             "type": "array",
             "items": {
                 "type": "object",
                 "required": [
                     "id",
-                    "event_type",
-                    "event_data",
-                    "preconditions",
-                    "effects",
-                    "message",
-                    "priority",
-                    "one_shot",
+                    "moment",
+                    "event_kind",
+                    "consequences",
                 ],
                 "properties": {
                     "id": {
                         "type": "string",
                         "description": (
-                            "Unique snake_case identifier.  Convention: "
-                            "trigger_{event_type}_{description}."
+                            "Stable snake_case-ish slug for the trigger concept. "
+                            "The compiler normalizes uniqueness."
                         ),
                     },
-                    "event_type": {
+                    "moment": {
                         "type": "string",
-                        "enum": [
-                            "room_enter",
-                            "flag_set",
-                            "dialogue_node",
-                            "item_taken",
-                            "item_dropped",
-                        ],
-                        "description": "The game event that fires this trigger.",
-                    },
-                    "event_data": {
-                        "type": "object",
                         "description": (
-                            "Event-specific match criteria.  Keys depend on "
-                            "event_type.  Empty {} matches any event of that type."
+                            "Creative description of the reactive moment and why it matters."
                         ),
                     },
-                    "preconditions": {
+                    "event_kind": {
+                        "type": "string",
+                        "enum": sorted(VALID_EVENT_TYPES),
+                        "description": (
+                            "Which runtime event should watch for this moment."
+                        ),
+                    },
+                    "watched_room_id": {
+                        "type": "string",
+                        "description": "Room to watch for room-enter or room-scoped events.",
+                    },
+                    "watched_flag_id": {
+                        "type": "string",
+                        "description": "Flag to watch for flag_set events.",
+                    },
+                    "watched_dialogue_node_id": {
+                        "type": "string",
+                        "description": "Dialogue node to watch for dialogue-driven events.",
+                    },
+                    "watched_item_id": {
+                        "type": "string",
+                        "description": "Item to watch for item_taken or item_dropped events.",
+                    },
+                    "dropped_room_id": {
+                        "type": "string",
+                        "description": "Room where an item must be dropped, if relevant.",
+                    },
+                    "required_room_id": {
+                        "type": "string",
+                        "description": "Extra room precondition if the reaction is room-gated.",
+                    },
+                    "required_flags_all": {
                         "type": "array",
-                        "description": (
-                            "Array of precondition objects.  ALL must be true.  "
-                            "Same types as DSL commands."
-                        ),
-                        "items": {
-                            "type": "object",
-                            "required": ["type"],
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "enum": sorted(VALID_PRECONDITION_TYPES),
-                                },
-                            },
-                        },
+                        "items": {"type": "string"},
+                        "description": "Flags that must already be set.",
                     },
-                    "effects": {
+                    "blocked_flags": {
                         "type": "array",
-                        "description": (
-                            "Ordered array of effect objects.  Same types as "
-                            "DSL commands.  Must contain at least one effect."
-                        ),
-                        "items": {
-                            "type": "object",
-                            "required": ["type"],
-                            "properties": {
-                                "type": {
-                                    "type": "string",
-                                    "enum": sorted(VALID_EFFECT_TYPES),
-                                },
-                            },
-                        },
+                        "items": {"type": "string"},
+                        "description": "Flags that must NOT be set yet.",
                     },
-                    "message": {
+                    "required_item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Inventory items required for the reaction.",
+                    },
+                    "required_puzzle_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Puzzles that must already be solved.",
+                    },
+                    "required_lock_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Locks that must already be unlocked.",
+                    },
+                    "required_npc_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "NPCs that must be present in the scoped room for this trigger."
+                        ),
+                    },
+                    "response_text": {
                         "type": ["string", "null"],
                         "description": (
-                            "Optional text displayed when the trigger fires, "
-                            "before effects run.  null = no message."
+                            "Optional text the player sees when the trigger fires."
                         ),
                     },
-                    "priority": {
-                        "type": "integer",
+                    "priority_tier": {
+                        "type": "string",
+                        "enum": ["atmosphere", "standard", "critical", "override", "cleanup"],
                         "description": (
-                            "Evaluation order.  Higher = evaluated first.  "
-                            "Puzzle-critical: 10-99.  Atmospheric: 0.  Default: 0."
+                            "Relative importance. The compiler maps this onto runtime priority."
                         ),
                     },
-                    "one_shot": {
-                        "type": "boolean",
+                    "repeat_mode": {
+                        "type": "string",
+                        "enum": ["once", "repeat"],
                         "description": (
-                            "true = fires only once ever.  "
-                            "false = fires every time the event occurs."
+                            "Whether this should fire once or keep recurring."
                         ),
+                    },
+                    "consequences": {
+                        "type": "object",
+                        "description": (
+                            "High-level deterministic outcomes. Use exact IDs from the world."
+                        ),
+                        "properties": {
+                            "set_flags": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "unlock_locks": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "reveal_exits": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "solve_puzzles": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "discover_quests": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "open_containers": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "give_item_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "remove_item_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "printed_messages": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "spawn_items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["item_id", "location"],
+                                    "properties": {
+                                        "item_id": {"type": "string"},
+                                        "location": {"type": "string"},
+                                    },
+                                },
+                            },
+                            "toggle_items": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "required": ["item_id", "state"],
+                                    "properties": {
+                                        "item_id": {"type": "string"},
+                                        "state": {"type": "string"},
+                                    },
+                                },
+                            },
+                            "move_player_room_id": {
+                                "type": "string",
+                            },
+                            "score_delta": {
+                                "type": "integer",
+                            },
+                            "health_delta": {
+                                "type": "integer",
+                            },
+                        },
                     },
                 },
             },
@@ -195,7 +284,7 @@ TRIGGERS_SCHEMA: dict[str, Any] = {
 
 
 def _build_prompt(context: dict) -> str:
-    """Construct the LLM prompt for trigger generation."""
+    """Construct the LLM prompt for trigger-intent generation."""
 
     concept = context.get("concept", {})
     rooms = context.get("rooms", [])
@@ -315,10 +404,12 @@ def _build_prompt(context: dict) -> str:
     quests_summary = json.dumps(quests, indent=2) if quests else "[]"
 
     return f"""\
-You are designing triggers for a Zork-style text adventure engine.
-Triggers are reactive events that fire automatically when game state
-changes -- NOT when the player types a command.  They use the same
-precondition/effect system as DSL commands.
+You are designing reactive world moments for a Zork-style text adventure engine.
+Your job is NOT to emit final trigger DSL. Your job is to decide which
+reactive moments should exist, what event should watch for them, what
+conditions matter, and what outcomes should happen.
+
+Code will compile your intents into legal runtime triggers.
 
 ## World Concept
 {json.dumps(concept, indent=2)}
@@ -353,160 +444,100 @@ precondition/effect system as DSL commands.
 ## Quests
 {quests_summary}
 
-## What Triggers Are
+## Your Task — Generate Trigger Intents
 
-A trigger is a stored rule:
-> When [event] occurs AND [preconditions] are met, execute [effects].
+Each trigger intent should describe:
+- the reactive moment
+- the watched event kind
+- the exact ID being watched
+- any extra gating conditions
+- the outcome bundle that should happen
 
-Triggers fire when a **game event** occurs, not when the player types
-input.  They are deterministic -- stored in the database, evaluated at
-runtime using the same precondition/effect machinery as DSL commands.
+Think like a game designer, not a database compiler.
 
-## Event Types
+## Event Kinds
 
-### `room_enter` -- player enters a room
-`event_data: {{"room_id": "room_id_here"}}`
+### `room_enter`
+Watch the player entering a specific room.
 
-Use for:
-- NPC greetings or challenges when the player enters a room
-- Traps that fire when the player walks in
-- Atmospheric messages on room entry (beyond first_visit_text)
-- Ambushes: enemies appear, health decreases
-- Flag-gated entry text: "Now that you have the amulet, the statues glow"
+### `flag_set`
+Watch a specific flag becoming true.
 
-### `flag_set` -- a flag becomes true
-`event_data: {{"flag": "flag_name_here"}}`
+### `dialogue_node`
+Watch a specific dialogue node being shown.
+Use this whenever dialogue implies a real world change.
 
-Use for:
-- Cascading unlocks: both keys used -> door opens
-- Rewards after quest flags are set
-- Multi-step state changes: setting final flag triggers result
-- NPC reactions to quest progress
+### `item_taken`
+Watch a specific item being taken.
 
-### `dialogue_node` -- a dialogue node is displayed
-`event_data: {{"node_id": "node_id_here"}}`
+### `item_dropped`
+Watch a specific item being dropped, optionally in a specific room.
 
-Use for:
-- NPC gives the player an item during dialogue (spawn_item)
-- Dialogue causes world changes (unlock, reveal_exit)
-- NPC spawns something in another room as a reward
+## Outcome Bundles
 
-**IMPORTANT**: Every dialogue node where the narrative implies the NPC
-gives, trades, reveals, or changes something in the world MUST have a
-corresponding trigger.  Without it, the dialogue is just text with no
-mechanical effect.
+Describe outcomes using the `consequences` object, not raw DSL.
+Use the exact IDs from the world data.
 
-### `item_taken` -- player picks up an item
-`event_data: {{"item_id": "item_id_here"}}`
+- `set_flags`: flags that become true
+- `unlock_locks`: locks that should unlock
+- `reveal_exits`: hidden exits that should be revealed
+- `solve_puzzles`: puzzles that become solved
+- `discover_quests`: quests that should be discovered
+- `open_containers`: containers that should open
+- `give_item_ids`: items the player should receive directly in inventory
+- `spawn_items`: items that should appear in a room or container
+- `remove_item_ids`: items removed from play
+- `toggle_items`: toggleable items set to `on` or `off`
+- `move_player_room_id`: room the player is moved to
+- `score_delta`: score reward/penalty
+- `health_delta`: health change
+- `printed_messages`: extra text snippets printed as effects
 
-Use for:
-- Cursed items that damage the player
-- Traps triggered by removing items from pedestals
-- NPC reactions: "Hey, put that back!"
-- Taking the last item reveals something hidden
+## Gating Conditions
 
-### `item_dropped` -- player drops an item in a room
-`event_data: {{"item_id": "item_id_here", "room_id": "room_id_here"}}`
-
-Use for:
-- Altar offerings: dropping the right item in the right room activates it
-- Placement puzzles: dropping an item in a specific location
-- NPC reactions to items left near them
-
-## Precondition Types Reference
-
-| Type | Required Fields | Description |
-|------|----------------|-------------|
-| `in_room` | `room` | Player is in this room |
-| `has_item` | `item` | Player has item in inventory |
-| `has_flag` | `flag` | World flag is set (truthy) |
-| `not_flag` | `flag` | World flag is NOT set |
-| `item_in_room` | `item`, `room` | Item exists in room |
-| `npc_in_room` | `npc`, `room` | NPC is in room |
-| `lock_unlocked` | `lock` | Lock is unlocked |
-| `puzzle_solved` | `puzzle` | Puzzle is solved |
-| `health_above` | `threshold` | Player health > threshold |
-| `container_open` | `container` | Container is open |
-| `item_in_container` | `item`, `container` | Item is inside container |
-| `not_item_in_container` | `item`, `container` | Item is NOT inside container |
-| `container_has_contents` | `container` | Container is non-empty |
-| `container_empty` | `container` | Container is empty |
-| `has_quantity` | `item`, `min` | Item has at least `min` quantity |
-
-## Effect Types Reference
-
-| Type | Required Fields | Description |
-|------|----------------|-------------|
-| `move_item` | `item`, `from`, `to` | Move item between locations |
-| `remove_item` | `item` | Permanently destroy item |
-| `set_flag` | `flag` | Set a world flag |
-| `unlock` | `lock` | Unlock a lock |
-| `move_player` | `room` | Teleport player to room |
-| `spawn_item` | `item`, `location` | Place a hidden item into the world or inventory |
-| `change_health` | `amount` | Modify HP (positive heals, negative damages) |
-| `add_score` | `points` | Add score points |
-| `reveal_exit` | `exit` | Make hidden exit visible |
-| `solve_puzzle` | `puzzle` | Mark puzzle as solved |
-| `discover_quest` | `quest` | Set quest discovery flag |
-| `print` | `message` | Display text to the player |
-| `open_container` | `container` | Open a container |
-| `move_item_to_container` | `item`, `container` | Move item into container |
-| `take_item_from_container` | `item`, `container` | Remove item from container |
-| `consume_quantity` | `item`, `amount` | Reduce item quantity |
-| `restore_quantity` | `item`, `amount` | Increase item quantity |
-| `set_toggle_state` | `item`, `state` | Set item toggle state |
+Use these only when they matter:
+- `required_flags_all`
+- `blocked_flags`
+- `required_item_ids`
+- `required_puzzle_ids`
+- `required_lock_ids`
+- `required_npc_ids`
+- `required_room_id`
 
 ## Guidelines
 
-1. **Dialogue side effects are critical.**  For every dialogue node where
-   an NPC gives, trades, reveals, or changes something, generate a
-   `dialogue_node` trigger with the appropriate effects (spawn_item,
-   unlock, reveal_exit, etc.).  Without triggers, dialogue is just text.
+1. **Dialogue side effects are critical.** Every dialogue node where an NPC
+   gives, trades, reveals, unlocks, rewards, or changes the world should
+   usually have a `dialogue_node` trigger intent.
 
-2. **Flag cascades.**  When multiple flags must be set before something
-   happens (e.g., two keys collected -> door opens), generate `flag_set`
-   triggers that check the other prerequisite flags as preconditions.
-   Use one trigger per watched flag so both orderings work.
+2. **Flag cascades matter.** If two or more flags combine to unlock a result,
+   create symmetric `flag_set` intents so the outcome works regardless of order.
 
-3. **Room entry events.**  Important rooms should have `room_enter`
-   triggers for atmosphere or NPC reactions.  Use `one_shot: true` for
-   events that happen once (traps, ambushes) and `one_shot: false` for
-   recurring reactions (NPC greets player every time).
+3. **Room entry moments should feel authored.** Use `room_enter` for greetings,
+   traps, discoveries, warnings, or atmosphere that changes with state.
 
-4. **Cursed/special items.**  Items that should cause effects when picked
-   up need `item_taken` triggers.
+4. **Dropped-item puzzles need specificity.** For offerings and placement
+   puzzles, use `item_dropped` plus a `dropped_room_id`.
 
-5. **Placement puzzles.**  Items that must be dropped in specific rooms
-   need `item_dropped` triggers.
+5. **Recurring vs one-shot.**
+   - `repeat_mode: "once"` for gifts, discoveries, traps, first-time reveals
+   - `repeat_mode: "repeat"` for ambient reactions or persistent greetings
 
-6. **One-shot vs repeating.**
-   - `one_shot: true` -- traps, item gifts, puzzle rewards, first-time events
-   - `one_shot: false` -- NPC greetings, atmospheric text, recurring checks
+6. **Priority tiers.**
+   - `override` for safety-critical ordering
+   - `critical` for puzzle or progression results
+   - `standard` for normal reactive gameplay
+   - `atmosphere` for flavor-only moments
+   - `cleanup` for very low-priority maintenance reactions
 
-7. **Use preconditions for safety.**  A greeting trigger should check
-   `not_flag: guard_greeted` to avoid repeating.  A trap should check
-   `not_flag: trap_sprung`.  Belt-and-suspenders with one_shot.
-
-8. **Priority conventions.**
-   - 100+ -- safety/override triggers
-   - 10-99 -- puzzle-critical (unlock door, spawn key item)
-   - 0 -- atmospheric/flavor (NPC comments, ambient text)
-   - negative -- low-priority cleanup
-
-9. **Keep messages concise.**  Trigger messages appear inline with other
-   game text.  1-3 sentences max.
+7. **Keep reactions concise.** `response_text` and printed messages should be
+   short and punchy. One to three sentences is plenty.
 
 ## What NOT to Generate
 
-- **Do NOT duplicate DSL commands.**  Triggers are for reactive events,
-  not player actions.  If a command already handles an interaction, do
-  not create a trigger for the same thing.
-
-- **Do NOT create triggers for quest completion notifications.**  The
-  quest system handles those in `_check_quests()`.
-
-- **Do NOT reference IDs that don't exist.**  Use ONLY the exact IDs
-  from the data above.
+- **Do NOT emit raw precondition/effect DSL.** The compiler handles that.
+- **Do NOT duplicate commands.** Triggers are for reactive state changes.
+- **Do NOT invent IDs.** Use ONLY the exact IDs from the data above.
 
 ## Realism Level: {realism}
 
@@ -522,93 +553,55 @@ them verbatim from the lists.
 
 ## Examples
 
-### Dialogue gives player an item
+### Dialogue gives the player a key
 ```json
 {{
-  "id": "trigger_dialogue_blacksmith_gives_key",
-  "event_type": "dialogue_node",
-  "event_data": {{"node_id": "blacksmith_forges_key"}},
-  "preconditions": [],
-  "effects": [
-    {{"type": "spawn_item", "item": "forged_key", "location": "_inventory"}},
-    {{"type": "add_score", "points": 5}}
-  ],
-  "message": "[You receive a heavy iron key, still warm from the forge.]",
-  "priority": 10,
-  "one_shot": true
+  "id": "blacksmith_gives_key",
+  "moment": "The blacksmith finally hands over the forged key as a reward.",
+  "event_kind": "dialogue_node",
+  "watched_dialogue_node_id": "blacksmith_forges_key",
+  "response_text": "The blacksmith presses a warm iron key into your hand.",
+  "priority_tier": "critical",
+  "repeat_mode": "once",
+  "consequences": {{
+    "give_item_ids": ["forged_key"],
+    "score_delta": 5
+  }}
 }}
 ```
 
-### Room entry triggers NPC greeting (one-shot)
+### Room entry warning with an NPC present
 ```json
 {{
-  "id": "trigger_room_enter_guard_challenge",
-  "event_type": "room_enter",
-  "event_data": {{"room_id": "guard_post"}},
-  "preconditions": [
-    {{"type": "not_flag", "flag": "guard_challenged"}},
-    {{"type": "npc_in_room", "npc": "stern_guard", "room": "guard_post"}}
-  ],
-  "effects": [
-    {{"type": "set_flag", "flag": "guard_challenged"}},
-    {{"type": "print", "message": "The guard steps forward. \\"State your business, stranger.\\""}}
-  ],
-  "message": null,
-  "priority": 0,
-  "one_shot": true
+  "id": "guard_challenge",
+  "moment": "The guard challenges the player the first time they enter the post.",
+  "event_kind": "room_enter",
+  "watched_room_id": "guard_post",
+  "blocked_flags": ["guard_challenged"],
+  "required_npc_ids": ["stern_guard"],
+  "priority_tier": "atmosphere",
+  "repeat_mode": "once",
+  "consequences": {{
+    "set_flags": ["guard_challenged"],
+    "printed_messages": ["The guard steps forward. \\"State your business, stranger.\\""]
+  }}
 }}
 ```
 
-### Both flags set -> door unlocks (two symmetric triggers)
+### Two flags combine to unlock a door
 ```json
 {{
-  "id": "trigger_flag_p226_qualifies_range",
-  "event_type": "flag_set",
-  "event_data": {{"flag": "p226_qualified"}},
-  "preconditions": [{{"type": "has_flag", "flag": "ar15_qualified"}}],
-  "effects": [
-    {{"type": "unlock", "lock": "range_office_lock"}},
-    {{"type": "print", "message": "Both qualifications complete. The range office door unlocks."}}
-  ],
-  "message": null,
-  "priority": 10,
-  "one_shot": true
-}}
-```
-
-### Picking up cursed item triggers trap
-```json
-{{
-  "id": "trigger_item_taken_idol_curse",
-  "event_type": "item_taken",
-  "event_data": {{"item_id": "ancient_idol"}},
-  "preconditions": [{{"type": "in_room", "room": "hidden_shrine"}}],
-  "effects": [
-    {{"type": "change_health", "amount": -20}},
-    {{"type": "set_flag", "flag": "shrine_collapsed"}},
-    {{"type": "print", "message": "The ground shakes. Stones crash down from the ceiling."}}
-  ],
-  "message": null,
-  "priority": 10,
-  "one_shot": true
-}}
-```
-
-### Dropping offering on altar
-```json
-{{
-  "id": "trigger_item_dropped_offering_altar",
-  "event_type": "item_dropped",
-  "event_data": {{"item_id": "golden_offering", "room_id": "ancient_shrine"}},
-  "preconditions": [{{"type": "not_flag", "flag": "shrine_activated"}}],
-  "effects": [
-    {{"type": "set_flag", "flag": "shrine_activated"}},
-    {{"type": "reveal_exit", "exit": "shrine_to_inner_sanctum"}},
-    {{"type": "add_score", "points": 20}}
-  ],
-  "message": "As the offering touches the altar, the shrine comes alive.",
-  "priority": 10,
-  "one_shot": true
+  "id": "qualifications_unlock_range",
+  "moment": "Once both certifications are complete, the office door unlocks.",
+  "event_kind": "flag_set",
+  "watched_flag_id": "p226_qualified",
+  "required_flags_all": ["ar15_qualified"],
+  "priority_tier": "critical",
+  "repeat_mode": "once",
+  "consequences": {{
+    "unlock_locks": ["range_office_lock"],
+    "printed_messages": ["Both qualifications complete. The range office door unlocks."]
+  }}
 }}
 ```
 
@@ -616,31 +609,280 @@ them verbatim from the lists.
 
 ```json
 {{
-  "triggers": [
+  "trigger_intents": [
     {{
-      "id": "trigger_...",
-      "event_type": "room_enter|flag_set|dialogue_node|item_taken|item_dropped",
-      "event_data": {{}},
-      "preconditions": [],
-      "effects": [],
-      "message": "string or null",
-      "priority": 0,
-      "one_shot": true
+      "id": "trigger_idea",
+      "moment": "what happens and why it matters",
+      "event_kind": "room_enter|flag_set|dialogue_node|item_taken|item_dropped",
+      "response_text": "string or null",
+      "priority_tier": "atmosphere|standard|critical|override|cleanup",
+      "repeat_mode": "once|repeat",
+      "consequences": {{}}
     }}
   ]
 }}
 ```
 
-Generate triggers for ALL reactive events this world needs.  Focus on:
+Generate trigger intents for ALL reactive events this world needs. Focus on:
 1. Dialogue nodes that imply world changes (most important)
 2. Flag cascades for multi-step unlocks
 3. Room entry events for important rooms
 4. Item reactions for special/cursed items
 5. Placement puzzles
 
-Be thorough -- a missing trigger means a dialogue promise goes unfulfilled
-or a cascade fails to fire.
+Be thorough. A missing trigger intent means a dialogue promise goes unfulfilled
+or a cascade never happens.
 """
+
+
+# ---------------------------------------------------------------------------
+# Intent compiler
+# ---------------------------------------------------------------------------
+
+
+def _slugify_trigger_id(raw_id: str, used_ids: set[str]) -> str:
+    """Return a stable unique snake_case trigger id."""
+    slug = re.sub(r"[^a-z0-9]+", "_", raw_id.lower()).strip("_")
+    if not slug:
+        slug = "trigger"
+    if not slug.startswith("trigger_"):
+        slug = f"trigger_{slug}"
+
+    candidate = slug
+    index = 2
+    while candidate in used_ids:
+        candidate = f"{slug}_{index}"
+        index += 1
+    used_ids.add(candidate)
+    return candidate
+
+
+def _normalize_priority(intent: dict) -> int:
+    """Map a creative priority tier onto a deterministic runtime priority."""
+    tier = str(intent.get("priority_tier", "standard")).strip().lower()
+    return {
+        "override": 100,
+        "critical": 25,
+        "standard": 10,
+        "atmosphere": 0,
+        "cleanup": -10,
+    }.get(tier, 10)
+
+
+def _normalize_one_shot(intent: dict) -> bool:
+    """Return whether the trigger should fire only once."""
+    repeat_mode = str(intent.get("repeat_mode", "once")).strip().lower()
+    return repeat_mode != "repeat"
+
+
+def _normalize_location(location: str | None) -> str | None:
+    """Normalize common location aliases used in spawn consequences."""
+    if not location:
+        return None
+
+    normalized = location.strip()
+    lowered = normalized.lower()
+    if lowered in {"inventory", "_inventory"}:
+        return "_inventory"
+    if lowered in {"current", "_current", "current_room"}:
+        return "_current"
+    return normalized
+
+
+def _room_scope_for_intent(intent: dict, context: dict) -> str | None:
+    """Return the best room scope for room-based preconditions."""
+    room_ids = {room["id"] for room in context.get("rooms", [])}
+
+    for key in ("required_room_id", "watched_room_id", "dropped_room_id"):
+        room_id = intent.get(key)
+        if room_id in room_ids:
+            return room_id
+
+    if intent.get("event_kind") == "dialogue_node":
+        node_map = {
+            node["id"]: node.get("npc_id")
+            for node in context.get("dialogue_nodes", [])
+            if node.get("id")
+        }
+        npc_map = {
+            npc["id"]: npc.get("room_id")
+            for npc in context.get("npcs", [])
+            if npc.get("id")
+        }
+        npc_id = node_map.get(intent.get("watched_dialogue_node_id"))
+        room_id = npc_map.get(npc_id)
+        if room_id in room_ids:
+            return room_id
+
+    return None
+
+
+def _compile_event_data(intent: dict, context: dict) -> dict:
+    """Compile intent-level event selectors into runtime event_data."""
+    event_kind = intent.get("event_kind")
+    dialogue_nodes = {
+        node["id"]: node for node in context.get("dialogue_nodes", []) if node.get("id")
+    }
+
+    if event_kind == "room_enter":
+        room_id = intent.get("watched_room_id")
+        return {"room_id": room_id} if room_id else {}
+
+    if event_kind == "flag_set":
+        flag_id = intent.get("watched_flag_id")
+        return {"flag": flag_id} if flag_id else {}
+
+    if event_kind == "dialogue_node":
+        node_id = intent.get("watched_dialogue_node_id")
+        if not node_id:
+            return {}
+        event_data = {"node_id": node_id}
+        npc_id = dialogue_nodes.get(node_id, {}).get("npc_id")
+        if npc_id:
+            event_data["npc_id"] = npc_id
+        return event_data
+
+    if event_kind == "item_taken":
+        item_id = intent.get("watched_item_id")
+        return {"item_id": item_id} if item_id else {}
+
+    if event_kind == "item_dropped":
+        event_data: dict[str, str] = {}
+        item_id = intent.get("watched_item_id")
+        room_id = intent.get("dropped_room_id")
+        if item_id:
+            event_data["item_id"] = item_id
+        if room_id:
+            event_data["room_id"] = room_id
+        return event_data
+
+    return {}
+
+
+def _compile_preconditions(intent: dict, context: dict) -> list[dict]:
+    """Compile simplified gating fields into runtime preconditions."""
+    room_scope = _room_scope_for_intent(intent, context)
+    npc_rooms = {
+        npc["id"]: npc.get("room_id")
+        for npc in context.get("npcs", [])
+        if npc.get("id")
+    }
+    preconditions: list[dict] = []
+
+    required_room_id = intent.get("required_room_id")
+    if required_room_id:
+        preconditions.append({"type": "in_room", "room": required_room_id})
+
+    for flag_id in intent.get("required_flags_all", []):
+        preconditions.append({"type": "has_flag", "flag": flag_id})
+
+    for flag_id in intent.get("blocked_flags", []):
+        preconditions.append({"type": "not_flag", "flag": flag_id})
+
+    for item_id in intent.get("required_item_ids", []):
+        preconditions.append({"type": "has_item", "item": item_id})
+
+    for puzzle_id in intent.get("required_puzzle_ids", []):
+        preconditions.append({"type": "puzzle_solved", "puzzle": puzzle_id})
+
+    for lock_id in intent.get("required_lock_ids", []):
+        preconditions.append({"type": "lock_unlocked", "lock": lock_id})
+
+    for npc_id in intent.get("required_npc_ids", []):
+        room_id = room_scope or npc_rooms.get(npc_id)
+        if room_id:
+            preconditions.append({"type": "npc_in_room", "npc": npc_id, "room": room_id})
+
+    return preconditions
+
+
+def _compile_effects(intent: dict) -> tuple[list[dict], str | None]:
+    """Compile high-level consequences into runtime effect objects."""
+    consequences = intent.get("consequences", {}) or {}
+    effects: list[dict] = []
+
+    for flag_id in consequences.get("set_flags", []):
+        effects.append({"type": "set_flag", "flag": flag_id})
+
+    for lock_id in consequences.get("unlock_locks", []):
+        effects.append({"type": "unlock", "lock": lock_id})
+
+    for exit_id in consequences.get("reveal_exits", []):
+        effects.append({"type": "reveal_exit", "exit": exit_id})
+
+    for puzzle_id in consequences.get("solve_puzzles", []):
+        effects.append({"type": "solve_puzzle", "puzzle": puzzle_id})
+
+    for quest_id in consequences.get("discover_quests", []):
+        effects.append({"type": "discover_quest", "quest": quest_id})
+
+    for container_id in consequences.get("open_containers", []):
+        effects.append({"type": "open_container", "container": container_id})
+
+    for item_id in consequences.get("give_item_ids", []):
+        effects.append({"type": "spawn_item", "item": item_id, "location": "_inventory"})
+
+    for item_id in consequences.get("remove_item_ids", []):
+        effects.append({"type": "remove_item", "item": item_id})
+
+    for placement in consequences.get("spawn_items", []):
+        item_id = placement.get("item_id")
+        location = _normalize_location(placement.get("location"))
+        if item_id and location:
+            effects.append({"type": "spawn_item", "item": item_id, "location": location})
+
+    for toggle in consequences.get("toggle_items", []):
+        item_id = toggle.get("item_id")
+        state = toggle.get("state")
+        if item_id and state:
+            effects.append({"type": "set_toggle_state", "item": item_id, "state": state})
+
+    move_player_room_id = consequences.get("move_player_room_id")
+    if move_player_room_id:
+        effects.append({"type": "move_player", "room": move_player_room_id})
+
+    score_delta = consequences.get("score_delta")
+    if isinstance(score_delta, int) and score_delta != 0:
+        effects.append({"type": "add_score", "points": score_delta})
+
+    health_delta = consequences.get("health_delta")
+    if isinstance(health_delta, int) and health_delta != 0:
+        effects.append({"type": "change_health", "amount": health_delta})
+
+    for message in consequences.get("printed_messages", []):
+        if message:
+            effects.append({"type": "print", "message": message})
+
+    response_text = intent.get("response_text")
+    if response_text and not effects:
+        effects.append({"type": "print", "message": response_text})
+        return effects, None
+
+    return effects, response_text
+
+
+def _compile_trigger_intents(intents: list[dict], context: dict) -> list[dict]:
+    """Compile creative trigger intents into deterministic runtime triggers."""
+    compiled: list[dict] = []
+    used_ids: set[str] = set()
+
+    for intent in intents:
+        effects, message = _compile_effects(intent)
+        compiled.append(
+            {
+                "id": _slugify_trigger_id(intent.get("id", "trigger"), used_ids),
+                "event_type": intent.get("event_kind"),
+                "event_data": _compile_event_data(intent, context),
+                "preconditions": _compile_preconditions(intent, context),
+                "effects": effects,
+                "message": message,
+                "priority": _normalize_priority(intent),
+                "one_shot": _normalize_one_shot(intent),
+                "moment": intent.get("moment", ""),
+            }
+        )
+
+    return compiled
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +979,16 @@ def _validate_triggers(triggers: list[dict], context: dict) -> list[str]:
             if etype not in VALID_EFFECT_TYPES:
                 errors.append(f"Trigger {tid} has invalid effect type: {etype}")
 
+        if event_type == "flag_set":
+            watched_flag = event_data.get("flag")
+            if watched_flag and any(
+                eff.get("type") == "set_flag" and eff.get("flag") == watched_flag
+                for eff in effects
+            ):
+                errors.append(
+                    f"Trigger {tid} watches flag {watched_flag} and sets it again"
+                )
+
     return errors
 
 
@@ -830,7 +1082,7 @@ def _insert_missing_flags_for_triggers(
 def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
     """Run Pass 10: Triggers. Returns updated context with trigger data."""
 
-    logger.info("Pass 10: Generating triggers...")
+    logger.info("Pass 10: Generating trigger intents...")
 
     # Fetch dialogue nodes from the DB since the NPC pass does not include
     # them in its context summary.  Triggers need dialogue node IDs to wire
@@ -848,8 +1100,9 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
         max_tokens=16_384,
     )
 
-    result = provider.generate_structured(prompt, TRIGGERS_SCHEMA, gen_ctx)
-    triggers: list[dict] = result.get("triggers", [])
+    result = provider.generate_structured(prompt, TRIGGER_INTENTS_SCHEMA, gen_ctx)
+    trigger_intents: list[dict] = result.get("trigger_intents", [])
+    triggers = _compile_trigger_intents(trigger_intents, context)
 
     # Validate
     errors = _validate_triggers(triggers, context)

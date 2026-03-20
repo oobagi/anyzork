@@ -208,7 +208,11 @@ def test_validate_game_reports_unreachable_lock_key(game_db: GameDB) -> None:
     messages = _messages(errors)
 
     assert any(err.category == "lock" for err in errors)
-    assert any("vault_key" in msg and "not reachable" in msg for msg in messages)
+    assert any(
+        "vault_key" in msg and "before its lock in any valid unlock order" in msg
+        for msg in messages
+    )
+    assert any("No valid unlock order exists for key locks" in msg for msg in messages)
 
 
 def test_validate_game_reports_invalid_discover_quest_target(game_db: GameDB) -> None:

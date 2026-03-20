@@ -179,6 +179,42 @@ def _count_slots(pattern: str) -> int:
     return len(re.findall(r"\{(\w+)\}", pattern))
 
 
+def _item_is_accessible(item_id: str, db: GameDB, current_room: str) -> bool:
+    """Return True when an item can be interacted with from the current state.
+
+    Accessible items are:
+    - visible loose items in the current room
+    - visible inventory items
+    - visible items inside accessible open containers in the current room
+    - visible items inside accessible open containers in inventory
+    """
+    item = db.get_item(item_id)
+    if item is None or not item["is_visible"]:
+        return False
+
+    if item["container_id"] is None:
+        return item["room_id"] in {None, current_room}
+
+    current = item
+    visited: set[str] = set()
+    while current["container_id"] is not None:
+        container_id = current["container_id"]
+        if container_id in visited:
+            return False
+        visited.add(container_id)
+
+        container = db.get_item(container_id)
+        if container is None or not container["is_visible"]:
+            return False
+        if container["is_locked"]:
+            return False
+        if not container["is_open"] and container["has_lid"]:
+            return False
+        current = container
+
+    return current["room_id"] in {None, current_room}
+
+
 # ---------------------------------------------------------------------------
 # Precondition evaluation
 # ---------------------------------------------------------------------------
@@ -188,8 +224,9 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
 
     Supports all precondition types from the DSL spec:
     ``in_room``, ``has_item``, ``has_flag``, ``not_flag``, ``item_in_room``,
-    ``npc_in_room``, ``lock_unlocked``, ``puzzle_solved``, ``health_above``,
-    ``container_open``, ``item_in_container``, ``not_item_in_container``,
+    ``item_accessible``, ``npc_in_room``, ``lock_unlocked``,
+    ``puzzle_solved``, ``health_above``, ``container_open``,
+    ``item_in_container``, ``not_item_in_container``,
     ``container_has_contents``, ``container_empty``, ``has_quantity``,
     ``toggle_state``.
 
@@ -235,6 +272,11 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
             room = current_room
         item = db.get_item(item_id)
         return item is not None and item["room_id"] == room
+
+    if cond_type == "item_accessible":
+        item_ref = _substitute_slots(condition["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        return _item_is_accessible(item_id, db, current_room)
 
     if cond_type == "npc_in_room":
         npc_ref = _substitute_slots(condition["npc"], slots)

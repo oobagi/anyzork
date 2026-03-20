@@ -550,17 +550,47 @@ class GameEngine:
         return f"{', '.join(names[:-1])}, and {names[-1]}"
 
     @classmethod
-    def _build_scene_prose(cls, items: list[dict], npcs: list[dict]) -> str:
-        """Return natural prose for fallback room items and present NPCs."""
+    def _build_scene_prose(
+        cls,
+        scene_text: str,
+        items: list[dict],
+        npcs: list[dict],
+    ) -> str:
+        """Return natural prose for visible entities not already in the scene text."""
         additions: list[str] = []
-        if items:
-            item_names = cls._format_natural_list([it["name"] for it in items])
-            additions.append(f"You notice {item_names} here.")
-        if npcs:
-            npc_names = cls._format_natural_list([npc["name"] for npc in npcs])
-            verb = "is" if len(npcs) == 1 else "are"
-            additions.append(f"{npc_names} {verb} here.")
+        missing_items = [
+            it for it in items if not cls._scene_mentions_name(scene_text, it["name"])
+        ]
+        missing_npcs = [
+            npc for npc in npcs if not cls._scene_mentions_name(scene_text, npc["name"])
+        ]
+
+        if missing_items:
+            item_names = cls._format_natural_list(
+                [cls._with_definite_article(it["name"]) for it in missing_items]
+            )
+            verb = "catches" if len(missing_items) == 1 else "catch"
+            additions.append(f"Nearby, {item_names} {verb} the eye.")
+        if missing_npcs:
+            npc_names = cls._format_natural_list([npc["name"] for npc in missing_npcs])
+            verb = "lingers" if len(missing_npcs) == 1 else "linger"
+            additions.append(f"Nearby, {npc_names} {verb}.")
         return " ".join(additions)
+
+    @staticmethod
+    def _scene_mentions_name(scene_text: str, name: str) -> bool:
+        """Return ``True`` if *name* already appears in the current scene text."""
+        pattern = re.compile(re.escape(name), re.IGNORECASE)
+        return bool(pattern.search(scene_text))
+
+    @staticmethod
+    def _with_definite_article(name: str) -> str:
+        """Prefix a noun phrase with ``the`` when it does not already have a determiner."""
+        lowered = name.lower()
+        determiners = ("a ", "an ", "the ", "some ", "this ", "that ", "these ", "those ")
+        if lowered.startswith(determiners):
+            return name
+        return f"the {name}"
 
     def _is_room_lit(self, room: dict) -> bool:
         """Return ``True`` if the room is visible to the player.
@@ -684,7 +714,7 @@ class GameEngine:
                     style=STYLE_SYSTEM,
                 )
 
-        scene_prose = self._build_scene_prose(list_items, npcs)
+        scene_prose = self._build_scene_prose(display_body, list_items, npcs)
         if scene_prose:
             display_body = "\n\n".join([display_body, scene_prose])
 
@@ -885,8 +915,8 @@ class GameEngine:
     def _get_dsl_help_lines(self) -> str:
         """Build help text from DSL commands in the database.
 
-        Shows unique patterns grouped by verb, excluding patterns that
-        duplicate built-in verbs (take, drop, open, etc.).
+        Summarises special world-specific verbs without dumping raw DSL
+        patterns, which tend to read like spoilers or debugging output.
         """
         builtin_verbs = {
             "take", "get", "pick", "drop", "examine", "x", "look",
@@ -894,28 +924,55 @@ class GameEngine:
             "talk", "go", "north", "south", "east", "west", "up", "down",
             "turn",
         }
+        verb_help: dict[str, tuple[str, str]] = {
+            "accuse": ("accuse {suspect}", "make a formal accusation when you're ready"),
+            "assemble": ("assemble {object}", "piece together evidence or parts"),
+            "dial": ("dial {number}", "call a number you've uncovered"),
+            "dig": ("dig {spot}", "excavate a suspicious area with the right tool"),
+            "enter": ("enter code {code}", "enter a discovered code or combination"),
+            "pry": ("pry {thing}", "force something open with the right tool"),
+            "realize": ("realize {conclusion}", "commit to a conclusion once the clues fit"),
+        }
+
+        current_room_id = self.db.get_player()["current_room_id"]
         commands = self.db.get_all_commands()
-        seen_patterns: set[str] = set()
+        seen_verbs: set[str] = set()
         lines: list[str] = []
         c = STYLE_COMMAND
 
         for cmd in commands:
             verb = cmd.get("verb", "")
-            pattern = cmd.get("pattern", "")
             if verb in builtin_verbs:
                 continue
-            if pattern in seen_patterns:
+            if not cmd.get("is_enabled", 1):
                 continue
-            seen_patterns.add(pattern)
+            if cmd.get("one_shot") and cmd.get("executed"):
+                continue
 
-            # Style the pattern: make literal words cyan, keep {slots} plain
-            parts = re.split(r"(\{[^}]+\})", pattern)
-            styled = "".join(
-                f"[{c}]{p}[/]" if not p.startswith("{") else p
-                for p in parts
+            context_room_ids = cmd.get("context_room_ids")
+            if context_room_ids:
+                with suppress(json.JSONDecodeError, TypeError):
+                    room_ids = json.loads(context_room_ids)
+                    if current_room_id not in room_ids:
+                        continue
+
+            if verb in seen_verbs:
+                continue
+            seen_verbs.add(verb)
+
+            usage, description = verb_help.get(
+                verb,
+                (f"{verb} ...", "story-specific action revealed through clues"),
             )
-            lines.append(f"  {styled}")
+            lines.append(f"  [{c}]{usage}[/]  — {description}")
 
+        if not lines:
+            return ""
+
+        lines.insert(
+            0,
+            "  Special story actions unlock through clues, dialogue, and quest progress.",
+        )
         return "\n".join(lines)
 
 

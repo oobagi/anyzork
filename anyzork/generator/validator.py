@@ -36,6 +36,7 @@ VALID_PRECONDITION_TYPES: frozenset[str] = frozenset(
         "has_flag",
         "not_flag",
         "item_in_room",
+        "item_accessible",
         "npc_in_room",
         "lock_unlocked",
         "puzzle_solved",
@@ -227,6 +228,103 @@ def _reachable_rooms_unlocked(db: GameDB, start_id: str) -> set[str]:
     return visited
 
 
+def _effective_item_room(
+    item_id: str,
+    items_by_id: dict[str, dict],
+    seen: set[str] | None = None,
+) -> str | None:
+    """Return the effective room for an item, following container ancestry."""
+    item = items_by_id.get(item_id)
+    if not item:
+        return None
+
+    seen = seen or set()
+    if item_id in seen:
+        return None
+    seen.add(item_id)
+
+    if item.get("room_id"):
+        return item["room_id"]
+    if item.get("home_room_id"):
+        return item["home_room_id"]
+
+    container_id = item.get("container_id")
+    if container_id:
+        return _effective_item_room(container_id, items_by_id, seen)
+    return None
+
+
+def _reachable_rooms_with_unlocked_key_locks(
+    start_id: str,
+    exits: list[dict],
+    locks_by_exit: dict[str, dict],
+    unlocked_key_lock_ids: set[str],
+) -> set[str]:
+    """Return rooms reachable after unlocking the provided key-lock IDs."""
+    adj: dict[str, list[str]] = {}
+    for ex in exits:
+        lock = locks_by_exit.get(ex["id"])
+        if ex["is_locked"] and (not lock or lock["id"] not in unlocked_key_lock_ids):
+            continue
+        adj.setdefault(ex["from_room_id"], []).append(ex["to_room_id"])
+
+    visited: set[str] = set()
+    queue: deque[str] = deque([start_id])
+    while queue:
+        current = queue.popleft()
+        if current in visited:
+            continue
+        visited.add(current)
+        for neighbor in adj.get(current, []):
+            if neighbor not in visited:
+                queue.append(neighbor)
+    return visited
+
+
+def _simulate_key_lock_progression(
+    *,
+    start_id: str,
+    exits: list[dict],
+    locks: list[dict],
+    items_by_id: dict[str, dict],
+    excluded_lock_id: str | None = None,
+) -> tuple[set[str], set[str]]:
+    """Simulate a valid unlock order for key locks.
+
+    Key locks unlock when their key item becomes reachable. If
+    ``excluded_lock_id`` is set, that lock stays closed throughout the
+    simulation so we can ask whether its key is reachable before opening it.
+    """
+    locks_by_exit = {lock["target_exit_id"]: lock for lock in locks}
+    key_locks = [
+        lock
+        for lock in locks
+        if lock.get("lock_type") == "key" and lock.get("id") and lock.get("key_item_id")
+    ]
+    unlocked_key_lock_ids: set[str] = set()
+
+    while True:
+        reachable_rooms = _reachable_rooms_with_unlocked_key_locks(
+            start_id,
+            exits,
+            locks_by_exit,
+            unlocked_key_lock_ids,
+        )
+        progressed = False
+        for lock in key_locks:
+            lock_id = lock["id"]
+            if lock_id == excluded_lock_id or lock_id in unlocked_key_lock_ids:
+                continue
+
+            key_room = _effective_item_room(lock["key_item_id"], items_by_id)
+            if key_room and key_room in reachable_rooms:
+                unlocked_key_lock_ids.add(lock_id)
+                progressed = True
+
+        if not progressed:
+            return reachable_rooms, unlocked_key_lock_ids
+
+
 # ── Check implementations ────────────────────────────────────────────────
 
 
@@ -329,6 +427,7 @@ def _check_locks(db: GameDB) -> list[ValidationError]:
     start_id = start_rooms[0]["id"]
 
     locks = _all_locks(db)
+    exits = _all_exits(db)
     items = {i["id"]: i for i in _all_items(db)}
     exit_set = _exit_ids(db)
     puzzle_set = _puzzle_ids(db)
@@ -386,83 +485,50 @@ def _check_locks(db: GameDB) -> list[ValidationError]:
                     )
                 )
 
-    # Key reachability: each key must be reachable via the unlocked
-    # subgraph before its lock is encountered.
-    reachable_unlocked = _reachable_rooms_unlocked(db, start_id)
-    for lock in locks:
-        if lock["lock_type"] == "key":
-            key_id = lock.get("key_item_id")
-            if key_id and key_id in items:
-                key_room = items[key_id].get("room_id")
-                if key_room and key_room not in reachable_unlocked:
-                    errors.append(
-                        ValidationError(
-                            "error",
-                            "lock",
-                            f"Key '{key_id}' (in room '{key_room}') for lock {lock['id']} "
-                            f"is not reachable without passing through a locked exit.",
-                        )
-                    )
-
-    # Circular lock dependency detection.
-    # Build a graph: for each lock, if its key is behind another lock,
-    # that creates a dependency edge.
-    exits_by_id = {e["id"]: e for e in _all_exits(db)}
-    lock_by_exit: dict[str, dict] = {}
-    for lock in locks:
-        lock_by_exit[lock["target_exit_id"]] = lock
-
-    # Map room -> set of locks that gate entries into that room.
-    room_entry_locks: dict[str, set[str]] = {}
-    for lock in locks:
-        exit_row = exits_by_id.get(lock["target_exit_id"])
-        if exit_row:
-            dest = exit_row["to_room_id"]
-            room_entry_locks.setdefault(dest, set()).add(lock["id"])
-
-    # Build dependency edges: lock A depends on lock B if lock A's key is
-    # in a room that can only be reached by passing through lock B.
-    # Simplified approach: check if the key's room is behind any locked exit.
-    dep_graph: dict[str, set[str]] = {lock["id"]: set() for lock in locks}
-    for lock in locks:
-        if lock["lock_type"] != "key":
-            continue
+    key_locks = [lock for lock in locks if lock["lock_type"] == "key"]
+    for lock in key_locks:
         key_id = lock.get("key_item_id")
         if not key_id or key_id not in items:
             continue
-        key_room = items[key_id].get("room_id")
-        if not key_room:
-            continue
-        # Which locks gate the key's room?
-        for other_lock_id in room_entry_locks.get(key_room, set()):
-            if other_lock_id != lock["id"]:
-                dep_graph[lock["id"]].add(other_lock_id)
 
-    # Detect cycles via DFS.
-    white, gray, black = 0, 1, 2
-    color: dict[str, int] = {lid: white for lid in dep_graph}
-
-    def _dfs_cycle(node: str) -> bool:
-        color[node] = gray
-        for neighbor in dep_graph.get(node, set()):
-            if neighbor not in color:
-                continue
-            if color[neighbor] == gray:
-                return True
-            if color[neighbor] == white and _dfs_cycle(neighbor):
-                return True
-        color[node] = black
-        return False
-
-    for lock_id in dep_graph:
-        if color[lock_id] == white and _dfs_cycle(lock_id):
+        reachable_before, _ = _simulate_key_lock_progression(
+            start_id=start_id,
+            exits=exits,
+            locks=locks,
+            items_by_id=items,
+            excluded_lock_id=lock["id"],
+        )
+        key_room = _effective_item_room(key_id, items)
+        if key_room and key_room not in reachable_before:
             errors.append(
                 ValidationError(
                     "error",
                     "lock",
-                    f"Circular lock dependency detected involving lock '{lock_id}'.",
+                    f"Key '{key_id}' (in room '{key_room}') for lock {lock['id']} "
+                    "is not reachable before its lock in any valid unlock order.",
                 )
             )
+
+    _, unlocked_key_lock_ids = _simulate_key_lock_progression(
+        start_id=start_id,
+        exits=exits,
+        locks=locks,
+        items_by_id=items,
+    )
+    unresolved = [
+        lock["id"]
+        for lock in key_locks
+        if lock["id"] not in unlocked_key_lock_ids
+    ]
+    if unresolved:
+        errors.append(
+            ValidationError(
+                "error",
+                "lock",
+                "No valid unlock order exists for key locks: "
+                + ", ".join(sorted(unresolved)),
+            )
+        )
 
     return errors
 
@@ -671,6 +737,17 @@ def _validate_rule_preconditions(
                         category,
                         f"{label} precondition item_in_room references "
                         f"non-existent room '{room_val}'.",
+                    )
+                )
+        elif pc_type == "item_accessible":
+            item_val = pc.get("item", "")
+            if not _is_slot_ref(item_val) and item_val not in item_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        category,
+                        f"{label} precondition item_accessible references "
+                        f"unknown item '{item_val}'.",
                     )
                 )
         elif pc_type == "npc_in_room":

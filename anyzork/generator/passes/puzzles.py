@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from anyzork.db.schema import GameDB
@@ -32,54 +33,72 @@ logger = logging.getLogger(__name__)
 # JSON schema the LLM must conform to
 # ---------------------------------------------------------------------------
 
-PUZZLES_SCHEMA: dict[str, Any] = {
+PUZZLE_INTENTS_SCHEMA: dict[str, Any] = {
     "type": "object",
-    "required": ["puzzles"],
+    "required": ["puzzle_intents"],
     "properties": {
-        "puzzles": {
+        "puzzle_intents": {
             "type": "array",
             "items": {
                 "type": "object",
                 "required": [
                     "id",
                     "name",
-                    "description",
-                    "room_id",
-                    "solution_steps",
-                    "hint_text",
-                    "difficulty",
-                    "score_value",
-                    "is_optional",
+                    "core_concept",
+                    "primary_room_candidates",
+                    "solution_beats",
+                    "hint_progression",
+                    "difficulty_hint",
+                    "progression_role",
                 ],
                 "properties": {
                     "id": {
                         "type": "string",
-                        "description": "Unique snake_case identifier.",
+                        "description": "Stable snake_case slug for the puzzle concept.",
                     },
                     "name": {
                         "type": "string",
                         "description": "Human-readable puzzle name.",
                     },
-                    "description": {
+                    "core_concept": {
                         "type": "string",
                         "description": (
-                            "Internal description of what the player must do. "
-                            "Not shown directly — used for generation consistency."
+                            "The creative heart of the puzzle: what makes it interesting, "
+                            "what the player realizes, and what fiction it expresses."
                         ),
                     },
-                    "room_id": {
-                        "type": "string",
-                        "description": "Primary room where this puzzle is encountered.",
-                    },
-                    "solution_steps": {
+                    "primary_room_candidates": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": (
-                            "Ordered list of human-readable steps to solve the puzzle. "
-                            "Each step corresponds to a command the player can type."
+                            "Ordered room IDs where this puzzle could plausibly anchor. "
+                            "Use exact IDs from the room list."
                         ),
                     },
-                    "hint_text": {
+                    "clue_room_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Room IDs where clue breadcrumbs live.",
+                    },
+                    "involved_item_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Item IDs materially involved in the puzzle.",
+                    },
+                    "involved_npc_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "NPC IDs materially involved in the puzzle.",
+                    },
+                    "solution_beats": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Ordered creative beats for solving the puzzle. "
+                            "These are intent-level beats, not final DSL commands."
+                        ),
+                    },
+                    "hint_progression": {
                         "type": "array",
                         "items": {"type": "string"},
                         "description": (
@@ -88,25 +107,18 @@ PUZZLES_SCHEMA: dict[str, Any] = {
                             "almost obvious."
                         ),
                     },
-                    "difficulty": {
+                    "difficulty_hint": {
                         "type": "integer",
                         "enum": [1, 2, 3],
                         "description": (
-                            "1 = easy (single step, clue nearby), "
-                            "2 = medium (2-3 steps, clues in adjacent rooms), "
-                            "3 = hard (multi-step, clues across regions)."
+                            "Suggested difficulty. The compiler normalizes this."
                         ),
                     },
-                    "score_value": {
-                        "type": "integer",
-                        "description": "Points awarded on completion. 10-30 range.",
-                    },
-                    "is_optional": {
-                        "type": "integer",
-                        "enum": [0, 1],
+                    "progression_role": {
+                        "type": "string",
+                        "enum": ["critical", "optional"],
                         "description": (
-                            "0 = required for critical path / win condition. "
-                            "1 = optional side content."
+                            "Whether the puzzle is critical-path or optional side content."
                         ),
                     },
                 },
@@ -122,7 +134,7 @@ PUZZLES_SCHEMA: dict[str, Any] = {
 
 
 def _build_prompt(context: dict) -> str:
-    """Construct the LLM prompt for puzzle generation."""
+    """Construct the LLM prompt for puzzle-intent generation."""
 
     concept = context.get("concept", {})
     rooms = context.get("rooms", [])
@@ -190,7 +202,7 @@ You are a puzzle designer for a Zork-style text adventure engine.
 ## Existing Locks
 {locks_summary}
 
-## Your Task — Generate Puzzles
+## Your Task — Generate Puzzle Intents
 
 Design multi-step puzzles that create moments of discovery and realization.
 The best puzzles chain multiple steps, each feeling like its own "aha!" moment.
@@ -278,33 +290,151 @@ Return a JSON object:
 
 ```json
 {{
-  "puzzles": [
+  "puzzle_intents": [
     {{
       "id": "snake_case_id",
       "name": "Human-Readable Name",
-      "description": "Internal description of what the player must do",
-      "room_id": "primary_room_id",
-      "solution_steps": [
+      "core_concept": "What the player realizes and why this puzzle is interesting",
+      "primary_room_candidates": ["observatory", "library"],
+      "clue_room_ids": ["library"],
+      "involved_item_ids": ["torn_page", "telescope"],
+      "involved_npc_ids": [],
+      "solution_beats": [
         "Step 1: Find the torn page in the library",
         "Step 2: Read the page to learn the constellation",
         "Step 3: Use the telescope in the observatory to align to the constellation"
       ],
-      "hint_text": [
+      "hint_progression": [
         "The observatory seems to be waiting for something. Have you explored the library?",
         "A torn page in the library mentions a constellation. The telescope might be useful.",
         "Try using the torn page, then look through the telescope."
       ],
-      "difficulty": 2,
-      "score_value": 20,
-      "is_optional": 0
+      "difficulty_hint": 2,
+      "progression_role": "critical"
     }}
   ]
 }}
 ```
 
-The `solution_steps` field is for documentation and validation — the actual
-puzzle logic is implemented through command rules in the next pass.
+These are creative puzzle intents, not final DB rows. A deterministic compiler
+will choose the legal primary room, normalize difficulty/score, and carry the
+creative beats into later passes.
 """
+
+
+def _slugify_puzzle_id(raw_id: str, used_ids: set[str]) -> str:
+    """Return a stable unique snake_case puzzle id."""
+    slug = re.sub(r"[^a-z0-9]+", "_", raw_id.lower()).strip("_")
+    if not slug:
+        slug = "puzzle"
+    if not slug[0].isalpha():
+        slug = f"puzzle_{slug}"
+
+    candidate = slug
+    index = 2
+    while candidate in used_ids:
+        candidate = f"{slug}_{index}"
+        index += 1
+    used_ids.add(candidate)
+    return candidate
+
+
+def _normalize_hint_progression(intent: dict) -> list[str]:
+    """Return at least two progressive hints for a puzzle intent."""
+    hints = [hint.strip() for hint in intent.get("hint_progression", []) if hint.strip()]
+    if len(hints) >= 2:
+        return hints[:3]
+
+    concept = str(intent.get("core_concept", "")).strip()
+    beats = [beat.strip() for beat in intent.get("solution_beats", []) if beat.strip()]
+
+    if not hints and concept:
+        hints.append(concept)
+    if len(hints) < 2 and beats:
+        hints.append(beats[0])
+    if len(hints) < 2:
+        hints.append("Look closely at the rooms and objects tied to this puzzle.")
+    return hints[:3]
+
+
+def _normalize_difficulty(intent: dict) -> int:
+    """Return a legal puzzle difficulty from the intent."""
+    raw = intent.get("difficulty_hint")
+    if raw in (1, 2, 3):
+        return raw
+
+    step_count = len(intent.get("solution_beats", []))
+    if step_count <= 1:
+        return 1
+    if step_count <= 3:
+        return 2
+    return 3
+
+
+def _score_for_puzzle(difficulty: int, is_optional: int) -> int:
+    """Return a normalized score value for the compiled puzzle."""
+    base = {1: 12, 2: 18, 3: 24}[difficulty]
+    if is_optional:
+        base += 4
+    return min(base, 30)
+
+
+def _choose_puzzle_room(intent: dict, context: dict) -> str | None:
+    """Pick a legal primary room deterministically from the intent."""
+    rooms = context.get("rooms", [])
+    room_ids = {room["id"] for room in rooms}
+
+    for room_id in intent.get("primary_room_candidates", []):
+        if room_id in room_ids:
+            return room_id
+
+    for room_id in intent.get("clue_room_ids", []):
+        if room_id in room_ids:
+            return room_id
+
+    items_by_id = {item["id"]: item for item in context.get("items", [])}
+    for item_id in intent.get("involved_item_ids", []):
+        item = items_by_id.get(item_id)
+        if item and item.get("room_id") in room_ids:
+            return item["room_id"]
+
+    start_rooms = [room["id"] for room in rooms if room.get("is_start")]
+    if start_rooms:
+        return start_rooms[0]
+    if rooms:
+        return rooms[0]["id"]
+    return None
+
+
+def _compile_puzzle_intents(intents: list[dict], context: dict) -> list[dict]:
+    """Compile creative puzzle intents into deterministic puzzle rows."""
+    compiled: list[dict] = []
+    used_ids: set[str] = set()
+
+    for intent in intents:
+        room_id = _choose_puzzle_room(intent, context)
+        difficulty = _normalize_difficulty(intent)
+        is_optional = 1 if intent.get("progression_role") == "optional" else 0
+        compiled.append(
+            {
+                "id": _slugify_puzzle_id(intent.get("id", "puzzle"), used_ids),
+                "name": intent.get("name", "Unnamed Puzzle"),
+                "description": intent.get("core_concept", ""),
+                "room_id": room_id,
+                "solution_steps": intent.get("solution_beats", []),
+                "hint_text": _normalize_hint_progression(intent),
+                "difficulty": difficulty,
+                "score_value": _score_for_puzzle(difficulty, is_optional),
+                "is_optional": is_optional,
+                "primary_room_candidates": intent.get("primary_room_candidates", []),
+                "clue_room_ids": intent.get("clue_room_ids", []),
+                "involved_item_ids": intent.get("involved_item_ids", []),
+                "involved_npc_ids": intent.get("involved_npc_ids", []),
+                "core_concept": intent.get("core_concept", ""),
+            }
+        )
+
+    return compiled
 
 
 # ---------------------------------------------------------------------------
@@ -427,9 +557,9 @@ def _insert_puzzles(
 
 
 def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
-    """Run Pass 6: Puzzles.  Returns updated context with puzzle data."""
+    """Run Pass 6: Puzzles.  Returns updated context with compiled puzzle data."""
 
-    logger.info("Pass 6: Generating puzzles...")
+    logger.info("Pass 6: Generating puzzle intents...")
 
     prompt = _build_prompt(context)
     gen_ctx = GenerationContext(
@@ -439,8 +569,9 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
         max_tokens=32_768,
     )
 
-    result = provider.generate_structured(prompt, PUZZLES_SCHEMA, gen_ctx)
-    puzzles: list[dict] = result.get("puzzles", [])
+    result = provider.generate_structured(prompt, PUZZLE_INTENTS_SCHEMA, gen_ctx)
+    puzzle_intents: list[dict] = result.get("puzzle_intents", [])
+    puzzles = _compile_puzzle_intents(puzzle_intents, context)
 
     # Validate
     errors = _validate_puzzles(puzzles, context)
@@ -461,6 +592,11 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
             "score_value": p.get("score_value", 0),
             "is_optional": p.get("is_optional", 0),
             "solution_steps": p.get("solution_steps", []),
+            "hint_text": p.get("hint_text", []),
+            "core_concept": p.get("core_concept", ""),
+            "clue_room_ids": p.get("clue_room_ids", []),
+            "involved_item_ids": p.get("involved_item_ids", []),
+            "involved_npc_ids": p.get("involved_npc_ids", []),
         }
         for p in inserted_puzzles
     ]

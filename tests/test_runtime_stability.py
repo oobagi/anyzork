@@ -110,8 +110,67 @@ def test_room_display_weaves_fallback_items_and_npcs_into_body(
 
     assert "You see:" not in output
     assert "Present:" not in output
-    assert "You notice brass key here." in output
-    assert "Curator Rowan is here." in output
+    assert "Nearby, the brass key catches the eye." in output
+    assert "Nearby, Curator Rowan lingers." in output
+
+
+def test_help_summarizes_special_verbs_without_spoiling_raw_patterns(
+    game_db: GameDB, engine: GameEngine
+) -> None:
+    game_db.insert_command(
+        id="test_realize_help",
+        verb="realize",
+        pattern="realize Jaden left",
+        preconditions="[]",
+        effects="[]",
+        success_message="",
+        failure_message="",
+        is_enabled=1,
+    )
+    game_db.insert_command(
+        id="test_enter_help",
+        verb="enter",
+        pattern="enter code 7394",
+        preconditions="[]",
+        effects="[]",
+        success_message="",
+        failure_message="",
+        context_room_id="entrance_hall",
+        is_enabled=1,
+    )
+    game_db.insert_command(
+        id="test_accuse_other_room",
+        verb="accuse",
+        pattern="accuse Curator Rowan",
+        preconditions="[]",
+        effects="[]",
+        success_message="",
+        failure_message="",
+        context_room_id="observatory",
+        is_enabled=1,
+    )
+
+    lines = engine._get_dsl_help_lines()
+
+    assert "Special story actions unlock through clues" in lines
+    assert "realize {conclusion}" in lines
+    assert "enter code {code}" in lines
+    assert "Jaden left" not in lines
+    assert "7394" not in lines
+    assert "accuse {suspect}" not in lines
+
+
+def test_scene_prose_skips_entities_already_mentioned() -> None:
+    prose = GameEngine._build_scene_prose(
+        (
+            "A stern ancestral portrait hangs over the mantel while "
+            "Mr. Finch waits nearby."
+        ),
+        [{"name": "stern ancestral portrait"}],
+        [{"name": "Mr. Finch"}],
+    )
+
+    assert prose == ""
 
 
 def test_toggle_state_precondition_tracks_item_state(game_db: GameDB) -> None:
@@ -126,6 +185,22 @@ def test_toggle_state_precondition_tracks_item_state(game_db: GameDB) -> None:
 
     assert check_precondition(
         {"type": "toggle_state", "item": "field_lantern", "state": "on"},
+        game_db,
+    ) is True
+
+
+def test_item_accessible_precondition_allows_room_and_inventory_items(
+    game_db: GameDB,
+) -> None:
+    assert check_precondition(
+        {"type": "item_accessible", "item": "brass_key"},
+        game_db,
+    ) is True
+
+    game_db.move_item("brass_key", "inventory", "")
+
+    assert check_precondition(
+        {"type": "item_accessible", "item": "brass_key"},
         game_db,
     ) is True
 
