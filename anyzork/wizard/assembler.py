@@ -19,7 +19,7 @@ def assemble_prompt(values: dict[str, Any]) -> str:
         values: Dict mapping field keys to their values.
 
     Returns:
-        The assembled prompt string ready for generate_game().
+        The assembled prompt string ready for external ZorkScript authoring.
     """
     sections: list[str] = []
 

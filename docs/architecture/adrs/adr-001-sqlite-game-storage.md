@@ -6,11 +6,11 @@ Accepted
 
 ## Context
 
-AnyZork generates complete text adventure games from LLM output and then runs them with a deterministic engine. We need a storage format for the generated game world -- rooms, exits, items, NPCs, commands (DSL rules), quests, triggers, and mutable player state.
+AnyZork compiles LLM-authored ZorkScript into complete text adventure games and then runs them with a deterministic engine. We need a storage format for the compiled game world -- rooms, exits, items, NPCs, commands (DSL rules), quests, triggers, and mutable player state.
 
 The storage format affects nearly every part of the system:
 
-- **Generation pipeline**: each pass writes a layer of game data. Passes must be independently retryable without corrupting earlier work. The validation pass reads the entire world to check cross-referential integrity.
+- **Import/validation**: compiling authored ZorkScript must be able to create the full world safely, and validation needs to inspect the entire world for cross-referential integrity.
 - **Game engine**: reads room data, items, and DSL commands on every player turn. Writes player state (position, inventory, flags, score) after every command.
 - **Distribution**: generated games should be shareable. A player should be able to receive a game file and play it without setup.
 - **Save/load**: players expect to save progress and resume later.
@@ -34,7 +34,7 @@ Store each game as a single JSON file (or a directory of JSON files, one per ent
 - Easy to diff and version control
 
 **Cons:**
-- No transactional writes. If generation crashes mid-pass, the file may be partially written and corrupt. We'd need to implement write-ahead logging or temp-file-swap ourselves.
+- No transactional writes. If import crashes mid-compile, the file may be partially written and corrupt. We'd need to implement write-ahead logging or temp-file-swap ourselves.
 - No referential integrity. Nothing prevents an exit from pointing to a nonexistent room except our own validation code. The storage format doesn't help us.
 - Mutable player state mixed with immutable world data. Either we modify the same file (risking corruption of world data during play) or split into two files (complicating the "one file = one game" model).
 - No indexing. Finding "all items in room X" requires scanning the entire items array. Fine for small games, but unnecessarily slow and inelegant.
@@ -84,7 +84,7 @@ Specifically:
 
 - **One file = one game.** The `.zork` extension is just convention; the file is a standard SQLite database that any SQLite client can open.
 - **Schema enforced by SQLite.** Tables, column types, NOT NULL constraints, and FOREIGN KEY constraints are declared in SQL and enforced by the database engine. An exit cannot reference a nonexistent room.
-- **Transactions for generation passes.** Each generation pass runs inside `BEGIN ... COMMIT`. If a pass fails, `ROLLBACK` restores the database to its state before that pass. No custom crash-recovery logic needed.
+- **Transactions for import.** Compilation and validation can run inside transactions. If import fails, `ROLLBACK` restores the database to a clean state. No custom crash-recovery logic needed.
 - **WAL mode for narrator.** During play with narrator mode enabled, the engine writes player state while the narrator reads world data. SQLite's WAL (Write-Ahead Logging) mode allows concurrent readers and a single writer without blocking.
 - **Indexed access.** We create indexes on the columns we query most: items by room, commands by verb, exits by source room. Lookups are O(log n) via B-tree, not O(n) via scan.
 - **Player state in the same file.** The runtime tables (`player`, `score_entries`, `visited_rooms`, and execution flags on commands/triggers) live alongside the world data. "Saving" is free -- state is persisted after every command. "Loading a save" is copying a file.
@@ -96,9 +96,9 @@ Specifically:
 
 - **Portability is solved by default.** A `.zork` file is a single file. Share it however you want. No server, no connection string, no setup on the recipient's end.
 - **Save/load is trivial.** Copy the file to save. Replace it to load. Multiple save slots are multiple copies.
-- **Generation reliability.** Transaction rollback per pass means we never have a half-written, inconsistent game file. Either a pass fully succeeds or it doesn't happen.
-- **Referential integrity is enforced, not hoped for.** Foreign keys mean the validation pass is catching logical errors (unsolvable puzzles), not structural ones (dangling references). SQLite handles the structural correctness.
-- **Querying during generation.** The validation pass and later generation passes can use SQL to check invariants: "SELECT exits WHERE target_room NOT IN (SELECT id FROM rooms)" instantly finds broken exits. This is far more reliable than scanning JSON in Python.
+- **Import reliability.** Transaction rollback means we never keep a half-written, inconsistent game file.
+- **Referential integrity is enforced, not hoped for.** Foreign keys mean validation is catching logical errors (unsolvable puzzles), not structural ones (dangling references). SQLite handles the structural correctness.
+- **Querying during validation.** The importer and validator can use SQL to check invariants: "SELECT exits WHERE target_room NOT IN (SELECT id FROM rooms)" instantly finds broken exits. This is far more reliable than scanning nested text structures in Python.
 - **Future schema evolution.** SQLite supports `ALTER TABLE` for additive changes. The `meta` table stores a schema version. Migration logic can upgrade older `.zork` files to newer schemas.
 
 ### What becomes harder

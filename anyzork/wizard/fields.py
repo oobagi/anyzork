@@ -280,5 +280,3 @@ FIELDS: list[FieldDef] = [
         prompt_label="Additional instructions",
     ),
 ]
-
-FIELD_BY_KEY = {f.key: f for f in FIELDS}

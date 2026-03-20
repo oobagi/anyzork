@@ -2,30 +2,23 @@
 
 ## 1. Overview
 
-AnyZork is a CLI tool that turns a natural-language prompt into a playable text adventure. It is intentionally split into two phases:
+AnyZork is a CLI tool that turns a natural-language idea into a playable text adventure. The shipped authoring path is intentionally split into two steps:
 
-1. Generation: an LLM produces structured world data and stores it in a SQLite `.zork` file.
-2. Runtime: a deterministic engine reads that file and executes the game with no LLM in the game loop unless optional narrator mode is enabled.
+1. Authoring: `anyzork generate` produces a ZorkScript authoring prompt.
+2. Import/runtime: an external LLM returns ZorkScript, `anyzork import` compiles it into a SQLite `.zork` file, and the deterministic engine plays it with no LLM in the loop unless optional narrator mode is enabled.
 
 The separation is the product. The model creates content once; the engine owns state forever.
 
 ```text
-Prompt -> CLI -> Orchestrator -> Provider -> LLM -> .zork database -> Game Engine -> Player
+Prompt -> `anyzork generate` -> external LLM -> `anyzork import` -> .zork database -> Game Engine -> Player
 ```
 
-Current generation flow:
+Current authoring flow:
 
-1. Concept
-2. Rooms
-3. Locks
-4. Items
-5. NPCs
-6. Interactions
-7. Puzzles
-8. Commands
-9. Quests
-10. Triggers
-11. Validation
+1. `anyzork generate` creates a ZorkScript authoring prompt
+2. The user sends that prompt to an external LLM
+3. The returned ZorkScript is compiled with `anyzork import`
+4. The deterministic runtime reads the resulting `.zork` file
 
 ## 2. Major Components
 
@@ -35,13 +28,15 @@ The entry point is [anyzork/cli.py](/Users/jaden/Developer/anyzork/anyzork/cli.p
 
 Current commands:
 
-- `anyzork play <file.zork>`
 - `anyzork generate [prompt]`
-- `anyzork init`
-- `anyzork config`
+- `anyzork import <file|->`
+- `anyzork play <file.zork>`
 - `anyzork list`
+- `anyzork saves <game>`
+- `anyzork delete-save <game>`
+- `anyzork delete <game>`
 
-The CLI handles argument parsing, provider overrides, generation UX, and launching the runtime engine.
+The CLI handles argument parsing, import/export UX, and launching the runtime engine.
 
 ### 2.2 Config
 
@@ -55,7 +50,7 @@ Sources, from lowest to highest priority:
 4. Environment variables
 5. CLI overrides
 
-Supported providers today are `claude`, `openai`, and `gemini`.
+Supported providers for narrator mode today are `claude`, `openai`, and `gemini`.
 
 ### 2.3 Database Layer
 
@@ -77,7 +72,7 @@ Important tables:
 | `triggers` | Reactive rules fired by emitted events |
 | `player`, `score_entries`, `visited_rooms` | Runtime state |
 
-`GameDB` provides the single persistence API used by the engine, generator, and CLI.
+`GameDB` provides the single persistence API used by the engine, importer, and CLI.
 
 ### 2.4 Runtime Engine
 
@@ -132,24 +127,11 @@ Two higher-level deterministic layers sit on top of the command DSL:
 
 Quests do not gate actions directly. They observe state and present progress. Triggers let the world react without requiring the player to type a command.
 
-### 2.7 Generator Orchestrator
+### 2.7 Provider Abstraction
 
-The generation entry point is [anyzork/generator/orchestrator.py](/Users/jaden/Developer/anyzork/anyzork/generator/orchestrator.py).
+Providers implement a shared interface in [anyzork/generator/providers/base.py](/Users/jaden/Developer/anyzork/anyzork/generator/providers/base.py). Narrator mode still relies on that abstraction, so the rest of the system does not care whether the backend is Claude, OpenAI, or Gemini.
 
-Responsibilities:
-
-- build the right context for each pass
-- invoke the configured provider
-- validate pass outputs structurally
-- write results into the database
-- retry only the failed pass
-- run deterministic validation at the end
-
-### 2.8 Provider Abstraction
-
-Providers implement a shared interface in [anyzork/generator/providers/base.py](/Users/jaden/Developer/anyzork/anyzork/generator/providers/base.py). Generation and narrator mode both rely on that abstraction, so the rest of the system does not care whether the backend is Claude, OpenAI, or Gemini.
-
-### 2.9 Narrator
+### 2.8 Narrator
 
 Narrator mode lives in [anyzork/engine/narrator.py](/Users/jaden/Developer/anyzork/anyzork/engine/narrator.py). It is read-only presentation polish layered on top of deterministic output.
 
@@ -161,25 +143,14 @@ The narrator may restyle text, but it may not:
 
 If narrator mode fails, the engine falls back to plain deterministic output.
 
-## 3. Generation Architecture
+## 3. Authoring Architecture
 
-Each pass consumes only the data it actually needs. That keeps prompts smaller and lets the orchestrator retry a broken pass without re-running the entire world.
+The current authoring path is intentionally simple:
 
-Current pass dependencies:
-
-| Pass | Reads |
-|---|---|
-| `concept` | prompt only |
-| `rooms` | concept |
-| `locks` | concept, rooms |
-| `items` | concept, rooms, locks |
-| `npcs` | concept, rooms, items, locks |
-| `interactions` | concept, rooms, items, npcs |
-| `puzzles` | concept, rooms, items, npcs, locks |
-| `commands` | concept, rooms, locks, items, npcs, puzzles, interactions |
-| `quests` | concept, rooms, locks, items, npcs, puzzles, commands |
-| `triggers` | concept, rooms, locks, items, npcs, puzzles, commands, quests |
-| `validation` | entire database |
+1. `anyzork generate` creates a strong ZorkScript authoring prompt.
+2. An external LLM writes ZorkScript.
+3. `anyzork import` parses and validates that ZorkScript.
+4. Deterministic validation runs against the compiled `.zork` database.
 
 ## 4. Runtime State Model
 
@@ -195,7 +166,7 @@ This means the engine never needs a separate save serializer.
 
 Validation is split across two layers:
 
-1. Pass-local validation: JSON shape, obvious required references, and local sanity checks.
+1. Import-time validation: ZorkScript syntax, obvious required references, and local sanity checks.
 2. Final deterministic validation: whole-world consistency across rooms, locks, commands, quests, triggers, and score metadata.
 
 The validator is there to catch wiring mistakes, not to compensate for an undefined data model.

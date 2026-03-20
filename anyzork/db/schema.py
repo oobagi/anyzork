@@ -370,22 +370,6 @@ CREATE TABLE IF NOT EXISTS triggers (
 );
 CREATE INDEX IF NOT EXISTS idx_triggers_event_type ON triggers(event_type);
 CREATE INDEX IF NOT EXISTS idx_triggers_event_data ON triggers(event_data);
-
--- -------------------------------------------------------
--- playtest_log: records every player action for playtest analysis
--- -------------------------------------------------------
-CREATE TABLE IF NOT EXISTS playtest_log (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    move_number     INTEGER NOT NULL,
-    room_id         TEXT,
-    raw_input       TEXT NOT NULL,
-    outcome         TEXT NOT NULL,   -- "success", "fail", "unknown", "builtin", "error"
-    outcome_detail  TEXT,            -- what happened: command id, error message, etc.
-    timestamp       TEXT NOT NULL    -- ISO 8601
-);
-
-CREATE INDEX IF NOT EXISTS idx_playtest_log_move ON playtest_log(move_number);
-CREATE INDEX IF NOT EXISTS idx_playtest_log_outcome ON playtest_log(outcome);
 """
 
 
@@ -1841,38 +1825,3 @@ class GameDB:
             "UPDATE triggers SET executed = 1 WHERE id = ?",
             (trigger_id,),
         )
-
-    # ------------------------------------------------------- playtest log
-
-    def log_playtest_event(
-        self,
-        move_number: int,
-        room_id: str,
-        raw_input: str,
-        outcome: str,
-        outcome_detail: str | None = None,
-    ) -> None:
-        """Record a single player action to the playtest log."""
-        self._mutate(
-            "INSERT INTO playtest_log "
-            "(move_number, room_id, raw_input, outcome, outcome_detail, timestamp) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                move_number,
-                room_id,
-                raw_input,
-                outcome,
-                outcome_detail,
-                datetime.now(UTC).isoformat(),
-            ),
-        )
-
-    def get_playtest_log(self) -> list[dict]:
-        """Return all playtest log rows ordered by move_number."""
-        return self._fetchall(
-            "SELECT * FROM playtest_log ORDER BY move_number, id"
-        )
-
-    def clear_playtest_log(self) -> None:
-        """Delete all rows from the playtest log."""
-        self._mutate("DELETE FROM playtest_log")

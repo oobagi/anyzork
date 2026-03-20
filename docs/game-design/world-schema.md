@@ -8,7 +8,7 @@ The executable SQL source of truth lives in [anyzork/db/schema.py](/Users/jaden/
 
 | Table | Purpose |
 |---|---|
-| `metadata` | Game-level metadata, intro/outro text, win/lose conditions, generation settings |
+| `metadata` | Game-level metadata, intro/outro text, win/lose conditions, and authoring metadata |
 | `rooms` | Discrete locations |
 | `exits` | One-way room connections |
 | `items` | World objects, including containers, toggles, consumables, and inventory items |

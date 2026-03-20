@@ -25,7 +25,6 @@ from anyzork.engine.game import GameEngine
 from anyzork.zorkscript import parse_zorkscript
 from tests.build_test_game import build_test_game
 
-
 # ----------------------------------------------------------------- fixtures
 
 

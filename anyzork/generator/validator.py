@@ -1,7 +1,7 @@
-"""Final validation step — deterministic post-generation integrity checks.
+"""Final validation step — deterministic post-import integrity checks.
 
-This module runs after all LLM generation passes have populated the .zork
-database.  It performs structural and logical checks to catch
+This module runs after ZorkScript has been compiled into the `.zork`
+database. It performs structural and logical checks to catch
 inconsistencies that would break or degrade the player experience at
 runtime.  No LLM call is made — every check is pure Python operating on
 the SQLite data.
@@ -13,7 +13,7 @@ Usage::
     errors = validate_game(db)
     critical = [e for e in errors if e.severity == "error"]
     if critical:
-        ...  # generation failed — report or retry
+        ...  # import failed — report or fix the authored script
 """
 
 from __future__ import annotations

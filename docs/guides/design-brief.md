@@ -14,8 +14,8 @@ The core issue is role overload. A single model is trying to be the world databa
 
 Split the system into two phases:
 
-1. The LLM generates a world as structured data: rooms, exits, locks, items, NPCs, interaction rules, puzzles, commands, quests, and triggers. That data is stored in a portable SQLite `.zork` file.
-2. A deterministic engine runs the game: it reads the database, evaluates DSL rules, applies state changes, and renders output consistently.
+1. `anyzork generate` builds a strong ZorkScript authoring prompt for an external LLM.
+2. `anyzork import` compiles the returned ZorkScript into structured data stored in a portable SQLite `.zork` file, and the deterministic engine runs that file.
 
 The LLM is used once for creativity. The engine handles all runtime state.
 
@@ -32,32 +32,24 @@ effects: [remove "rusty_key", unlock "dungeon_door", print "The door creaks open
 
 This keeps runtime deterministic, auditable, and safe. The model can compose valid mechanics, but it cannot invent arbitrary executable behavior.
 
-## Why Multi-Pass Generation
+## Why ZorkScript Authoring
 
-A whole game generated in one call is fragile. AnyZork breaks generation into focused passes so each step can validate and retry independently.
+Instead of calling an in-app generation pipeline, AnyZork now leans on an external LLM to write ZorkScript and then compiles that authored DSL locally.
 
-Current pipeline:
+That keeps the shipped app smaller and easier to reason about:
 
-1. World concept
-2. Room graph
-3. Locks and gates
-4. Items
-5. NPCs and dialogue
-6. Interaction responses
-7. Puzzles
-8. Commands
-9. Quests
-10. Triggers
-11. Validation
+1. `generate` focuses on helping the user ask for the right game.
+2. The external LLM writes a human-readable DSL instead of opaque nested JSON.
+3. `import` validates and compiles the result into deterministic runtime data.
 
-This keeps prompts smaller, reduces cascading failures, and makes retries cheap.
+This preserves the core architecture benefit: the model is used once for creativity, and the engine handles the actual game state.
 
 ## Why SQLite
 
 A single `.zork` file is a complete game and a save file:
 
 - Portable: copy it, share it, archive it.
-- Transactional: generation passes can commit or roll back cleanly.
+- Transactional: import and validation can fail without leaving behind a half-built game.
 - Relational: rooms, exits, items, quests, and triggers reference each other safely.
 - Fast enough: the game world is small, but lookups still benefit from indexes.
 
@@ -69,7 +61,7 @@ If narrator mode fails, the deterministic engine output is still enough to play.
 
 ## Provider Strategy
 
-The generator and narrator both use the same provider abstraction. Today the supported providers are:
+Today the provider abstraction is used by optional narrator mode during play. The supported providers are:
 
 - Claude
 - OpenAI

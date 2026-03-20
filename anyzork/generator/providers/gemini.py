@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import re
 import time
 
 from google import genai
@@ -13,37 +11,14 @@ from google.genai import types as genai_types
 
 from anyzork.config import Config, LLMProvider
 from anyzork.generator.providers.base import (
+    RETRY_DELAYS,
     BaseProvider,
-    GenerationContext,
     NarratorContext,
     ProviderError,
+    validate_provider_config,
 )
 
 logger = logging.getLogger(__name__)
-
-_RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0, 4.0)
-
-
-def _extract_json(text: str) -> dict:
-    """Extract a JSON object from *text*, tolerating markdown fences."""
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError as exc:
-            raise ProviderError(
-                f"Gemini returned invalid JSON inside code fence: {exc}"
-            ) from exc
-
-    raise ProviderError(
-        f"Gemini response did not contain parseable JSON. First 200 chars: {text[:200]!r}"
-    )
 
 
 def _extract_response_text(response: object) -> str:
@@ -82,53 +57,6 @@ class GeminiProvider(BaseProvider):
         self._client = genai.Client(api_key=api_key)
         self._model = config.active_model or "gemini-2.5-flash"
 
-    # ------------------------------------------------------------------ core
-
-    def generate_structured(
-        self,
-        prompt: str,
-        schema: dict,
-        context: GenerationContext | None = None,
-    ) -> dict:
-        ctx = context or GenerationContext()
-
-        system_instruction = (
-            "You are a world-building assistant for a text adventure game generator. "
-            "Respond with ONLY valid JSON matching the schema provided. "
-            "Do not include any explanation, markdown formatting, or text "
-            "outside the JSON object.\n\n"
-            f"Required JSON schema:\n{json.dumps(schema, indent=2)}"
-        )
-        if ctx.seed is not None:
-            system_instruction += (
-                f"\n\nGeneration seed: {ctx.seed}. Use this seed to guide "
-                "deterministic choices."
-            )
-
-        user_content = prompt
-        if ctx.existing_data:
-            user_content += (
-                "\n\n--- Context from previous generation passes ---\n"
-                + json.dumps(ctx.existing_data, indent=2)
-            )
-
-        # Gemini 2.5 Flash supports up to 65K output tokens — use the higher
-        # of the requested max_tokens and 65K to avoid truncation.
-        max_out = max(ctx.max_tokens, 65_536)
-        config = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=ctx.temperature,
-            max_output_tokens=max_out,
-            response_mime_type="application/json",
-        )
-
-        text = self._call_with_retry(
-            contents=user_content,
-            config=config,
-        )
-
-        return _extract_json(text)
-
     def generate_text(
         self,
         prompt: str,
@@ -148,14 +76,14 @@ class GeminiProvider(BaseProvider):
         )
 
     def validate_config(self) -> None:
-        if self._config.provider != LLMProvider.GEMINI:
-            raise ProviderError(
-                f"GeminiProvider created but active provider is {self._config.provider.value!r}"
-            )
-        if not self._config.get_api_key():
-            raise ProviderError(
+        validate_provider_config(
+            self._config,
+            expected_provider=LLMProvider.GEMINI,
+            provider_name="Gemini",
+            missing_key_message=(
                 "No API key for Gemini. Set GOOGLE_API_KEY or ANYZORK_GOOGLE_API_KEY."
-            )
+            ),
+        )
 
     # ------------------------------------------------------------------ internal
 
@@ -168,7 +96,7 @@ class GeminiProvider(BaseProvider):
         """Call the Gemini API with retries on transient errors."""
         last_exc: Exception | None = None
 
-        for attempt, delay in enumerate((*_RETRY_DELAYS, None)):
+        for attempt, delay in enumerate((*RETRY_DELAYS, None)):
             try:
                 response = self._client.models.generate_content(
                     model=self._model,
@@ -240,5 +168,5 @@ class GeminiProvider(BaseProvider):
                 time.sleep(delay)
 
         raise ProviderError(
-            f"Gemini API failed after {len(_RETRY_DELAYS) + 1} attempts"
+            f"Gemini API failed after {len(RETRY_DELAYS) + 1} attempts"
         ) from last_exc

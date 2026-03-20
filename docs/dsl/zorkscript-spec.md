@@ -12,8 +12,8 @@ engine. No engine changes are required.
 
 ### Why not JSON?
 
-The current import format is a 356-line JSON template. LLMs generating it
-face three recurring problems:
+ZorkScript replaced an older JSON authoring template because LLMs generating
+that format hit three recurring problems:
 
 1. **Token cost.** Deeply nested JSON with repeated keys (`"type"`, `"flag"`,
    `"item"`) wastes tokens on structure, not content.
@@ -1224,17 +1224,14 @@ The current JSON authoring template is **356 lines / ~5,000 tokens**.
 Prompt overhead reduction: roughly **70%**.
 
 
-## 13. Relation to the Existing Import System
+## 13. Relation to the Import System
 
-ZorkScript does not replace the JSON import path. Both formats compile to
-the same `.zork` file. The system supports:
+ZorkScript is the supported authored input for `anyzork import`. The older
+JSON compatibility path has been removed from the shipped app, so the import
+surface is now deliberately narrow:
 
-1. **JSON import** (`anyzork import spec.json`) -- existing path, unchanged.
-2. **ZorkScript import** (`anyzork import game.zs`) -- new path, same output.
-
-The CLI detects the format by file extension (`.json` vs `.zs`) or by
-inspecting the first non-comment line (a `{` indicates JSON; a bare keyword
-indicates ZorkScript).
+1. **ZorkScript import** (`anyzork import game.zorkscript`)
+2. **Standard output**: a compiled SQLite `.zork` game file
 
 ### What the compiler must NOT do
 

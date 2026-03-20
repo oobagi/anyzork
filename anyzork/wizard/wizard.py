@@ -2,11 +2,12 @@
 
 Walks the user through structured world-building fields one at a time,
 assembles the filled fields into a rich prompt string, and returns it
-for the generation pipeline.
+for external ZorkScript authoring.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from rich.console import Console
@@ -23,33 +24,39 @@ from anyzork.wizard.fields import (
     FieldType,
 )
 
-
-def _read_multiline(console: Console, prompt_str: str = " > ") -> str | None:
-    """Read multi-line input until the user submits an empty line.
-
-    Returns None if no content was entered (user skipped).
-    """
-    lines: list[str] = []
-    while True:
-        try:
-            line = console.input(prompt_str)
-        except EOFError:
-            break
-        if not line and not lines:
-            # First line empty = skip
-            return None
-        if not line and lines:
-            # Empty line after content = done
-            break
-        lines.append(line)
-    return "\n".join(lines) if lines else None
+_LIST_FIELD_KEYS = {"locations", "characters", "items"}
+_DESCRIBED_SELECTS = {
+    "scale": (SCALE_OPTIONS, SCALE_VALUES),
+    "realism": (REALISM_OPTIONS, REALISM_VALUES),
+}
 
 
-def _read_multiline_list(console: Console, prompt_str: str = " > ") -> list[str] | None:
-    """Read multi-line input where each line is a list entry.
+def _read_input(
+    console: Console,
+    prompt_str: str = " > ",
+    *,
+    allow_blank: bool = False,
+    lower: bool = False,
+) -> str | None:
+    """Read a stripped single-line input value, optionally preserving blanks."""
+    try:
+        value = console.input(prompt_str).strip()
+    except EOFError:
+        return None
+    if not value:
+        if allow_blank:
+            return ""
+        return None
+    return value.lower() if lower else value
 
-    Returns None if no content was entered (user skipped).
-    """
+
+def _read_multiline_entries(
+    console: Console,
+    prompt_str: str = " > ",
+    *,
+    normalizer: Callable[[str], str] | None = None,
+) -> list[str] | None:
+    """Read multi-line input until an empty line or EOF."""
     entries: list[str] = []
     while True:
         try:
@@ -60,8 +67,25 @@ def _read_multiline_list(console: Console, prompt_str: str = " > ") -> list[str]
             return None
         if not line and entries:
             break
-        entries.append(line.strip())
+        entries.append(normalizer(line) if normalizer is not None else line)
     return entries if entries else None
+
+
+def _read_multiline(console: Console, prompt_str: str = " > ") -> str | None:
+    """Read multi-line input until the user submits an empty line.
+
+    Returns None if no content was entered (user skipped).
+    """
+    lines = _read_multiline_entries(console, prompt_str)
+    return "\n".join(lines) if lines else None
+
+
+def _read_multiline_list(console: Console, prompt_str: str = " > ") -> list[str] | None:
+    """Read multi-line input where each line is a list entry.
+
+    Returns None if no content was entered (user skipped).
+    """
+    return _read_multiline_entries(console, prompt_str, normalizer=str.strip)
 
 
 def _prompt_field(console: Console, field_def, current_value: Any = None) -> Any:
@@ -70,8 +94,6 @@ def _prompt_field(console: Console, field_def, current_value: Any = None) -> Any
     Returns the value entered, or None if the user skipped.
     """
     total = len(FIELDS)
-    required_str = "required" if field_def.required else "optional, press Enter to skip"
-
     # Step header
     console.print()
     header = Text()
@@ -95,16 +117,12 @@ def _prompt_field(console: Console, field_def, current_value: Any = None) -> Any
 
     # Collect input based on field type
     if field_def.field_type == FieldType.MULTILINE:
-        if field_def.key in ("locations", "characters", "items"):
+        if field_def.key in _LIST_FIELD_KEYS:
             return _read_multiline_list(console)
         return _read_multiline(console)
 
     if field_def.field_type == FieldType.TEXT:
-        try:
-            line = console.input(" > ").strip()
-        except EOFError:
-            return None
-        return line if line else None
+        return _read_input(console)
 
     if field_def.field_type == FieldType.SELECT:
         return _prompt_select(console, field_def)
@@ -115,59 +133,62 @@ def _prompt_field(console: Console, field_def, current_value: Any = None) -> Any
     return None
 
 
-def _prompt_select(console: Console, field_def) -> str | None:
-    """Handle a single-select field."""
-    if field_def.key == "scale":
-        for i, (label, desc) in enumerate(SCALE_OPTIONS, 1):
-            console.print(f"  [cyan][{i}][/cyan] [bold]{label:10s}[/bold] {desc}")
-        console.print()
-        try:
-            raw = console.input(" > ").strip()
-        except EOFError:
-            return None
-        if not raw:
-            return None
-        try:
-            idx = int(raw) - 1
-            if 0 <= idx < len(SCALE_VALUES):
-                return SCALE_VALUES[idx]
-        except ValueError:
-            pass
-        # Accept raw text like "small", "medium", "large"
-        if raw.lower() in SCALE_VALUES:
-            return raw.lower()
+def _print_numbered_options(
+    console: Console,
+    options: list[str],
+    *,
+    descriptions: list[str] | None = None,
+) -> None:
+    """Render a numbered list of selectable options."""
+    for i, option in enumerate(options, 1):
+        if descriptions is None:
+            console.print(f"  [cyan][{i}][/cyan] {option}")
+        else:
+            console.print(
+                f"  [cyan][{i}][/cyan] [bold]{option:10s}[/bold] {descriptions[i - 1]}"
+            )
+    console.print()
+
+
+def _prompt_described_select(
+    console: Console,
+    *,
+    options: list[tuple[str, str]],
+    values: list[str],
+) -> str | None:
+    """Handle numbered selects that also accept raw canonical values."""
+    _print_numbered_options(
+        console,
+        [label for label, _ in options],
+        descriptions=[description for _, description in options],
+    )
+
+    raw = _read_input(console)
+    if raw is None:
         return None
 
-    if field_def.key == "realism":
-        for i, (label, desc) in enumerate(REALISM_OPTIONS, 1):
-            console.print(f"  [cyan][{i}][/cyan] [bold]{label:10s}[/bold] {desc}")
-        console.print()
-        try:
-            raw = console.input(" > ").strip()
-        except EOFError:
-            return None
-        if not raw:
-            return None
-        try:
-            idx = int(raw) - 1
-            if 0 <= idx < len(REALISM_VALUES):
-                return REALISM_VALUES[idx]
-        except ValueError:
-            pass
-        if raw.lower() in REALISM_VALUES:
-            return raw.lower()
-        return None
+    try:
+        idx = int(raw) - 1
+        if 0 <= idx < len(values):
+            return values[idx]
+    except ValueError:
+        pass
+
+    normalized = raw.lower()
+    return normalized if normalized in values else None
+
+
+def _prompt_select(console: Console, field_def) -> str | None:
+    """Handle a single-select field."""
+    if field_def.key in _DESCRIBED_SELECTS:
+        options, values = _DESCRIBED_SELECTS[field_def.key]
+        return _prompt_described_select(console, options=options, values=values)
 
     # Generic select (tone)
     options = field_def.options
-    for i, opt in enumerate(options, 1):
-        console.print(f"  [cyan][{i}][/cyan] {opt}")
-    console.print()
-    try:
-        raw = console.input(" > ").strip()
-    except EOFError:
-        return None
-    if not raw:
+    _print_numbered_options(console, options)
+    raw = _read_input(console)
+    if raw is None:
         return None
 
     try:
@@ -176,11 +197,7 @@ def _prompt_select(console: Console, field_def) -> str | None:
             selected = options[idx]
             if "custom" in selected.lower() and field_def.allow_custom:
                 console.print("  Type your custom tone:")
-                try:
-                    custom = console.input("  > ").strip()
-                except EOFError:
-                    return None
-                return custom if custom else None
+                return _read_input(console, "  > ")
             return selected
     except ValueError:
         pass
@@ -192,14 +209,9 @@ def _prompt_select(console: Console, field_def) -> str | None:
 def _prompt_multi_select(console: Console, field_def) -> list[str] | None:
     """Handle a multi-select field (genre tags)."""
     options = field_def.options
-    for i, opt in enumerate(options, 1):
-        console.print(f"  [cyan][{i}][/cyan] {opt}")
-    console.print()
-    try:
-        raw = console.input(" > ").strip()
-    except EOFError:
-        return None
-    if not raw:
+    _print_numbered_options(console, options)
+    raw = _read_input(console)
+    if raw is None:
         return None
 
     selected: list[str] = []
@@ -330,9 +342,8 @@ def run_wizard(
                 "[bold][R][/bold]estart  "
                 "[bold][Q][/bold]uit"
             )
-            try:
-                choice = console.input(" > ").strip().lower()
-            except EOFError:
+            choice = _read_input(console, allow_blank=True, lower=True)
+            if choice is None:
                 return None
 
             if choice in ("g", "generate"):
