@@ -58,6 +58,7 @@ def test_insert_interactions_ignores_legacy_unsaved_fields(tmp_path: Path) -> No
         "consumes": 2,
         "score_change": 3,
         "flag_to_set": "mural_revealed",
+        "effects": None,
     }
 
     db.close()

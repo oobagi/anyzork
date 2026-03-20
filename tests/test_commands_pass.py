@@ -59,6 +59,28 @@ def test_normalize_command_aliases_maps_inventory_spawn_location() -> None:
     assert commands[0]["effects"][0]["location"] == "_inventory"
 
 
+def test_normalize_command_aliases_maps_player_inventory_alias() -> None:
+    commands = [
+        {
+            "id": "bang_frying_pan",
+            "effects": [
+                {
+                    "type": "move_item",
+                    "item": "frying_pan",
+                    "from": "_player_inventory",
+                    "to": "kitchen",
+                }
+            ],
+        }
+    ]
+
+    _normalize_command_aliases(commands, {"locks": [], "items": []})
+
+    effect = commands[0]["effects"][0]
+    assert effect["from"] == "_inventory"
+    assert effect["to"] == "kitchen"
+
+
 def test_normalize_command_aliases_maps_null_move_item_location() -> None:
     commands = [
         {
@@ -81,6 +103,63 @@ def test_normalize_command_aliases_maps_null_move_item_location() -> None:
     assert effect["to"] == "_inventory"
 
 
+def test_normalize_command_aliases_prefixes_missing_verb_in_pattern() -> None:
+    commands = [
+        {
+            "id": "bang_frying_pan",
+            "verb": "bang",
+            "pattern": "frying pan",
+            "effects": [],
+        }
+    ]
+
+    _normalize_command_aliases(commands, {"locks": [], "items": []})
+
+    assert commands[0]["pattern"] == "bang frying pan"
+
+
+def test_normalize_command_aliases_converts_nowhere_move_to_remove_item() -> None:
+    commands = [
+        {
+            "id": "use_usb_drive_apartment",
+            "effects": [
+                {
+                    "type": "move_item",
+                    "item": "usb_drive",
+                    "from": "_inventory",
+                    "to": "_nowhere",
+                }
+            ],
+        }
+    ]
+
+    _normalize_command_aliases(commands, {"locks": [], "items": []})
+
+    assert commands[0]["effects"][0] == {
+        "type": "remove_item",
+        "item": "usb_drive",
+    }
+
+
+def test_normalize_command_aliases_fills_missing_failure_message() -> None:
+    commands = [
+        {
+            "id": "examine_cupboard_latch",
+            "verb": "examine",
+            "pattern": "cupboard door",
+            "preconditions": [],
+            "effects": [],
+            "failure_message": "",
+        }
+    ]
+
+    _normalize_command_aliases(commands, {"locks": [], "items": []})
+
+    assert commands[0]["failure_message"] == (
+        "You don't notice anything unusual about cupboard door."
+    )
+
+
 def test_normalize_command_aliases_converts_toggle_precondition_alias() -> None:
     commands = [
         {
@@ -99,6 +178,88 @@ def test_normalize_command_aliases_converts_toggle_precondition_alias() -> None:
     _normalize_command_aliases(commands, {"locks": [], "items": []})
 
     assert commands[0]["preconditions"][0]["type"] == "toggle_state"
+
+
+def test_normalize_command_aliases_converts_portable_examine_to_item_accessible() -> None:
+    commands = [
+        {
+            "id": "examine_wallet_clue",
+            "verb": "examine",
+            "preconditions": [
+                {
+                    "type": "item_in_room",
+                    "item": "jaden_wallet",
+                    "room": "chico_master_bedroom",
+                }
+            ],
+            "effects": [],
+        }
+    ]
+
+    _normalize_command_aliases(
+        commands,
+        {
+            "locks": [],
+            "items": [{"id": "jaden_wallet", "is_takeable": 1}],
+        },
+    )
+
+    assert commands[0]["preconditions"][0] == {
+        "type": "item_accessible",
+        "item": "jaden_wallet",
+    }
+
+
+def test_normalize_command_aliases_converts_inventory_item_in_container_to_has_item() -> None:
+    commands = [
+        {
+            "id": "search_backpack_for_wallet",
+            "preconditions": [
+                {
+                    "type": "item_in_container",
+                    "item": "jaden_wallet",
+                    "container": "_inventory",
+                }
+            ],
+        }
+    ]
+
+    _normalize_command_aliases(commands, {"locks": [], "items": []})
+
+    assert commands[0]["preconditions"][0] == {
+        "type": "has_item",
+        "item": "jaden_wallet",
+    }
+
+
+def test_normalize_command_aliases_drops_unsupported_npc_move_item_effect() -> None:
+    commands = [
+        {
+            "id": "bang_frying_pan",
+            "verb": "bang",
+            "pattern": "bang frying pan",
+            "effects": [
+                {
+                    "type": "move_item",
+                    "item": "aunt_petunia",
+                    "from": "entrance_hall",
+                    "to": "kitchen",
+                },
+                {"type": "unlock", "lock": "upstairs_access"},
+            ],
+        }
+    ]
+
+    _normalize_command_aliases(
+        commands,
+        {
+            "locks": [],
+            "items": [],
+            "npcs": [{"id": "aunt_petunia"}],
+        },
+    )
+
+    assert commands[0]["effects"] == [{"type": "unlock", "lock": "upstairs_access"}]
 
 
 def test_normalize_command_aliases_converts_not_flag_effect_to_clear_flag() -> None:
@@ -190,6 +351,40 @@ def test_normalize_command_aliases_maps_move_item_from_container_to_take_effect(
     }
 
 
+def test_normalize_command_aliases_maps_move_item_from_container_to_room() -> None:
+    commands = [
+        {
+            "id": "pry_up_floorboard",
+            "effects": [
+                {
+                    "type": "move_item",
+                    "item": "rock_hut_key",
+                    "from": "loose_floorboard",
+                    "to": "old_lighthouse",
+                }
+            ],
+        }
+    ]
+
+    _normalize_command_aliases(
+        commands,
+        {
+            "locks": [],
+            "items": [{"id": "loose_floorboard", "is_container": 1}],
+        },
+    )
+
+    assert commands[0]["effects"] == [
+        {"type": "take_item_from_container", "item": "rock_hut_key"},
+        {
+            "type": "move_item",
+            "item": "rock_hut_key",
+            "from": "_inventory",
+            "to": "old_lighthouse",
+        },
+    ]
+
+
 def test_validate_commands_rejects_unknown_spawn_item_reference() -> None:
     errors = _validate_commands(
         commands=[
@@ -263,6 +458,47 @@ def test_validate_commands_rejects_unknown_has_item_reference() -> None:
     assert errors == [
         "Command use_key_on_ashworths_diary precondition has_item references "
         "unknown item 'tiny_diary_key'."
+    ]
+
+
+def test_validate_commands_rejects_inventory_not_item_in_container_reference() -> None:
+    errors = _validate_commands(
+        commands=[
+            {
+                "id": "search_keychain_for_note",
+                "verb": "search",
+                "pattern": "search keychain",
+                "preconditions": [
+                    {
+                        "type": "not_item_in_container",
+                        "item": "hidden_note",
+                        "container": "_inventory",
+                    }
+                ],
+                "effects": [],
+                "success_message": "You search the keychain.",
+                "failure_message": "You are not sure what to search.",
+                "priority": 5,
+                "one_shot": 0,
+            }
+        ],
+        flags=[],
+        context={
+            "rooms": [{"id": "drawing_room"}],
+            "items": [{"id": "hidden_note"}],
+            "npcs": [],
+            "locks": [],
+            "exits": [],
+            "puzzles": [],
+            "quests": [],
+            "flags": [],
+        },
+    )
+
+    assert errors == [
+        "Command search_keychain_for_note precondition not_item_in_container "
+        "cannot use inventory as a container; use has_item for possession or a "
+        "real container ID."
     ]
 
 

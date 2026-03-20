@@ -51,6 +51,11 @@ def _normalize_preset(data: dict[str, Any]) -> dict[str, Any]:
         if isinstance(val, str):
             fields[key] = val.strip()
 
+    for key in ("scale", "realism"):
+        val = fields.get(key)
+        if isinstance(val, str):
+            fields[key] = val.strip().lower()
+
     return fields
 
 

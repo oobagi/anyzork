@@ -67,6 +67,8 @@ class FieldDef:
             return text
         if self.key == "scale":
             return f"World size: {text}"
+        if self.key == "realism":
+            return None
         if self.key == "story":
             return f"Main quest: {text}"
         if self.key == "special_requests":
@@ -80,21 +82,26 @@ class FieldDef:
 # ---------------------------------------------------------------------------
 
 SCALE_OPTIONS = [
-    ("Small", "8-15 rooms, 1 region. A single building or ship. ~15 min."),
-    (
-        "Medium",
-        "16-30 rooms, 2-3 regions. Multiple wings or districts. ~45 min.",
-    ),
-    ("Large", "31-50 rooms, 4-6 regions. A sprawling world. ~90 min."),
+    ("Small", "3-5 rooms, 1 region. Tight and focused."),
+    ("Medium", "6-12 rooms, 1-2 regions. A solid adventure."),
+    ("Large", "13-25 rooms, 2-4 regions. A sprawling world."),
 ]
 
 SCALE_VALUES = ["small", "medium", "large"]
 
 SCALE_DETAIL = {
-    "small": "small (8-15 rooms, 1 region)",
-    "medium": "medium (16-30 rooms, 2-3 regions)",
-    "large": "large (31-50 rooms, 4-6 regions)",
+    "small": "small (3-5 rooms, 1 region)",
+    "medium": "medium (6-12 rooms, 1-2 regions)",
+    "large": "large (13-25 rooms, 2-4 regions)",
 }
+
+REALISM_OPTIONS = [
+    ("Low", "Simple mechanics. Items just work. No nested dependencies."),
+    ("Medium", "Grounded. Locks need keys, torches need lighting. 1-3 step puzzles."),
+    ("High", "Realistic. Guns need ammo, devices need fuel. Multi-step chains."),
+]
+
+REALISM_VALUES = ["low", "medium", "high"]
 
 # ---------------------------------------------------------------------------
 # Tone and genre options
@@ -247,9 +254,21 @@ FIELDS: list[FieldDef] = [
         prompt_label="World size",
     ),
     FieldDef(
+        key="realism",
+        label="Realism",
+        step=10,
+        required=False,
+        field_type=FieldType.SELECT,
+        ask_text="How grounded should the simulation feel?",
+        guidance="Choose the item-dynamics realism level. Default is medium.",
+        options=[],
+        default_display="medium",
+        prompt_label="Realism",
+    ),
+    FieldDef(
         key="special_requests",
         label="Special Requests",
-        step=10,
+        step=11,
         required=False,
         field_type=FieldType.MULTILINE,
         ask_text="Anything else the generator should know?",

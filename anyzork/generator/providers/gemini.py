@@ -46,6 +46,29 @@ def _extract_json(text: str) -> dict:
     )
 
 
+def _extract_response_text(response: object) -> str:
+    """Return concatenated candidate text, tolerating empty Gemini content."""
+    candidates = getattr(response, "candidates", None) or []
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        parts = getattr(content, "parts", None) or []
+        text = "".join(
+            part_text
+            for part in parts
+            if (part_text := getattr(part, "text", None))
+        )
+        if text:
+            return text
+
+    # ``response.text`` is a convenience property, but it may be absent or
+    # raise when Gemini returns only non-text candidates.
+    try:
+        fallback = getattr(response, "text", None)
+    except Exception:  # pragma: no cover - SDK-specific property behavior
+        return ""
+    return fallback or ""
+
+
 class GeminiProvider(BaseProvider):
     """LLM provider backed by Google's GenAI API."""
 
@@ -153,17 +176,12 @@ class GeminiProvider(BaseProvider):
                     config=config,
                 )
                 # Extract text — handle blocked/empty responses
-                text = ""
-                if response.candidates:
-                    parts = response.candidates[0].content.parts
-                    if parts:
-                        text = "".join(p.text for p in parts if p.text)
-                if not text and response.text:
-                    text = response.text
+                text = _extract_response_text(response)
                 # Check finish reason for truncation
                 finish_reason = None
-                if response.candidates:
-                    finish_reason = getattr(response.candidates[0], "finish_reason", None)
+                candidates = getattr(response, "candidates", None) or []
+                if candidates:
+                    finish_reason = getattr(candidates[0], "finish_reason", None)
 
                 if not text:
                     logger.warning(

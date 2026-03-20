@@ -392,16 +392,27 @@ def _build_prompt(context: dict) -> str:
     if lock_key_mapping:
         required_keys_lines = "\n## Required Key Items (from Locks pass)\n\n"
         required_keys_lines += (
-            "The following key items MUST be created with EXACTLY these IDs "
-            "and placed in the specified rooms.  These are non-negotiable — "
-            "the lock system depends on them.\n\n"
+            "The following key items MUST be created with EXACTLY these IDs. "
+            "You may place each key in any listed candidate room, and you may "
+            "hide it inside a container that you also generate in one of those "
+            "rooms. The final hiding spot should feel specific, authored, and "
+            "lore-appropriate.\n\n"
         )
         for lock_id, mapping in lock_key_mapping.items():
+            candidates = mapping.get("candidate_room_ids") or []
+            candidate_text = ", ".join(f"`{room_id}`" for room_id in candidates)
+            hiding_hint = mapping.get("key_hiding_spot_hint")
             required_keys_lines += (
                 f"- Lock `{lock_id}` requires key item "
-                f"`{mapping['key_item_id']}` placed in room "
-                f"`{mapping.get('key_location_room_id', 'TBD')}`\n"
+                f"`{mapping['key_item_id']}`.\n"
+                f"  - Preferred / fallback room: "
+                f"`{mapping.get('fallback_room_id', 'TBD')}`\n"
+                f"  - Valid candidate rooms: {candidate_text or '`TBD`'}\n"
             )
+            if hiding_hint:
+                required_keys_lines += (
+                    f"  - Hiding spot vibe: {hiding_hint}\n"
+                )
         required_keys_lines += "\n"
 
     return f"""\
@@ -864,28 +875,56 @@ def _validate_items(items: list[dict], context: dict) -> list[str]:
 
 
 def _enforce_lock_key_placements(items: list[dict], context: dict) -> None:
-    """Pin mandatory lock keys to the rooms chosen by the Locks pass.
+    """Keep mandatory lock keys within the valid placement sandbox.
 
-    The Locks pass already computes a solvable key location for every key-type
-    lock. If the provider drifts and places that key elsewhere, prefer the
-    earlier deterministic choice instead of saving an impossible world.
+    The Locks pass computes a solvable set of candidate rooms for every
+    key-type lock. If the provider chooses a flavorful hiding spot within
+    that sandbox, keep it. If it drifts outside the sandbox, fall back to the
+    deterministic room choice and clear container placement.
     """
     lock_key_mapping = context.get("lock_key_mapping", {})
     items_by_id = {item.get("id"): item for item in items}
 
     for mapping in lock_key_mapping.values():
         key_item_id = mapping.get("key_item_id")
-        key_room_id = mapping.get("key_location_room_id")
-        if not key_item_id or not key_room_id:
+        candidate_room_ids = set(mapping.get("candidate_room_ids") or [])
+        fallback_room_id = mapping.get("fallback_room_id") or mapping.get(
+            "key_location_room_id"
+        )
+        if not key_item_id or not fallback_room_id:
             continue
 
         item = items_by_id.get(key_item_id)
         if item is None:
             continue
 
-        item["room_id"] = key_room_id
-        item["home_room_id"] = key_room_id
+        effective_room = _effective_item_room(item, items_by_id)
+        if effective_room and (
+            (candidate_room_ids and effective_room in candidate_room_ids)
+            or (not candidate_room_ids and effective_room == fallback_room_id)
+        ):
+            continue
+
+        item["room_id"] = fallback_room_id
+        item["home_room_id"] = fallback_room_id
         item["container_id"] = None
+
+
+def _effective_item_room(item: dict, items_by_id: dict[str | None, dict]) -> str | None:
+    """Return the room an item effectively occupies, following one container hop."""
+    room_id = item.get("room_id")
+    if room_id:
+        return room_id
+
+    container_id = item.get("container_id")
+    if not container_id:
+        return None
+
+    container = items_by_id.get(container_id)
+    if not container:
+        return None
+
+    return container.get("room_id") or container.get("home_room_id")
 
 
 def _default_item_phrase(item: dict) -> str:

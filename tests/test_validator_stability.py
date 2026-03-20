@@ -208,7 +208,11 @@ def test_validate_game_reports_unreachable_lock_key(game_db: GameDB) -> None:
     messages = _messages(errors)
 
     assert any(err.category == "lock" for err in errors)
-    assert any("vault_key" in msg and "not reachable" in msg for msg in messages)
+    assert any(
+        "vault_key" in msg and "before its lock in any valid unlock order" in msg
+        for msg in messages
+    )
+    assert any("No valid unlock order exists for key locks" in msg for msg in messages)
 
 
 def test_validate_game_reports_invalid_discover_quest_target(game_db: GameDB) -> None:
@@ -236,6 +240,41 @@ def test_validate_game_reports_invalid_discover_quest_target(game_db: GameDB) ->
     assert any(
         "discover_quest" in msg and "missing_quest" in msg for msg in messages
     )
+
+
+def test_validate_game_reports_inventory_not_item_in_container_use(
+    game_db: GameDB,
+) -> None:
+    game_db.insert_command(
+        id="search_keychain_for_note",
+        verb="search",
+        pattern="search keychain",
+        preconditions=json.dumps(
+            [
+                {
+                    "type": "not_item_in_container",
+                    "item": "vault_key",
+                    "container": "_inventory",
+                }
+            ]
+        ),
+        effects='[{"type": "print", "message": "You search the keychain."}]',
+        success_message="",
+        failure_message="You are not sure what to search.",
+        context_room_ids=None,
+        puzzle_id=None,
+        priority=0,
+        is_enabled=1,
+        one_shot=0,
+        executed=0,
+        done_message="",
+    )
+
+    errors = validate_game(game_db)
+    messages = _messages(errors)
+
+    assert any(err.category == "command" for err in errors)
+    assert any("not_item_in_container" in msg and "inventory" in msg for msg in messages)
 
 
 def test_validate_game_reports_missing_quest_flags(game_db: GameDB) -> None:

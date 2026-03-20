@@ -14,7 +14,14 @@ from rich.panel import Panel
 from rich.text import Text
 
 from anyzork.wizard.assembler import assemble_prompt
-from anyzork.wizard.fields import FIELDS, SCALE_OPTIONS, SCALE_VALUES, FieldType
+from anyzork.wizard.fields import (
+    FIELDS,
+    REALISM_OPTIONS,
+    REALISM_VALUES,
+    SCALE_OPTIONS,
+    SCALE_VALUES,
+    FieldType,
+)
 
 
 def _read_multiline(console: Console, prompt_str: str = " > ") -> str | None:
@@ -68,22 +75,22 @@ def _prompt_field(console: Console, field_def, current_value: Any = None) -> Any
     # Step header
     console.print()
     header = Text()
-    header.append(f" Step {field_def.step} of {total}", style="bold cyan")
-    header.append(f" -- {field_def.label}", style="bold")
-    header.append(f" ({required_str})", style="dim")
+    header.append(f" Step {field_def.step}/{total}", style="bold cyan")
+    header.append(f"  {field_def.label}", style="bold")
+    if not field_def.required:
+        header.append("  (optional)", style="italic")
     console.print(header)
-    console.print()
 
     # Ask text and guidance
-    console.print(f" {field_def.ask_text}", style="bold")
-    console.print(f" [dim]{field_def.guidance}[/dim]")
+    console.print(f" {field_def.ask_text}")
+    console.print(f" [italic]{field_def.guidance}[/italic]")
 
     # Show current value if editing
     if current_value is not None:
         if isinstance(current_value, list):
-            console.print(f" [dim]Current: {', '.join(str(v) for v in current_value)}[/dim]")
+            console.print(f" [cyan]Current: {', '.join(str(v) for v in current_value)}[/cyan]")
         else:
-            console.print(f" [dim]Current: {current_value}[/dim]")
+            console.print(f" [cyan]Current: {current_value}[/cyan]")
     console.print()
 
     # Collect input based on field type
@@ -109,11 +116,10 @@ def _prompt_field(console: Console, field_def, current_value: Any = None) -> Any
 
 
 def _prompt_select(console: Console, field_def) -> str | None:
-    """Handle a single-select field (tone or world size)."""
+    """Handle a single-select field."""
     if field_def.key == "scale":
-        # World size has special formatting with descriptions.
         for i, (label, desc) in enumerate(SCALE_OPTIONS, 1):
-            console.print(f"  [cyan][{i}][/cyan] {label:10s} {desc}", style="dim")
+            console.print(f"  [cyan][{i}][/cyan] [bold]{label:10s}[/bold] {desc}")
         console.print()
         try:
             raw = console.input(" > ").strip()
@@ -129,6 +135,26 @@ def _prompt_select(console: Console, field_def) -> str | None:
             pass
         # Accept raw text like "small", "medium", "large"
         if raw.lower() in SCALE_VALUES:
+            return raw.lower()
+        return None
+
+    if field_def.key == "realism":
+        for i, (label, desc) in enumerate(REALISM_OPTIONS, 1):
+            console.print(f"  [cyan][{i}][/cyan] [bold]{label:10s}[/bold] {desc}")
+        console.print()
+        try:
+            raw = console.input(" > ").strip()
+        except EOFError:
+            return None
+        if not raw:
+            return None
+        try:
+            idx = int(raw) - 1
+            if 0 <= idx < len(REALISM_VALUES):
+                return REALISM_VALUES[idx]
+        except ValueError:
+            pass
+        if raw.lower() in REALISM_VALUES:
             return raw.lower()
         return None
 
@@ -213,9 +239,9 @@ def _show_welcome(console: Console) -> None:
     """Display the wizard welcome panel."""
     welcome = Text()
     welcome.append("Build your text adventure step by step.\n", style="bold")
-    welcome.append("Fill in what inspires you, skip what doesn't. ")
-    welcome.append("Only the first field is required.\n", style="dim")
-    welcome.append("Tip: Press Enter on an empty line to skip optional fields.", style="dim italic")
+    welcome.append("Fill in what inspires you, skip what doesn't.\n")
+    welcome.append("Only the first field is required.\n")
+    welcome.append("Tip: Press Enter to skip optional fields.", style="italic")
 
     panel = Panel(
         welcome,
@@ -232,7 +258,7 @@ def run_wizard(
     console: Console,
     initial_prompt: str | None = None,
     preset: dict[str, Any] | None = None,
-) -> str | None:
+) -> tuple[str, str, dict[str, Any]] | None:
     """Run the interactive prompt builder wizard.
 
     Args:
@@ -241,7 +267,7 @@ def run_wizard(
         preset: If provided, pre-fills fields from a preset dict.
 
     Returns:
-        The assembled prompt string, or None if the user quit.
+        A tuple of ``(prompt, realism, field_values)`` or ``None`` if the user quit.
     """
     # Initialize field values from preset or defaults.
     values: dict[str, Any] = {}
@@ -310,7 +336,8 @@ def run_wizard(
                 return None
 
             if choice in ("g", "generate"):
-                return assemble_prompt(values)
+                realism = values.get("realism", "medium")
+                return assemble_prompt(values), realism, dict(values)
 
             if choice in ("q", "quit"):
                 console.print("\n [yellow]Generation cancelled.[/yellow]")
@@ -328,7 +355,9 @@ def run_wizard(
             if choice in ("e", "edit"):
                 console.print()
                 try:
-                    field_num = console.input(" Which field to edit? (1-10): ").strip()
+                    field_num = console.input(
+                        f" Which field to edit? (1-{len(FIELDS)}): "
+                    ).strip()
                 except EOFError:
                     continue
                 try:
@@ -345,7 +374,9 @@ def run_wizard(
                     else:
                         console.print(" [red]Invalid field number.[/red]")
                 except ValueError:
-                    console.print(" [red]Please enter a number between 1 and 10.[/red]")
+                    console.print(
+                        f" [red]Please enter a number between 1 and {len(FIELDS)}.[/red]"
+                    )
                 continue  # Show preview again
 
             console.print(" [red]Invalid choice. Use G, E, R, or Q.[/red]")

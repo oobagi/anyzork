@@ -184,6 +184,7 @@ def generate_game(
         author="AnyZork",
         prompt=prompt,
         seed=str(seed),
+        is_template=True,
     )
 
     # --- Multi-pass generation ---

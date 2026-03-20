@@ -34,11 +34,13 @@ class CommandResult:
         messages: Ordered list of text messages to display to the player.
         effects_applied: List of effect type strings that were executed
             (e.g. ``["remove_item", "unlock", "print"]``).
+        command_id: The id of the matched DSL command, if any.
     """
 
     success: bool
     messages: list[str] = field(default_factory=list)
     effects_applied: list[str] = field(default_factory=list)
+    command_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -179,6 +181,42 @@ def _count_slots(pattern: str) -> int:
     return len(re.findall(r"\{(\w+)\}", pattern))
 
 
+def _item_is_accessible(item_id: str, db: GameDB, current_room: str) -> bool:
+    """Return True when an item can be interacted with from the current state.
+
+    Accessible items are:
+    - visible loose items in the current room
+    - visible inventory items
+    - visible items inside accessible open containers in the current room
+    - visible items inside accessible open containers in inventory
+    """
+    item = db.get_item(item_id)
+    if item is None or not item["is_visible"]:
+        return False
+
+    if item["container_id"] is None:
+        return item["room_id"] in {None, current_room}
+
+    current = item
+    visited: set[str] = set()
+    while current["container_id"] is not None:
+        container_id = current["container_id"]
+        if container_id in visited:
+            return False
+        visited.add(container_id)
+
+        container = db.get_item(container_id)
+        if container is None or not container["is_visible"]:
+            return False
+        if container["is_locked"]:
+            return False
+        if not container["is_open"] and container["has_lid"]:
+            return False
+        current = container
+
+    return current["room_id"] in {None, current_room}
+
+
 # ---------------------------------------------------------------------------
 # Precondition evaluation
 # ---------------------------------------------------------------------------
@@ -188,8 +226,9 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
 
     Supports all precondition types from the DSL spec:
     ``in_room``, ``has_item``, ``has_flag``, ``not_flag``, ``item_in_room``,
-    ``npc_in_room``, ``lock_unlocked``, ``puzzle_solved``, ``health_above``,
-    ``container_open``, ``item_in_container``, ``not_item_in_container``,
+    ``item_accessible``, ``npc_in_room``, ``lock_unlocked``,
+    ``puzzle_solved``, ``health_above``, ``container_open``,
+    ``item_in_container``, ``not_item_in_container``,
     ``container_has_contents``, ``container_empty``, ``has_quantity``,
     ``toggle_state``.
 
@@ -235,6 +274,11 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
             room = current_room
         item = db.get_item(item_id)
         return item is not None and item["room_id"] == room
+
+    if cond_type == "item_accessible":
+        item_ref = _substitute_slots(condition["item"], slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        return _item_is_accessible(item_id, db, current_room)
 
     if cond_type == "npc_in_room":
         npc_ref = _substitute_slots(condition["npc"], slots)
@@ -512,6 +556,62 @@ def apply_effect(
         new_state = _substitute_slots(effect["state"], slots)
         db.toggle_item_state(item_id, new_state)
 
+    # -- Visibility / NPC movement effects ------------------------------------
+
+    elif effect_type == "make_visible":
+        item_ref = _substitute_slots(effect.get("item", ""), slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        db._mutate("UPDATE items SET is_visible = 1 WHERE id = ?", (item_id,))
+
+    elif effect_type == "make_hidden":
+        item_ref = _substitute_slots(effect.get("item", ""), slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        db._mutate("UPDATE items SET is_visible = 0 WHERE id = ?", (item_id,))
+
+    elif effect_type == "make_takeable":
+        item_ref = _substitute_slots(effect.get("item", ""), slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        db._mutate("UPDATE items SET is_takeable = 1 WHERE id = ?", (item_id,))
+
+    elif effect_type == "move_npc":
+        npc_ref = _substitute_slots(effect.get("npc", ""), slots)
+        room_ref = _substitute_slots(effect.get("room", ""), slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        db.move_npc(npc_id, room_ref)
+
+    # -- Target-aware effects (interaction response context only) -----------
+    # These read _target_id / _target_type from resolved_slots, which are
+    # injected by _handle_interaction in game.py.  When called outside that
+    # context (no _target_id), they silently no-op.
+
+    elif effect_type == "kill_target":
+        target_id = slots.get("_target_id")
+        if target_id:
+            db.kill_npc(target_id)
+
+    elif effect_type == "damage_target":
+        target_id = slots.get("_target_id")
+        amount = int(effect.get("amount", 10))
+        if target_id:
+            db.damage_npc(target_id, amount)
+
+    elif effect_type == "destroy_target":
+        target_id = slots.get("_target_id")
+        target_type = slots.get("_target_type")
+        if target_id and target_type == "item":
+            # Scatter container contents into the current room first.
+            contents = db.get_container_contents(target_id)
+            if contents and current_room:
+                for contained in contents:
+                    db.move_item(contained["id"], "room", current_room)
+            db.remove_item(target_id)
+
+    elif effect_type == "open_target":
+        target_id = slots.get("_target_id")
+        target_type = slots.get("_target_type")
+        if target_id and target_type == "item":
+            db.open_container(target_id)
+
     else:
         logger.warning("Unknown effect type: %s", effect_type)
 
@@ -576,8 +676,10 @@ def resolve_command(
 
     # Track the best failure message from a matching-but-failing command
     best_fail_message: str | None = None
+    best_fail_command_id: str = ""
     # Track done_message from an already-executed one-shot (fallback, not immediate return)
     best_done_message: str | None = None
+    best_done_command_id: str = ""
 
     for cmd in candidates:
         # Parse preconditions and effects from JSON strings
@@ -607,6 +709,7 @@ def resolve_command(
                 )
                 if preconds_pass:
                     best_done_message = done_msg
+                    best_done_command_id = cmd["id"]
             continue
 
         # Check all preconditions
@@ -620,12 +723,17 @@ def resolve_command(
             fail_msg = cmd.get("failure_message")
             if fail_msg:
                 best_fail_message = fail_msg
+                best_fail_command_id = cmd["id"]
             continue
 
-        # All preconditions passed — apply effects
+        # All preconditions passed — success message FIRST, then effects.
+        # This ensures the player reads the command's narrative before any
+        # triggered consequences (flag_set cascades, quest updates, etc.).
         all_messages: list[str] = []
-        applied: list[str] = []
+        if cmd.get("success_message"):
+            all_messages.append(_substitute_slots(cmd["success_message"], resolved_slots))
 
+        applied: list[str] = []
         for eff in effects:
             try:
                 msgs = apply_effect(
@@ -637,26 +745,21 @@ def resolve_command(
                 all_messages.extend(msgs)
             except Exception:
                 logger.exception("Effect failed: %s", eff)
-                # DSL spec: log warning but continue executing remaining effects
                 applied.append(eff["type"])
-
-        # Also include the command's success_message if present and non-empty
-        if cmd.get("success_message"):
-            all_messages.append(_substitute_slots(cmd["success_message"], resolved_slots))
 
         # Mark one-shot commands as executed
         if cmd["one_shot"]:
             db.mark_command_executed(cmd["id"])
 
-        return CommandResult(success=True, messages=all_messages, effects_applied=applied)
+        return CommandResult(success=True, messages=all_messages, effects_applied=applied, command_id=cmd["id"])
 
     # An already-executed one-shot matched — show its done_message as fallback
     if best_done_message:
-        return CommandResult(success=True, messages=[best_done_message])
+        return CommandResult(success=True, messages=[best_done_message], command_id=best_done_command_id)
 
     # No command's preconditions passed (but at least one pattern matched)
     if best_fail_message:
-        return CommandResult(success=False, messages=[best_fail_message])
+        return CommandResult(success=False, messages=[best_fail_message], command_id=best_fail_command_id)
 
     # No pattern matched at all
     return CommandResult(success=False, messages=["I don't understand that."])

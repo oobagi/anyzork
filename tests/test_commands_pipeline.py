@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import time
 from pathlib import Path
 
 import pytest
@@ -29,6 +31,41 @@ class RecordingTwoStageProvider(BaseProvider):
                 raise AssertionError("No command response left for COMMANDS_SCHEMA")
             return self.command_responses.pop(0)
         raise AssertionError("Unexpected schema requested")
+
+    def generate_text(self, prompt: str, context=None) -> str:
+        raise NotImplementedError
+
+    def validate_config(self) -> None:
+        return None
+
+
+class SlowCompileProvider(BaseProvider):
+    def __init__(self, *, sleep_seconds: float) -> None:
+        self.sleep_seconds = sleep_seconds
+
+    def generate_structured(self, prompt: str, schema: dict, context=None) -> dict:
+        if schema is commands.COMMAND_INTENTS_SCHEMA:
+            return {
+                "intents": [
+                    {
+                        "id": "examine_hidden_bookshelf",
+                        "verb": "examine",
+                        "pattern": "examine bookshelf",
+                        "purpose": "Reveal the hidden shelf mechanism.",
+                        "trigger_conditions": ["Player is in the library."],
+                        "outcome_steps": ["Show the hidden passage clue."],
+                        "success_message": "A seam in the shelf catches your eye.",
+                        "failure_message": "Nothing unusual stands out.",
+                        "priority": 10,
+                        "one_shot": 0,
+                        "context_room_ids": ["library"],
+                        "done_message": "",
+                    }
+                ]
+            }
+
+        time.sleep(self.sleep_seconds)
+        return {"commands": [], "flags": []}
 
     def generate_text(self, prompt: str, context=None) -> str:
         raise NotImplementedError
@@ -97,20 +134,27 @@ def test_run_pass_caches_generated_intents_after_failed_compile(tmp_path: Path) 
     provider = RecordingTwoStageProvider(
         intents_response=intents_response,
         command_responses=[
-            {
-                "commands": [
-                    {
-                        "id": "broken_examine_override",
-                        "verb": "examine",
-                        "pattern": "examine bookshelf",
-                        "preconditions": [],
-                        "effects": [],
-                        "success_message": "A seam appears.",
-                        "priority": 10,
-                        "one_shot": 0,
-                    }
-                ],
-                "flags": [],
+                {
+                    "commands": [
+                        {
+                            "id": "assemble_will_fragments",
+                            "verb": "assemble",
+                            "pattern": "assemble will fragments",
+                            "preconditions": [],
+                            "effects": [
+                                {
+                                    "type": "spawn_item",
+                                    "item": "reconstructed_will",
+                                    "location": "_inventory",
+                                }
+                            ],
+                            "success_message": "A seam appears.",
+                            "failure_message": "You are still missing pieces.",
+                            "priority": 10,
+                            "one_shot": 0,
+                        }
+                    ],
+                    "flags": [],
             }
         ],
     )
@@ -151,19 +195,26 @@ def test_second_run_reuses_cached_intents_without_regenerating_them(
     provider = RecordingTwoStageProvider(
         intents_response=intents_response,
         command_responses=[
-            {
-                "commands": [
-                    {
-                        "id": "broken_examine_override",
-                        "verb": "examine",
-                        "pattern": "examine bookshelf",
-                        "preconditions": [],
-                        "effects": [],
-                        "success_message": "A seam appears.",
-                        "priority": 10,
-                        "one_shot": 0,
-                    }
-                ],
+                {
+                    "commands": [
+                        {
+                            "id": "assemble_will_fragments",
+                            "verb": "assemble",
+                            "pattern": "assemble will fragments",
+                            "preconditions": [],
+                            "effects": [
+                                {
+                                    "type": "spawn_item",
+                                    "item": "reconstructed_will",
+                                    "location": "_inventory",
+                                }
+                            ],
+                            "success_message": "A seam appears.",
+                            "failure_message": "You are still missing pieces.",
+                            "priority": 10,
+                            "one_shot": 0,
+                        }
+                    ],
                 "flags": [],
             },
             {
@@ -194,3 +245,25 @@ def test_second_run_reuses_cached_intents_without_regenerating_them(
 
     assert provider.schema_calls.count(commands.COMMAND_INTENTS_SCHEMA) == 1
     assert context.get("_command_intents") == intents_response["intents"]
+
+
+def test_run_pass_times_out_compile_stage_and_persists_debug_artifact(
+    tmp_path: Path,
+) -> None:
+    db = _make_db(tmp_path)
+    context = _make_context()
+    context["_command_debug_dir"] = tmp_path
+    context["_command_stage_timeouts"] = {"compile": 0.01}
+    provider = SlowCompileProvider(sleep_seconds=0.1)
+
+    with pytest.raises(TimeoutError, match="Debug artifact written to"):
+        commands.run_pass(db, provider, context)
+
+    artifacts = list(tmp_path.glob("*-compile-*.json"))
+    assert len(artifacts) == 1
+
+    payload = json.loads(artifacts[0].read_text(encoding="utf-8"))
+    assert payload["stage"] == "compile"
+    assert payload["timeout_seconds"] == 0.01
+    assert len(payload["intents"]) == 1
+    assert "Compile these intents into valid AnyZork DSL rules" in payload["prompt"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import shutil
 from pathlib import Path
 
@@ -110,8 +111,101 @@ def test_room_display_weaves_fallback_items_and_npcs_into_body(
 
     assert "You see:" not in output
     assert "Present:" not in output
-    assert "You notice brass key here." in output
-    assert "Curator Rowan is here." in output
+    assert "Nearby, the brass key catches the eye." in output
+    assert "Nearby, Curator Rowan lingers." in output
+
+
+def test_help_summarizes_special_verbs_without_spoiling_raw_patterns(
+    game_db: GameDB, engine: GameEngine
+) -> None:
+    game_db.insert_command(
+        id="test_realize_help",
+        verb="realize",
+        pattern="realize Jaden left",
+        preconditions="[]",
+        effects="[]",
+        success_message="",
+        failure_message="",
+        is_enabled=1,
+    )
+    game_db.insert_command(
+        id="test_enter_help",
+        verb="enter",
+        pattern="enter code 7394",
+        preconditions="[]",
+        effects="[]",
+        success_message="",
+        failure_message="",
+        context_room_id="entrance_hall",
+        is_enabled=1,
+    )
+    game_db.insert_command(
+        id="test_accuse_other_room",
+        verb="accuse",
+        pattern="accuse Curator Rowan",
+        preconditions="[]",
+        effects="[]",
+        success_message="",
+        failure_message="",
+        context_room_id="observatory",
+        is_enabled=1,
+    )
+
+    lines = engine._get_dsl_help_lines()
+
+    assert "Special story actions unlock through clues" in lines
+    assert "realize {conclusion}" in lines
+    assert "enter code {code}" in lines
+    assert "Jaden left" not in lines
+    assert "7394" not in lines
+    assert "accuse {suspect}" not in lines
+
+
+def test_show_help_lists_help_alias(engine: GameEngine) -> None:
+    engine.show_help()
+
+    output = _output(engine)
+
+    assert "help (h)" in output
+    assert "quit / exit / q" in output
+
+
+def test_main_loop_accepts_help_alias(game_db: GameDB, engine: GameEngine) -> None:
+    inputs = iter(["h", "q"])
+    engine.console.input = lambda *_args, **_kwargs: next(inputs)  # type: ignore[assignment]
+
+    engine.main_loop()
+
+    output = _output(engine)
+
+    assert "Built-in commands" in output
+    assert "I don't understand that" not in output
+
+
+def test_scene_prose_skips_entities_already_mentioned() -> None:
+    prose = GameEngine._build_scene_prose(
+        (
+            "A stern ancestral portrait hangs over the mantel while "
+            "Mr. Finch waits nearby."
+        ),
+        [{"name": "stern ancestral portrait"}],
+        [{"name": "Mr. Finch"}],
+    )
+
+    assert prose == ""
+
+
+def test_scene_prose_skips_items_already_covered_by_room_nouns() -> None:
+    prose = GameEngine._build_scene_prose(
+        (
+            "A pile of post sits on the doormat. Among the letters, one stands "
+            "out in emerald-green ink."
+        ),
+        [{"name": "Dursley Post"}, {"name": "Hogwarts Letter"}],
+        [],
+    )
+
+    assert prose == ""
 
 
 def test_toggle_state_precondition_tracks_item_state(game_db: GameDB) -> None:
@@ -126,6 +220,22 @@ def test_toggle_state_precondition_tracks_item_state(game_db: GameDB) -> None:
 
     assert check_precondition(
         {"type": "toggle_state", "item": "field_lantern", "state": "on"},
+        game_db,
+    ) is True
+
+
+def test_item_accessible_precondition_allows_room_and_inventory_items(
+    game_db: GameDB,
+) -> None:
+    assert check_precondition(
+        {"type": "item_accessible", "item": "brass_key"},
+        game_db,
+    ) is True
+
+    game_db.move_item("brass_key", "inventory", "")
+
+    assert check_precondition(
+        {"type": "item_accessible", "item": "brass_key"},
         game_db,
     ) is True
 
@@ -241,3 +351,63 @@ def test_install_command_unlocks_observatory_and_completes_main_quest(
         ("quest:restore_archive",),
     )
     assert score_count == {"count": 1}
+
+
+def test_resolve_command_treats_empty_context_array_as_global(game_db: GameDB) -> None:
+    game_db.insert_command(
+        id="global_empty_scope",
+        verb="read",
+        pattern="read bulletin",
+        preconditions="[]",
+        effects="[]",
+        success_message="You read the bulletin.",
+        failure_message="",
+        context_room_ids=json.dumps([]),
+        is_enabled=1,
+    )
+
+    result = resolve_command("read bulletin", game_db, current_room_id="entrance_hall")
+
+    assert result.success is True
+    assert result.messages == ["You read the bulletin."]
+
+
+def test_resolve_command_treats_null_context_as_global(game_db: GameDB) -> None:
+    game_db.insert_command(
+        id="global_null_scope",
+        verb="read",
+        pattern="read placard",
+        preconditions="[]",
+        effects="[]",
+        success_message="You read the placard.",
+        failure_message="",
+        context_room_ids=None,
+        is_enabled=1,
+    )
+
+    result = resolve_command("read placard", game_db, current_room_id="entrance_hall")
+
+    assert result.success is True
+    assert result.messages == ["You read the placard."]
+
+
+def test_resolve_command_respects_non_empty_room_scope(game_db: GameDB) -> None:
+    game_db.insert_command(
+        id="scoped_only_observatory",
+        verb="read",
+        pattern="read chart",
+        preconditions="[]",
+        effects="[]",
+        success_message="You read the star chart.",
+        failure_message="",
+        context_room_ids=json.dumps(["observatory"]),
+        is_enabled=1,
+    )
+
+    wrong_room = resolve_command("read chart", game_db, current_room_id="entrance_hall")
+    right_room = resolve_command("read chart", game_db, current_room_id="observatory")
+
+    assert wrong_room.success is False
+    assert wrong_room.messages == ["I don't understand that."]
+    assert right_room.success is True
+    assert right_room.messages == ["You read the star chart."]
