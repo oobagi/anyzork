@@ -17,6 +17,14 @@ AnyZork ships a simple authoring-to-runtime loop:
 
 No LLM is required at runtime unless the player explicitly enables narrator mode.
 
+## Versioning Rules
+
+- `app_version` is the packaged AnyZork release version. It is sourced from installed package metadata via `anyzork/versioning.py`. Bump the package version when you intentionally ship a new AnyZork release.
+- `runtime_compat_version` is the deterministic engine/save compatibility contract. Bump it only when runtime behavior or the `.zork` metadata/save contract changes in a backward-incompatible way.
+- `prompt_system_version` fingerprints the shipped authoring system in `anyzork/importer.py`. It changes automatically when prompt-generation files change, so agents do not need to bump it by hand.
+- Prompt or wizard changes should not bump `runtime_compat_version` unless they also change what the runtime expects from compiled games.
+- Do not hardcode app version strings in multiple places. Keep version reads centralized through `anyzork/versioning.py`.
+
 ## Core Docs
 
 | Doc | Path | Purpose |
