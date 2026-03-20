@@ -5,6 +5,8 @@ from pathlib import Path
 from click.testing import CliRunner
 
 from anyzork.cli import cli
+from anyzork.importer import current_prompt_system_version
+from anyzork.versioning import APP_VERSION, RUNTIME_COMPAT_VERSION
 
 
 def test_cli_generate_prints_zorkscript_prompt() -> None:
@@ -40,3 +42,14 @@ def test_cli_generate_writes_prompt_to_file(tmp_path: Path) -> None:
     assert "A family thriller across two houses." in content
     assert "Realism: high" in content
     assert "ZorkScript" in content
+
+
+def test_cli_version_includes_app_runtime_and_prompt_versions() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(cli, ["--version"])
+
+    assert result.exit_code == 0, result.output
+    assert APP_VERSION in result.output
+    assert RUNTIME_COMPAT_VERSION in result.output
+    assert current_prompt_system_version() in result.output

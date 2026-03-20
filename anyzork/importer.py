@@ -13,6 +13,8 @@ import json
 import re
 import sys
 from copy import deepcopy
+from functools import lru_cache
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,29 @@ PUBLIC_INTERACTION_TYPES = (
     "search_container",
     "travel_action",
 )
+
+_PROMPT_SYSTEM_FILES: tuple[Path, ...] = (
+    Path(__file__),
+    Path(__file__).with_name("zorkscript.py"),
+    Path(__file__).parent / "wizard" / "assembler.py",
+    Path(__file__).parent / "wizard" / "fields.py",
+    Path(__file__).parent / "wizard" / "presets.py",
+    Path(__file__).parent / "wizard" / "wizard.py",
+)
+
+
+@lru_cache(maxsize=1)
+def current_prompt_system_version() -> str:
+    """Return a short fingerprint for the shipped prompt-generation system."""
+    digest = sha256()
+    for path in _PROMPT_SYSTEM_FILES:
+        digest.update(path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return f"ps-{digest.hexdigest()[:12]}"
+
+
 ZORKSCRIPT_AUTHORING_TEMPLATE = """\
 You are authoring a complete, playable text adventure in ZorkScript format.
 Output ONLY valid ZorkScript. No markdown, no commentary, no prose outside
@@ -722,7 +747,16 @@ def _build_quality_requirements(realism: str, fields: dict[str, Any]) -> str:
     lines.append("- Room descriptions: 2-4 vivid sentences with sensory detail.")
     lines.append("- Short descriptions: 1 compact sentence.")
     lines.append("- First-visit text: a fresh reaction, not repeated from description.")
+    lines.append(
+        "- Do NOT mention takeable items directly in base room descriptions if room_desc/drop_desc already cover them."
+    )
+    lines.append(
+        "  Keep movable-item prose in room_desc/drop_desc so the engine does not duplicate it."
+    )
     lines.append("- Use each item's exact name in room prose so it highlights in-game.")
+    lines.append(
+        "- Never include a custom command unless it changes state or prints a visible result on success."
+    )
     lines.append("- Starting room offers an obvious first action within 1-2 commands.")
     lines.append("- Win condition must be reachable. No dead ends or softlocks.")
 
@@ -847,6 +881,7 @@ def _initialize_metadata(db: GameDB, spec: dict[str, Any]) -> None:
         game_name=str(game.get("title", "Imported AnyZork Game")),
         author=str(game.get("author", "Imported")),
         prompt=str(game.get("author_prompt") or game.get("prompt") or "Imported AnyZork spec"),
+        prompt_system_version=current_prompt_system_version(),
         seed=str(game["seed"]) if game.get("seed") is not None else None,
         intro_text=str(game.get("intro_text", "")),
         win_text=str(game.get("win_text", "")),

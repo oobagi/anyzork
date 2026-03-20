@@ -18,8 +18,14 @@ from anyzork import __version__
 from anyzork.config import (
     Config,
 )
+from anyzork.importer import current_prompt_system_version
+from anyzork.versioning import RUNTIME_COMPAT_VERSION
 
 console = Console()
+CLI_VERSION = (
+    f"{__version__} "
+    f"(runtime {RUNTIME_COMPAT_VERSION}, prompt {current_prompt_system_version()})"
+)
 T = TypeVar("T")
 
 if TYPE_CHECKING:
@@ -27,7 +33,7 @@ if TYPE_CHECKING:
 
 
 @click.group()
-@click.version_option(version=__version__, prog_name="anyzork")
+@click.version_option(version=CLI_VERSION, prog_name="anyzork")
 def cli() -> None:
     """AnyZork -- AI-powered text adventure generator."""
 
@@ -197,6 +203,18 @@ def _format_save_last_played(path: Path) -> str:
 def _sorted_save_files(save_dir: Path) -> list[Path]:
     """Return save files sorted by descending last-played timestamp."""
     return sorted(save_dir.glob("*.zork"), key=_save_last_played_timestamp, reverse=True)
+
+
+def _format_metadata_versions(meta: dict | None) -> str:
+    """Format runtime and prompt-system versions for library/save displays."""
+    if not meta:
+        return "?"
+
+    runtime_version = str(meta.get("version") or "?")
+    prompt_version = meta.get("prompt_system_version")
+    if prompt_version:
+        return f"{runtime_version} / {prompt_version}"
+    return runtime_version
 
 
 def _resolve_game_reference(game_ref: str, cfg: Config) -> Path:
@@ -513,8 +531,6 @@ def list_games() -> None:
     from rich.table import Table
 
     cfg = Config()
-    from anyzork import __version__ as engine_version
-
     library_files = sorted(cfg.games_dir.glob("*.zork")) if cfg.games_dir.exists() else []
     save_files = sorted(cfg.saves_dir.glob("*/*.zork")) if cfg.saves_dir.exists() else []
 
@@ -538,12 +554,13 @@ def list_games() -> None:
         for zork_file in library_files:
             meta = _read_zork_metadata(zork_file)
             title = meta.get("title", "Untitled") if meta else "(error reading file)"
-            save_ver = meta.get("version", "?") if meta else "?"
+            save_ver = str(meta.get("version", "?")) if meta else "?"
             game_id = meta.get("game_id") if meta else None
-            if save_ver != engine_version:
-                version_str = f"[yellow]v{save_ver}[/yellow]"
+            version_label = _format_metadata_versions(meta)
+            if save_ver != RUNTIME_COMPAT_VERSION:
+                version_str = f"[yellow]{version_label}[/yellow]"
             else:
-                version_str = f"v{save_ver}"
+                version_str = version_label
 
             slot_files = []
             if game_id:

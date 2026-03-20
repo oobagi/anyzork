@@ -12,7 +12,9 @@ from anyzork.importer import (
     ImportSpecError,
     build_zorkscript_prompt,
     compile_import_spec,
+    current_prompt_system_version,
 )
+from anyzork.versioning import APP_VERSION, RUNTIME_COMPAT_VERSION
 
 
 def _base_import_spec() -> dict:
@@ -169,6 +171,11 @@ def test_compile_import_spec_generates_missing_quest_flags(tmp_path: Path) -> No
 
     db = GameDB(compiled_path)
     try:
+        meta = db.get_all_meta() or {}
+        assert meta["version"] == RUNTIME_COMPAT_VERSION
+        assert meta["app_version"] == APP_VERSION
+        assert meta["prompt_system_version"] == current_prompt_system_version()
+
         quest = db.get_quest("main")
         assert quest is not None
         assert quest["completion_flag"] == "main_complete"

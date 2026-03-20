@@ -19,6 +19,7 @@ Usage::
 from __future__ import annotations
 
 import json
+import re
 from collections import deque
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -546,7 +547,9 @@ def _check_items(db: GameDB) -> list[ValidationError]:
     """Item consistency checks."""
     errors: list[ValidationError] = []
     items = _all_items(db)
-    room_set = _room_ids(db)
+    rooms = db.get_all_rooms()
+    room_set = {room["id"] for room in rooms}
+    room_map = {room["id"]: room for room in rooms}
 
     seen_ids: set[str] = set()
     item_map: dict[str, dict] = {}
@@ -571,6 +574,23 @@ def _check_items(db: GameDB) -> list[ValidationError]:
                     "error",
                     "item",
                     f"Item '{item['id']}' references non-existent room '{rid}'.",
+                )
+            )
+
+        if (
+            rid is not None
+            and item.get("is_takeable")
+            and item.get("is_visible")
+            and rid in room_map
+            and _room_text_mentions_name(room_map[rid], item["name"])
+        ):
+            errors.append(
+                ValidationError(
+                    "warning",
+                    "item",
+                    f"Item '{item['id']}' is already named in room '{rid}' prose. "
+                    "Takeable items should usually rely on room_description/drop_description "
+                    "to avoid duplicated room text.",
                 )
             )
 
@@ -1186,6 +1206,16 @@ def _check_commands(db: GameDB) -> list[ValidationError]:
                 )
             )
             effects = []
+
+        success_message = (cmd.get("success_message") or "").strip()
+        if not effects and not success_message:
+            errors.append(
+                ValidationError(
+                    "error",
+                    "command",
+                    f"{cmd_label} can succeed without producing any effect or visible message.",
+                )
+            )
         _validate_rule_effects(
             label=cmd_label,
             category="command",
@@ -1201,6 +1231,17 @@ def _check_commands(db: GameDB) -> list[ValidationError]:
         )
 
     return errors
+
+
+def _room_text_mentions_name(room: dict, name: str) -> bool:
+    """Return True when a room prose field already names a visible item."""
+    pattern = re.compile(re.escape(name), re.IGNORECASE)
+    texts = (
+        room.get("description") or "",
+        room.get("short_description") or "",
+        room.get("first_visit_text") or "",
+    )
+    return any(pattern.search(text) for text in texts)
 
 
 def _check_npcs(db: GameDB) -> list[ValidationError]:

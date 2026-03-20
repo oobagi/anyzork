@@ -297,3 +297,44 @@ def test_validate_game_reports_missing_quest_flags(game_db: GameDB) -> None:
     assert any(err.category == "quest" for err in errors)
     assert any("discovery_flag" in msg for msg in messages)
     assert any("completion_flag" in msg for msg in messages)
+
+
+def test_validate_game_reports_blank_no_op_command(game_db: GameDB) -> None:
+    game_db.insert_command(
+        id="blank_shake",
+        verb="shake",
+        pattern="shake {target}",
+        preconditions="[]",
+        effects="[]",
+        success_message="",
+        failure_message="Nothing happens when you shake that.",
+        context_room_ids=None,
+        is_enabled=1,
+    )
+
+    errors = validate_game(game_db)
+    messages = _messages(errors)
+
+    assert any(err.category == "command" for err in errors)
+    assert any(
+        "can succeed without producing any effect or visible message" in msg
+        for msg in messages
+    )
+
+
+def test_validate_game_warns_when_room_prose_already_mentions_takeable_item(
+    game_db: GameDB,
+) -> None:
+    game_db._mutate(
+        "UPDATE rooms SET description = ? WHERE id = ?",
+        (
+            "A compact prep room where the Vault Key rests on a shelf beneath the mission board.",
+            "vault",
+        ),
+    )
+
+    errors = validate_game(game_db)
+    messages = _messages(errors)
+
+    assert any(err.severity == "warning" and err.category == "item" for err in errors)
+    assert any("already named in room 'vault' prose" in msg for msg in messages)
