@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/anyzork-header.png" alt="AnyZork" width="720">
+  <img src="assets/anyzork-header.png" alt="AnyZork" width="520">
   <h1>AnyZork</h1>
   <p><strong>Build deterministic <a href="https://en.wikipedia.org/wiki/Zork">Zork</a>-style text adventures with AI-assisted authoring.</strong></p>
   <p>Generate a ZorkScript authoring prompt, have an LLM write the world, compile it into a portable SQLite <code>.zork</code> file, and play it with a deterministic engine.</p>
