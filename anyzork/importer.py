@@ -821,6 +821,12 @@ on "hit {target}" {
 }
 
 # -- Triggers -- when event_type(arg) blocks. Same require/effect syntax.
+# ONLY these 5 event types exist (do not invent new ones):
+#   room_enter(room_id)    -- player enters a room
+#   flag_set(flag_id)      -- a flag becomes true
+#   item_taken(item_id)    -- player takes an item
+#   item_dropped(item_id)  -- player drops an item
+#   dialogue_node(node_id) -- a dialogue node is visited
 
 when room_enter(courtyard) {
   require has_flag(guard_bribed)
@@ -908,6 +914,8 @@ Constraints:
   The engine handles these automatically through items, containers, locks, and toggles.
   ONLY use on blocks for custom verbs: pull, push, ring, climb, dig, accuse, combine, etc.
 - Every custom verb MUST have a global fallback on block with no room scope.
+- Trigger event types MUST be one of: room_enter, flag_set, item_taken, item_dropped, dialogue_node.
+  Do NOT invent event types like item_read, npc_talk, etc. Use flag_set triggers instead.
   Players will try verbs in rooms the author didn't anticipate.
 
 Concept:
