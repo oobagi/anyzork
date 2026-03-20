@@ -1,34 +1,24 @@
-# AnyZork
+<div align="center">
+  <img src="assets/anyzork-header.png" alt="AnyZork" width="720">
+  <h1>AnyZork</h1>
+  <p><strong>Build deterministic <a href="https://en.wikipedia.org/wiki/Zork">Zork</a>-style text adventures with AI-assisted authoring.</strong></p>
+  <p>Generate a ZorkScript authoring prompt, have an LLM write the world, compile it into a portable SQLite <code>.zork</code> file, and play it with a deterministic engine.</p>
+  <p>
+    <a href="#quickstart"><strong>Quickstart</strong></a>
+    ·
+    <a href="#core-concepts"><strong>Core Concepts</strong></a>
+    ·
+    <a href="#how-it-works"><strong>How It Works</strong></a>
+    ·
+    <a href="#docs"><strong>Docs</strong></a>
+  </p>
+</div>
 
-Turn a prompt into a playable, portable Zork-style text adventure.
-
-AnyZork helps you author a game world once, compile it into a portable SQLite `.zork` file, and then run that world with a deterministic engine. The result is a text adventure that keeps its state, stays internally consistent, and can be shared as a single file.
-
-## Why It Exists
-
-Real-time LLM adventures tend to drift. They forget rooms, hallucinate inventory, and change puzzle logic mid-game.
-
-AnyZork takes a different approach:
-
-- Generate once with AI
-- Store the game as structured data in SQLite
-- Play it with a deterministic runtime
-
-That means no runtime world drift, no changing rules, and no server required to play.
-
-## Features
-
-- Deterministic runtime engine
-- Portable `.zork` game files
-- ZorkScript authoring wizard
-- Command DSL for game logic
-- Quest and trigger systems
-- Optional narrator mode
-- Guided prompt builder and presets
+---
 
 ## Quickstart
 
-### 1. Install
+Install:
 
 ```bash
 git clone https://github.com/oobagi/anyzork.git
@@ -36,38 +26,22 @@ cd anyzork
 pip install -e .
 ```
 
-Python 3.11+ is required.
+Requires Python 3.11+.
 
-### 2. Generate a ZorkScript Prompt
-
-```bash
-anyzork generate "A haunted lighthouse on a foggy coast"
-```
-
-You can also use the guided wizard:
+Create your first game:
 
 ```bash
 anyzork generate --guided
+# paste the generated authoring prompt into your LLM
+# save the response as game.zorkscript
+anyzork import game.zorkscript -o game.zork
+anyzork play game.zork
 ```
 
-This writes a ZorkScript authoring prompt. Send that prompt to your LLM, then save the returned ZorkScript to a file or pipe it directly into `anyzork import`.
-
-### 3. Import
+Prefer a one-line prompt? Use:
 
 ```bash
-anyzork import haunted_lighthouse.zorkscript -o haunted_lighthouse.zork
-```
-
-You can also import from stdin:
-
-```bash
-cat haunted_lighthouse.zorkscript | anyzork import -
-```
-
-### 4. Play
-
-```bash
-anyzork play ~/.anyzork/games/haunted_lighthouse_on_a_foggy_coast.zork
+anyzork generate "A haunted lighthouse on a foggy coast"
 ```
 
 Optional narrator mode:
@@ -76,40 +50,48 @@ Optional narrator mode:
 anyzork play game.zork --narrator
 ```
 
-## CLI Overview
+> AnyZork uses an LLM during authoring, not during normal play. Runtime stays deterministic unless you explicitly enable narrator mode.
 
-```bash
-anyzork generate "your prompt"
-anyzork generate --guided
-anyzork generate --list-presets
-anyzork import -
-anyzork play game.zork
-anyzork list
-```
+## Core Concepts
+
+| Term | What it is | Read more |
+|---|---|---|
+| **AnyZork** | A CLI for authoring and playing deterministic text adventures inspired by [Zork](https://en.wikipedia.org/wiki/Zork). | [Design Brief](docs/guides/design-brief.md) |
+| **ZorkScript** | AnyZork's human-readable authoring DSL. An external LLM writes this text format. | [ZorkScript Spec](docs/dsl/zorkscript-spec.md) |
+| **`.zork` file** | A portable SQLite database containing the compiled game world and runtime state. | [World Schema](docs/game-design/world-schema.md) and [ADR-001](docs/architecture/adrs/adr-001-sqlite-game-storage.md) |
+| **Narrator mode** | An optional read-only LLM layer during play. | [System Architecture](docs/architecture/system-design.md) |
 
 ## How It Works
 
-The shipped authoring flow is:
+```text
+idea -> anyzork generate -> external LLM -> ZorkScript -> anyzork import -> .zork -> anyzork play
+```
 
-1. `anyzork generate` builds a ZorkScript authoring prompt.
-2. You send that prompt to an LLM and get back ZorkScript.
-3. `anyzork import` compiles the ZorkScript into a `.zork` file.
-4. `anyzork play` runs the resulting database deterministically.
+1. `anyzork generate` builds the authoring prompt.
+2. Your external LLM writes the world in ZorkScript.
+3. `anyzork import` validates and compiles that into a `.zork` file.
+4. `anyzork play` runs the resulting game deterministically.
+
+Import from stdin if you prefer:
+
+```bash
+cat game.zorkscript | anyzork import -
+```
+
+For the full architecture and rationale, see the [Design Brief](docs/guides/design-brief.md) and [System Architecture](docs/architecture/system-design.md).
 
 ## Docs
 
-- [Design Brief](docs/guides/design-brief.md)
-- [System Architecture](docs/architecture/system-design.md)
-- [ADR-001: SQLite Game Storage](docs/architecture/adrs/adr-001-sqlite-game-storage.md)
-- [Game Design Document](docs/game-design/gdd.md)
-- [World Schema](docs/game-design/world-schema.md)
-- [ZorkScript Spec](docs/dsl/zorkscript-spec.md)
-- [Command DSL Spec](docs/dsl/command-spec.md)
-- [Implementation Phases](docs/guides/implementation-phases.md)
-
-## Project Status
-
-The `generate -> import -> play` flow is shipped and playable. The remaining roadmap is focused on deeper narrator-mode immersion and optional combat.
+| Doc | What it covers |
+|---|---|
+| [Design Brief](docs/guides/design-brief.md) | Product framing and the core authoring/runtime split |
+| [System Architecture](docs/architecture/system-design.md) | Current components, command surface, and runtime model |
+| [Game Design Document](docs/game-design/gdd.md) | Supported mechanics and design constraints |
+| [World Schema](docs/game-design/world-schema.md) | Human-oriented reference for the `.zork` database |
+| [ZorkScript Spec](docs/dsl/zorkscript-spec.md) | The authoring language reference |
+| [Command DSL Spec](docs/dsl/command-spec.md) | The runtime rule vocabulary |
+| [ADR-001: SQLite Game Storage](docs/architecture/adrs/adr-001-sqlite-game-storage.md) | Why `.zork` files are SQLite |
+| [Implementation Phases](docs/guides/implementation-phases.md) | Remaining roadmap and future work |
 
 ## License
 
