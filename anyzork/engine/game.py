@@ -35,8 +35,20 @@ logger = logging.getLogger(__name__)
 STYLE_ROOM_NAME = "bold bright_white"       # room name in panel title
 STYLE_ROOM_BORDER = "bright_blue"           # room panel border
 STYLE_TITLE_BORDER = "bright_cyan"          # game title panel border
-STYLE_ITEM = "cyan"                         # item names everywhere
-STYLE_NPC = "magenta"                       # NPC names everywhere
+STYLE_ITEM = "cyan"                         # item names (default)
+STYLE_NPC = "magenta"                       # NPC names (default)
+
+# Category-based item styling — items with a category get a distinct color.
+STYLE_BY_CATEGORY: dict[str, str] = {
+    "furniture": "bright_blue",
+    "weapon": "bold red",
+    "body": "dim red",
+    "character": "magenta",
+    "food": "bright_green",
+    "tool": "yellow",
+    "key": "bright_yellow",
+    "clothing": "bright_magenta",
+}
 STYLE_DIRECTION = "green"                   # exit directions (unlocked)
 STYLE_DIRECTION_LOCKED = "red"              # exit directions (locked)
 STYLE_SYSTEM = "dim"                        # system messages ("You can't do that")
@@ -113,6 +125,9 @@ class GameEngine:
         # processing.  See _emit_event() and _process_event().
         self._event_queue: list[tuple[str, dict[str, str]]] = []
         self._processing_events: bool = False
+        # Dialogue state — quest notifications are deferred while in dialogue.
+        self._in_dialogue: bool = False
+        self._pending_notifications: list[Any] = []
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -327,6 +342,19 @@ class GameEngine:
                 self._tick()
                 continue
 
+            # ---- Darkness check: block most actions in unlit dark rooms ----
+            room = self.db.get_room(player["current_room_id"])
+            if room and room.get("is_dark") and not self._is_room_lit(room):
+                # Allow light-related verbs through so the player can fix the darkness.
+                if verb not in ("light", "turn", "toggle", "use", "eat", "drink"):
+                    self.console.print(
+                        "It's too dark to do that. You need a light source.",
+                        style=STYLE_SYSTEM,
+                    )
+                    self._log_action(raw, "fail", "dark_room")
+                    self._tick()
+                    continue
+
             # ---- DSL command resolution (checked BEFORE built-in interaction
             # verbs so game-specific commands take priority) ----
             try:
@@ -482,7 +510,14 @@ class GameEngine:
                         if handled:
                             self._tick()
                             continue
-                        # Try interaction matrix second.
+                        # Try requires_item_id (e.g. "use batteries on flashlight").
+                        handled = self._handle_install_requires(
+                            item_name, target_name,
+                        )
+                        if handled:
+                            self._tick()
+                            continue
+                        # Try interaction matrix.
                         handled = self._handle_interaction(
                             item_name, target_name, player["current_room_id"]
                         )
@@ -531,6 +566,19 @@ class GameEngine:
                     self._tick()
                     continue
 
+            # give / show {item} to {npc}
+            if verb in ("give", "show") and len(tokens) >= 4 and "to" in tokens:
+                to_idx = tokens.index("to")
+                if to_idx > 1 and to_idx < len(tokens) - 1:
+                    item_name = " ".join(tokens[1:to_idx])
+                    npc_name = " ".join(tokens[to_idx + 1:])
+                    self._log_action(raw, "builtin", f"{verb}:{item_name} to:{npc_name}")
+                    self._handle_give_show(
+                        verb, item_name, npc_name, player["current_room_id"],
+                    )
+                    self._tick()
+                    continue
+
             # talk to
             if verb == "talk" and len(tokens) >= 3 and tokens[1] == "to":
                 npc_name = " ".join(tokens[2:])
@@ -563,25 +611,44 @@ class GameEngine:
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _item_style(item: dict) -> str:
+        """Pick a highlight color for an item based on its category or first tag."""
+        cat = item.get("category", "")
+        if cat and cat in STYLE_BY_CATEGORY:
+            return STYLE_BY_CATEGORY[cat]
+        # Fall back to first tag if no category match.
+        raw_tags = item.get("item_tags")
+        if raw_tags:
+            try:
+                tags = json.loads(raw_tags) if isinstance(raw_tags, str) else raw_tags
+                for tag in tags:
+                    if tag in STYLE_BY_CATEGORY:
+                        return STYLE_BY_CATEGORY[tag]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return STYLE_ITEM
+
+    @staticmethod
     def _highlight_interactables(
         text: str, items: list[dict], npcs: list[dict]
     ) -> str:
         """Highlight item and NPC names in room description text.
 
-        Performs case-insensitive replacement, longest names first to avoid
-        partial matches (e.g., "AR-15 rifle" before "AR-15").
+        Uses category/tag-based colors so weapons, furniture, NPCs, etc.
+        are visually distinct. Longest names first to avoid partial matches.
         """
-        # Collect all names, longest first.
+        import re as _re
+
         names: list[tuple[str, str]] = []  # (name, style)
         for it in items:
-            names.append((it["name"], STYLE_ITEM))
+            names.append((it["name"], GameEngine._item_style(it)))
         for npc in npcs:
-            names.append((npc["name"], STYLE_NPC))
+            cat = npc.get("category", "")
+            style = STYLE_BY_CATEGORY.get(cat, STYLE_NPC)
+            names.append((npc["name"], style))
         names.sort(key=lambda x: len(x[0]), reverse=True)
 
         for name, style in names:
-            # Case-insensitive replace, preserving original case.
-            import re as _re
             pattern = _re.compile(_re.escape(name), _re.IGNORECASE)
             text = pattern.sub(f"[{style}]{name}[/]", text)
         return text
@@ -1541,6 +1608,82 @@ class GameEngine:
 
         return False
 
+    def _handle_give_show(
+        self,
+        verb: str,
+        item_name: str,
+        npc_name: str,
+        current_room_id: str,
+    ) -> None:
+        """Built-in handler for ``give/show {item} to {npc}``."""
+        db = self.db
+
+        inv_item = db.find_item_by_name(item_name, "inventory", "")
+        if inv_item is None:
+            self.console.print("You're not carrying that.", style=STYLE_SYSTEM)
+            return
+
+        npc = db.find_npc_by_name_any(npc_name, current_room_id)
+        if npc is None:
+            self.console.print("There's no one here by that name.", style=STYLE_SYSTEM)
+            return
+
+        if not npc.get("is_alive", True):
+            self.console.print(f"{npc['name']} is dead.", style=STYLE_SYSTEM)
+            return
+
+        if verb == "give":
+            db.move_item(inv_item["id"], "room", current_room_id)
+            db.remove_item(inv_item["id"])
+            self.console.print(
+                f"You give the [{STYLE_ITEM}]{inv_item['name']}[/] to"
+                f" [{STYLE_NPC}]{npc['name']}[/]."
+            )
+        else:
+            # show — don't remove, just display
+            self.console.print(
+                f"You show the [{STYLE_ITEM}]{inv_item['name']}[/] to"
+                f" [{STYLE_NPC}]{npc['name']}[/]."
+            )
+
+    def _handle_install_requires(
+        self, item_name: str, target_name: str,
+    ) -> bool:
+        """Handle ``use X on Y`` where Y requires X (e.g. batteries in flashlight).
+
+        If the target item has ``requires_item_id`` matching the inventory item,
+        this is an "install component" action. The component stays in inventory
+        (it's a dependency, not consumed) and we confirm the installation.
+        Returns True if handled.
+        """
+        db = self.db
+
+        inv_item = db.find_item_by_name(item_name, "inventory", "")
+        if inv_item is None:
+            return False
+
+        # Target can be in inventory or in the current room.
+        target = db.find_item_by_name(target_name, "inventory", "")
+        if target is None:
+            player = db.get_player()
+            if player:
+                target = db.find_item_by_name(
+                    target_name, "room", player["current_room_id"]
+                )
+        if target is None:
+            return False
+
+        if target.get("requires_item_id") != inv_item["id"]:
+            return False
+
+        # The component is already in inventory — the requires check will
+        # now pass when the player uses the target. Confirm it.
+        self.console.print(
+            f"You load the [{STYLE_ITEM}]{inv_item['name']}[/] into"
+            f" the [{STYLE_ITEM}]{target['name']}[/].",
+        )
+        return True
+
     def _handle_search(self, target_name: str, current_room_id: str) -> None:
         """Search a container — open if needed, then list contents."""
         db = self.db
@@ -1873,6 +2016,45 @@ class GameEngine:
         text = text.replace("{target}", target_display)
         self.console.print(text)
 
+        # Apply effects if present.
+        effects_json = response.get("effects")
+        if effects_json:
+            from anyzork.engine.commands import apply_effect
+
+            parsed_effects = (
+                json.loads(effects_json)
+                if isinstance(effects_json, str)
+                else effects_json
+            )
+            # Determine target identity for target-aware effects.
+            if target_npc is not None:
+                target_id = target_npc["id"]
+                target_type = "npc"
+            elif target_item is not None:
+                target_id = target_item["id"]
+                target_type = "item"
+            else:
+                target_id = ""
+                target_type = ""
+
+            target_slots = {
+                "_target_id": target_id,
+                "_target_type": target_type,
+            }
+            for eff in parsed_effects:
+                try:
+                    msgs = apply_effect(
+                        eff,
+                        db,
+                        target_slots,
+                        command_id=f"interaction:{response['id']}",
+                        emit_event=self._emit_event,
+                    )
+                    for msg in msgs:
+                        self.console.print(msg)
+                except Exception:
+                    logger.exception("Interaction effect failed: %s", eff)
+
         # Consume quantity if specified.
         consumes = response.get("consumes", 0)
         if consumes and consumes > 0:
@@ -1897,9 +2079,15 @@ class GameEngine:
         """
         db = self.db
 
-        npc = db.find_npc_by_name(npc_name, current_room_id)
+        npc = db.find_npc_by_name_any(npc_name, current_room_id)
         if npc is None:
             self.console.print("There's no one here by that name.", style=STYLE_SYSTEM)
+            return
+
+        if not npc.get("is_alive", True):
+            self.console.print(
+                f"{npc['name']} is dead.", style=STYLE_SYSTEM
+            )
             return
 
         # NPCs without a dialogue tree use their default_dialogue as a
@@ -1923,6 +2111,7 @@ class GameEngine:
 
         current_node = root_node
         in_dialogue = True
+        self._in_dialogue = True
 
         while in_dialogue:
             # Filter options for this node based on flags and inventory.
@@ -1939,9 +2128,11 @@ class GameEngine:
                 self.console.print()
                 break
 
-            # Wait for player input.
+            # Wait for player input with a distinct dialogue prompt.
             try:
-                choice = Prompt.ask("[dim]>[/]")
+                choice = Prompt.ask(
+                    f"[{STYLE_NPC}]{npc['name']}[/] [dim]>[/]"
+                )
             except (EOFError, KeyboardInterrupt):
                 self.console.print()
                 break
@@ -1986,6 +2177,10 @@ class GameEngine:
             self._apply_node_flags(next_node)
             self._emit_event("dialogue_node", node_id=next_node["id"], npc_id=npc["id"])
             current_node = next_node
+
+        # Dialogue ended — flush any deferred quest notifications.
+        self._in_dialogue = False
+        self._flush_notifications()
 
     def _get_visible_options(self, node_id: str) -> list[dict]:
         """Return dialogue options visible to the player at this node.
@@ -2308,6 +2503,19 @@ class GameEngine:
         self._check_quests()
         self.check_end_conditions()
 
+    def _notify(self, content: Any) -> None:
+        """Print or defer a notification depending on dialogue state."""
+        if self._in_dialogue:
+            self._pending_notifications.append(content)
+        else:
+            self.console.print(content)
+
+    def _flush_notifications(self) -> None:
+        """Print any notifications that were deferred during dialogue."""
+        for text in self._pending_notifications:
+            self.console.print(text)
+        self._pending_notifications.clear()
+
     def _check_quests(self) -> None:
         """Run the quest state machine: discover, advance, and complete quests."""
         db = self.db
@@ -2335,11 +2543,11 @@ class GameEngine:
                 elif db.has_flag(quest["discovery_flag"]):
                     db.update_quest_status(quest["id"], "active")
                     quest["status"] = "active"
-                    self.console.print()
-                    self.console.print(
+                    self._notify("")
+                    self._notify(
                         f"  [{STYLE_QUEST_HEADER}]-- New Quest: {quest['name']} --[/]"
                     )
-                    self.console.print(f"  {quest['description']}")
+                    self._notify(f"  {quest['description']}")
                     # Initialize objective cache for newly discovered quest.
                     objectives = db.get_quest_objectives(quest["id"])
                     for obj in objectives:
@@ -2362,11 +2570,11 @@ class GameEngine:
                             if not o["is_optional"] and db.has_flag(o["completion_flag"])
                         )
                         req_total_count = sum(1 for o in objectives if not o["is_optional"])
-                        self.console.print()
-                        self.console.print(
+                        self._notify("")
+                        self._notify(
                             f"  [{STYLE_QUEST_HEADER}]-- Quest Updated: {quest['name']} --[/]"
                         )
-                        self.console.print(
+                        self._notify(
                             f"  [{STYLE_SUCCESS}]Completed: {obj['description']} "
                             f"({req_done_count}/{req_total_count})[/]"
                         )
@@ -2410,8 +2618,8 @@ class GameEngine:
                         if o["is_optional"] and db.has_flag(o["completion_flag"])
                     )
                     total_score = quest["score_value"] + total_bonus
-                    self.console.print()
-                    self.console.print(
+                    self._notify("")
+                    self._notify(
                         Panel(
                             f"Quest Complete: {quest['name']}\n"
                             f"{quest['description']}\n"

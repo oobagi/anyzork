@@ -343,7 +343,8 @@ CREATE TABLE IF NOT EXISTS interaction_responses (
     response        TEXT NOT NULL,       -- Response template with {item} and {target} placeholders
     consumes        INTEGER NOT NULL DEFAULT 0,  -- Quantity consumed per use
     score_change    INTEGER NOT NULL DEFAULT 0,  -- Score adjustment
-    flag_to_set     TEXT                -- Optional flag to set on interaction
+    flag_to_set     TEXT,               -- Optional flag to set on interaction
+    effects         TEXT                -- JSON array of effect objects, same format as commands
 );
 CREATE INDEX IF NOT EXISTS idx_interactions_tag_cat
     ON interaction_responses(item_tag, target_category);
@@ -1065,6 +1066,52 @@ class GameDB:
         matches.sort(key=lambda npc: len(npc["name"]))
         return matches[0]
 
+    def find_npc_by_name_any(self, name: str, room_id: str) -> dict | None:
+        """Like :meth:`find_npc_by_name` but includes dead NPCs.
+
+        Used by the engine to detect dead-NPC interactions (search corpse,
+        block dialogue with a dead NPC, etc.).  Same matching rules apply.
+        """
+        exact = self._fetchone(
+            """
+            SELECT * FROM npcs
+            WHERE LOWER(name) = LOWER(?) AND room_id = ?
+            """,
+            (name, room_id),
+        )
+        if exact is not None:
+            return exact
+
+        candidates = self._fetchall(
+            "SELECT * FROM npcs WHERE room_id = ?",
+            (room_id,),
+        )
+
+        name_lower = name.lower().strip()
+        if not name_lower:
+            return None
+
+        matches: list[dict] = []
+        for npc in candidates:
+            npc_name_lower = npc["name"].lower()
+            if npc_name_lower.startswith(name_lower):
+                matches.append(npc)
+                continue
+            npc_words = npc_name_lower.split()
+            input_words = name_lower.split()
+            if len(input_words) <= len(npc_words):
+                leading_match = all(
+                    npc_words[i].startswith(w) for i, w in enumerate(input_words)
+                )
+                if leading_match:
+                    matches.append(npc)
+
+        if not matches:
+            return None
+
+        matches.sort(key=lambda npc: len(npc["name"]))
+        return matches[0]
+
     def get_root_dialogue_node(self, npc_id: str) -> dict | None:
         """Return the root dialogue node (is_root=1) for an NPC."""
         return self._fetchone(
@@ -1546,8 +1593,30 @@ class GameDB:
     # --------------------------------------------------------- NPC mutations
 
     def kill_npc(self, npc_id: str) -> None:
-        """Set an NPC's ``is_alive`` to ``0``."""
+        """Set an NPC's ``is_alive`` to ``0`` and spawn a searchable body container."""
+        npc = self.get_npc(npc_id)
         self._mutate("UPDATE npcs SET is_alive = 0 WHERE id = ?", (npc_id,))
+
+        # Spawn a container item representing the body, if one doesn't already exist.
+        if npc:
+            body_id = f"{npc_id}_body"
+            existing = self.get_item(body_id)
+            if existing is None:
+                self.insert_item(
+                    id=body_id,
+                    name=f"{npc['name']}'s Body",
+                    description=f"The body of {npc['name']}.",
+                    examine_description=f"{npc['name']} lies motionless.",
+                    room_id=npc["room_id"],
+                    is_takeable=0,
+                    is_visible=1,
+                    is_container=1,
+                    is_open=1,
+                    has_lid=0,
+                    category="body",
+                    room_description=f"{npc['name']}'s body lies on the ground.",
+                    search_message=f"You search {npc['name']}'s body.",
+                )
 
     def damage_npc(self, npc_id: str, amount: int) -> dict | None:
         """Reduce an NPC's HP.  Kills the NPC if HP reaches 0.

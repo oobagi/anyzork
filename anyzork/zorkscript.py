@@ -279,6 +279,11 @@ class _Parser:
         "consume_quantity":        ["item", "amount"],
         "restore_quantity":        ["item", "amount"],
         "set_toggle_state":        ["item", "state"],
+        # Target-aware effects (interaction response context only)
+        "kill_target":             [],
+        "damage_target":           ["amount"],
+        "destroy_target":          [],
+        "open_target":             [],
     }
 
     def _compile_precondition(self, name: str, args: list[Any]) -> dict[str, Any]:
@@ -514,6 +519,7 @@ class _Parser:
         "drop_msg": "drop_message",
         "room_desc": "room_description",
         "drop_desc": "drop_description",
+        "home": "home_room_id",
         "read_text": "read_description",
         "open_msg": "open_message",
         "lock_msg": "lock_message",
@@ -945,12 +951,18 @@ class _Parser:
 
         self._expect("RBRACE")
 
-        # Auto-generate ID from pattern
+        # Auto-generate ID from pattern, deduplicate.
         slug = re.sub(r"[^a-z0-9]+", "_", pattern.lower()).strip("_")
         if context_rooms:
-            cmd_id = f"on_{slug}_{context_rooms[0]}"
+            base_id = f"on_{slug}_{context_rooms[0]}"
         else:
-            cmd_id = f"on_{slug}"
+            base_id = f"on_{slug}"
+        existing_ids = {c["id"] for c in self._commands}
+        cmd_id = base_id
+        counter = 2
+        while cmd_id in existing_ids:
+            cmd_id = f"{base_id}_{counter}"
+            counter += 1
 
         # Extract verb
         verb = pattern.split()[0].lower() if pattern.split() else "do"
@@ -1037,9 +1049,16 @@ class _Parser:
         if data_key and event_args:
             event_data[data_key] = str(event_args[0])
 
-        trigger_id = f"when_{event_name}"
+        base_id = f"when_{event_name}"
         if event_args:
-            trigger_id += f"_{event_args[0]}"
+            base_id += f"_{event_args[0]}"
+        # Deduplicate: append _2, _3, etc. if the ID already exists.
+        existing_ids = {t["id"] for t in self._triggers}
+        trigger_id = base_id
+        counter = 2
+        while trigger_id in existing_ids:
+            trigger_id = f"{base_id}_{counter}"
+            counter += 1
 
         trigger.update({
             "id": trigger_id,
@@ -1229,13 +1248,23 @@ class _Parser:
         self._expect("LBRACE")
 
         resp: dict[str, Any] = {"id": resp_id}
+        effects: list[dict[str, Any]] = []
 
         while not self._at("RBRACE"):
+            tok = self._peek()
+            if tok.kind == "IDENT" and tok.value == "effect":
+                self._advance()
+                name, args = self._parse_func_call()
+                effects.append(self._compile_effect(name, args))
+                continue
+
             key_tok = self._expect("IDENT")
             key = self._INTERACTION_FIELD_MAP.get(key_tok.value, key_tok.value)
             resp[key] = self._parse_value()
 
         self._expect("RBRACE")
+        if effects:
+            resp["effects"] = effects
         self._interaction_responses.append(resp)
 
     # -- Exit route resolution --
@@ -1303,8 +1332,20 @@ class _Parser:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _strip_fences(source: str) -> str:
+    """Strip markdown code fences that LLMs sometimes wrap output in."""
+    text = source.strip()
+    if text.startswith("```"):
+        # Remove opening fence (```zorkscript, ```text, ```, etc.)
+        first_nl = text.index("\n") if "\n" in text else len(text)
+        text = text[first_nl + 1:]
+    if text.rstrip().endswith("```"):
+        text = text.rstrip()[:-3]
+    return text.strip()
+
+
 def parse_zorkscript(source: str) -> dict[str, Any]:
     """Parse ZorkScript source and return a dict matching the JSON import shape."""
-    tokens = _tokenize(source)
+    tokens = _tokenize(_strip_fences(source))
     parser = _Parser(tokens)
     return parser.parse()

@@ -490,11 +490,18 @@ room courtyard {
   exit south -> gate_room
 }
 
-# -- Items -- Use take_msg, drop_msg, room_desc for rich feedback.
-# Containers (furniture, chests) use container/open/locked/key fields.
-# Toggleable items (torches, switches) use toggle/toggle_state/on_msg/off_msg.
-# Consumables use quantity/max_quantity/quantity_unit/depleted_msg.
+# -- Items --
+# take_msg/drop_msg: generic messages that work in ANY room.
+# room_desc: shown when item is in its home room. drop_desc: shown elsewhere.
+# home: the item's native room (for room_desc vs drop_desc selection).
+# Containers (furniture, chests): container/open/locked/key fields.
+# Toggleable (torches, switches): toggle/toggle_state/on_msg/off_msg.
+# requires: item dependency (e.g. flashlight requires batteries).
+#   "use batteries on flashlight" auto-works when requires is set.
+# Consumables: quantity/max_quantity/quantity_unit/depleted_msg.
 # Tags and categories enable the interaction matrix.
+# When an NPC dies, the engine auto-spawns "{Name}'s Body" as a searchable
+# container. Use triggers to move_item_to_container loot into the body.
 
 item cell_table {
   name        "Wooden Table"
@@ -515,9 +522,11 @@ item silver_key {
   examine     "Its head is stamped with a portcullis sigil."
   in          cell_table
   takeable    true
-  take_msg    "You pocket the silver key. It feels important."
-  drop_msg    "You set the silver key down carefully."
-  room_desc   "A glint of silver catches your eye."
+  home        cell
+  take_msg    "You pocket the silver key."
+  drop_msg    "You set the silver key down."
+  room_desc   "A glint of silver catches your eye inside the drawer."
+  drop_desc   "A silver key lies on the ground."
 }
 
 item oil_lantern {
@@ -606,6 +615,17 @@ item guard_stool {
   room_desc   "A rickety stool sits beside the gate."
 }
 
+item rusty_pipe {
+  name        "Rusty Pipe"
+  description "A heavy iron pipe."
+  examine     "Solid and weighty. Could do some damage."
+  in          supply_closet
+  takeable    true
+  tags        ["weapon"]
+  take_msg    "You heft the pipe. It feels reassuringly solid."
+  room_desc   "A rusty iron pipe leans against the wall."
+}
+
 # -- NPCs -- Use category for the interaction matrix. Nest dialogue with talk blocks.
 
 npc guard {
@@ -623,7 +643,14 @@ npc guard {
     option "I have something for you." -> bribe {
       require_item silver_key
     }
+    option "What's beyond the gate?" -> gate_info
     option "I'll find another way."
+  }
+
+  talk gate_info {
+    "He snorts. 'Courtyard. Sunlight. Freedom. None of which concerns you.'"
+    option "I'll be back." -> root
+    option "Forget it."
   }
 
   talk bribe {
@@ -705,11 +732,28 @@ quest side:vault_secret {
   objective "Open the vault" -> vault_unlocked
 }
 
-# -- Commands -- on "pattern" blocks with require/effect. Use rich effects:
-# set_flag, unlock, remove_item, add_score, print, spawn_item, move_player,
-# change_health, reveal_exit, solve_puzzle, discover_quest, open_container,
-# move_item_to_container, take_item_from_container, consume_quantity,
-# restore_quantity, set_toggle_state
+# -- Commands --
+# The engine handles these verbs automatically -- DO NOT author on blocks for:
+#   go, take, drop, examine, look, read, open, close, unlock, search,
+#   use, use X on Y, give X to NPC, show X to NPC, put X in Y,
+#   turn on/off, talk to, eat, drink
+# The engine also handles: dark room blocking (need light_source to act),
+# dead NPCs (auto-spawn a searchable "{Name}'s Body" container on death),
+# and requires (use batteries on flashlight auto-works when requires is set).
+# ONLY author on blocks for CUSTOM verbs the engine doesn't know.
+#
+# Tiered command pattern (highest priority fires first):
+# 1. SPECIFIC: room-scoped on blocks with exact preconditions (one-shot story moments)
+# 2. TAG-BASED: interaction responses match item tags to target categories automatically
+# 3. GLOBAL FALLBACK: an on block with no room scope catches everything else
+#
+# Always include a global fallback for custom verbs so the player never sees
+# "I don't understand that" when trying a verb the game should recognize.
+#
+# Common custom verbs to consider for your game:
+#   pull, push, ring, hit, shoot, climb, dig, pray, combine, pour, light, break
+
+# --- SPECIFIC room-scoped commands (tier 1) ---
 
 on "pull {target}" in [supply_closet] {
   require not_flag(lever_pulled)
@@ -725,80 +769,30 @@ on "pull {target}" in [supply_closet] {
   once
 }
 
-on "give {item} to {npc}" in [gate_room] {
-  require has_item(silver_key)
+on "hit {target}" in [gate_room] {
+  require has_item(rusty_pipe)
   require npc_in_room(guard, _current)
   require not_flag(guard_bribed)
 
-  effect remove_item(silver_key)
   effect set_flag(guard_bribed)
-  effect add_score(15)
-
-  success "You hold out the silver key. The guard's eyes widen. He snatches it and tucks it into his belt. 'Get out of here. Quick.'"
-  fail    "The guard doesn't want what you're offering."
-  once
-}
-
-on "light {target}" {
-  require has_item(oil_lantern)
-  require toggle_state(oil_lantern, "off")
-
-  effect set_toggle_state(oil_lantern, "on")
-  effect set_flag(lantern_lit)
-
-  success "You strike a spark. The lantern flame catches and steadies, casting warm light around you."
-  fail    "The lantern is already lit."
-  once
-}
-
-on "eat {item}" {
-  require has_item(healing_moss)
-  require has_quantity(healing_moss, 1)
-
-  effect consume_quantity(healing_moss, 1)
-  effect change_health(25)
-  effect add_score(5)
-
-  success "You chew the bitter moss. Warmth spreads through your chest and the ache fades."
-  fail    "You have nothing edible."
-}
-
-on "use {item}" {
-  require has_item(healing_moss)
-  require has_quantity(healing_moss, 1)
-
-  effect consume_quantity(healing_moss, 1)
-  effect change_health(25)
-
-  success "You press the moss against your skin. A cool tingling spreads through you."
-  fail    "You have nothing useful to apply."
-}
-
-on "search {target}" in [cellar] {
-  require toggle_state(oil_lantern, "on")
-  require not_flag(found_brass_key)
-
-  effect set_flag(found_brass_key)
-  effect spawn_item(brass_key, cellar)
   effect add_score(10)
 
-  success "The lantern light catches something on the floor -- a small brass key on a frayed cord, half-buried in grime."
-  fail    "It is too dark to search. You need a light source."
+  success "You crack the guard across the back of the head with the pipe. He slumps to the floor."
+  fail    "There's no one to hit here."
   once
 }
 
-on "unlock {target}" in [cellar] {
-  require has_item(brass_key)
-  require not_flag(vault_unlocked)
+# --- GLOBAL FALLBACK commands (tier 3) ---
+# These catch every use of the verb that wasn't handled by a specific on block
+# or a tag-based interaction response. Without these, the player sees
+# "I don't understand that" -- always provide a fallback for custom verbs.
 
-  effect set_flag(vault_unlocked)
-  effect unlock(vault_door_lock)
-  effect solve_puzzle(vault_puzzle)
-  effect add_score(10)
+on "pull {target}" {
+  fail "There's nothing here you can pull."
+}
 
-  success "The brass key turns in the lock. The vault door grinds open on rusted hinges."
-  fail    "You don't have the right key."
-  once
+on "hit {target}" {
+  fail "You don't have anything to hit with."
 }
 
 # -- Triggers -- when event_type(arg) blocks. Same require/effect syntax.
@@ -821,12 +815,49 @@ when room_enter(cellar) {
   once
 }
 
-# -- Interaction responses -- Tag-based item-on-target rules (automatic, no command needed).
+# -- Interaction responses -- Tag-based "use X on Y" rules.
+# When a player types "use X on Y", the engine checks X's tags against Y's
+# category and fires the first matching interaction response.
+# ONE rule covers ALL items with that tag on ALL targets with that category.
+#
+# Tags and categories are OPEN-ENDED. Invent whatever you want!
+# Items can have multiple tags: tags ["weapon", "metal", "sharp"]
+# NPCs and items must have a category set for interactions to work.
+#
+# Effects: kill_target(), damage_target(N), destroy_target() (breaks container,
+# scatters contents), open_target(), add_score(N), set_flag(id), print("msg").
+#
+# Be creative -- define fun emergent combos the player can discover:
+#   "weapon" on "character"      -> kill NPCs with kill_target()
+#   "weapon" on "furniture"      -> smash it with destroy_target()
+#   "light_source" on "character" -> blind or distract them
+#   "food" on "character"        -> offer food, they react
+#   "evidence" on "character"    -> confront or accuse
+#   "tool" on "furniture"        -> pry open, disassemble
+#   "disguise" on "character"    -> fool NPCs
+#   "pet_accessory" on "character" -> bewildered reactions
+#   "holy_water" on "undead"     -> destroy undead
+# Invent tags that fit YOUR game's world. The system is completely open.
 
-interaction key_on_furniture {
-  tag      "light_source"
+interaction weapon_on_character {
+  tag      "weapon"
+  target   "character"
+  response "You crack {target} over the head with the {item}. They crumple to the ground."
+  effect   kill_target()
+  effect   add_score(10)
+}
+
+interaction weapon_on_furniture {
+  tag      "weapon"
   target   "furniture"
-  response "You hold the {item} near the {target}, illuminating its surface."
+  response "You smash the {item} into the {target}. It splinters apart and its contents scatter across the floor."
+  effect   destroy_target()
+}
+
+interaction light_source_on_character {
+  tag      "light_source"
+  target   "character"
+  response "You shine the {item} in {target}'s face. They stumble back, blinded."
 }
 
 --- END EXAMPLE ---
@@ -843,6 +874,12 @@ Constraints:
 - All strings in double quotes.
 - Most fields are optional. Only include fields that add value. Keep declarations lean.
   Defaults: takeable true, visible true, dark false, start false, open false, locked false.
+- Do NOT author on blocks for built-in verbs: go, take, drop, examine, read, open,
+  close, unlock, search, use, give, show, put, turn, talk, eat, drink.
+  The engine handles these automatically through items, containers, locks, and toggles.
+  ONLY use on blocks for custom verbs: pull, push, ring, climb, dig, accuse, combine, etc.
+- Every custom verb MUST have a global fallback on block with no room scope.
+  Players will try verbs in rooms the author didn't anticipate.
 
 Concept:
 {concept}
@@ -993,16 +1030,50 @@ def _build_quality_requirements(realism: str, fields: dict[str, Any]) -> str:
         lines.append("- Include dark rooms that require a light source.")
 
     # Rich item feedback
-    lines.append("- Use take_msg, drop_msg, room_desc, examine for rich feedback. Never generic.")
+    lines.append("- Use take_msg, drop_msg, room_desc, drop_desc, examine for rich feedback. Never generic.")
+    lines.append("- take_msg/drop_msg must work in ANY room (not context-specific).")
+    lines.append("  Use home + room_desc for the item's native room, drop_desc for away.")
 
     # Consumables
     if realism != "low":
         lines.append("- Include consumable items (food, potions) with eat/drink/use commands.")
 
-    # NPCs, puzzles, quests
-    lines.append(f"- {targets['npcs']}")
+    # NPCs — use explicit character list count if provided, else scale default.
+    characters = fields.get("characters") or []
+    if characters:
+        lines.append(f"- Exactly {len(characters)} NPCs with dialogue (one per requested character).")
+    else:
+        lines.append(f"- {targets['npcs']}")
+    lines.append("- Every named character in the concept MUST exist as a real NPC.")
+    lines.append("  If the concept says '8 people', create 8 NPCs -- not 2.")
+
+    # Puzzles, quests
     lines.append(f"- {targets['puzzles']}")
     lines.append(f"- {targets['quests']}")
+
+    # Custom verb fallback — always
+    lines.append(
+        "- Every custom verb (pull, push, ring, hit, shoot, climb, etc.) "
+        "MUST have a global fallback on block."
+    )
+
+    # Interaction responses — always encouraged, richer at high realism
+    lines.append(
+        "- Set category on EVERY NPC ('character') and interactable item ('furniture', etc.)."
+    )
+    lines.append(
+        "  Without a category, 'use X on Y' won't fire interaction responses."
+    )
+    lines.append(
+        "- Use interaction responses (tag on category) so 'use X on Y' works dynamically."
+    )
+    lines.append(
+        "  Invent creative tags: weapon, food, evidence, tool, disguise, poison, rope, etc."
+    )
+    if realism != "low":
+        lines.append(
+            "  Use kill_target(), destroy_target(), damage_target(N) for real consequences."
+        )
 
     # Prose quality — always
     lines.append("- Room descriptions: 2-4 vivid sentences with sensory detail.")
@@ -1760,7 +1831,20 @@ def _normalize_interaction_responses(spec: dict[str, Any]) -> None:
         if npc.get("id") and npc.get("name")
     }
 
+    # Separate real interaction responses (with item_tag) from legacy ones
+    # that need conversion to commands.
+    real_responses: list[dict[str, Any]] = []
+    legacy_responses: list[dict[str, Any]] = []
     for response in spec.get("interaction_responses", []):
+        if response.get("item_tag"):
+            real_responses.append(response)
+        else:
+            legacy_responses.append(response)
+
+    # Keep real interaction responses for _insert_interaction_responses.
+    spec["interaction_responses"] = real_responses
+
+    for response in legacy_responses:
         if "context_room_ids" not in response and response.get("room_id"):
             response["context_room_ids"] = [response["room_id"]]
         if "target_id" not in response and response.get("item_id"):
@@ -1818,7 +1902,6 @@ def _normalize_interaction_responses(spec: dict[str, Any]) -> None:
             }
         )
 
-    spec["interaction_responses"] = []
 
 
 def _normalize_triggers(spec: dict[str, Any]) -> None:
@@ -2220,6 +2303,8 @@ def _insert_quests(db: GameDB, spec: dict[str, Any]) -> None:
 
 def _insert_interaction_responses(db: GameDB, spec: dict[str, Any]) -> None:
     for response in spec.get("interaction_responses", []):
+        effects_raw = response.get("effects")
+        effects_value = _json_value(effects_raw) if effects_raw else None
         db.insert_interaction_response(
             id=response["id"],
             item_tag=response["item_tag"],
@@ -2228,6 +2313,7 @@ def _insert_interaction_responses(db: GameDB, spec: dict[str, Any]) -> None:
             consumes=int(response.get("consumes", 0)),
             score_change=int(response.get("score_change", 0)),
             flag_to_set=_optional_str(response.get("flag_to_set")),
+            effects=effects_value,
         )
 
 

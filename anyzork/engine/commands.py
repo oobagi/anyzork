@@ -556,6 +556,39 @@ def apply_effect(
         new_state = _substitute_slots(effect["state"], slots)
         db.toggle_item_state(item_id, new_state)
 
+    # -- Target-aware effects (interaction response context only) -----------
+    # These read _target_id / _target_type from resolved_slots, which are
+    # injected by _handle_interaction in game.py.  When called outside that
+    # context (no _target_id), they silently no-op.
+
+    elif effect_type == "kill_target":
+        target_id = slots.get("_target_id")
+        if target_id:
+            db.kill_npc(target_id)
+
+    elif effect_type == "damage_target":
+        target_id = slots.get("_target_id")
+        amount = int(effect.get("amount", 10))
+        if target_id:
+            db.damage_npc(target_id, amount)
+
+    elif effect_type == "destroy_target":
+        target_id = slots.get("_target_id")
+        target_type = slots.get("_target_type")
+        if target_id and target_type == "item":
+            # Scatter container contents into the current room first.
+            contents = db.get_container_contents(target_id)
+            if contents and current_room:
+                for contained in contents:
+                    db.move_item(contained["id"], "room", current_room)
+            db.remove_item(target_id)
+
+    elif effect_type == "open_target":
+        target_id = slots.get("_target_id")
+        target_type = slots.get("_target_type")
+        if target_id and target_type == "item":
+            db.open_container(target_id)
+
     else:
         logger.warning("Unknown effect type: %s", effect_type)
 
@@ -670,10 +703,14 @@ def resolve_command(
                 best_fail_command_id = cmd["id"]
             continue
 
-        # All preconditions passed — apply effects
+        # All preconditions passed — success message FIRST, then effects.
+        # This ensures the player reads the command's narrative before any
+        # triggered consequences (flag_set cascades, quest updates, etc.).
         all_messages: list[str] = []
-        applied: list[str] = []
+        if cmd.get("success_message"):
+            all_messages.append(_substitute_slots(cmd["success_message"], resolved_slots))
 
+        applied: list[str] = []
         for eff in effects:
             try:
                 msgs = apply_effect(
@@ -685,12 +722,7 @@ def resolve_command(
                 all_messages.extend(msgs)
             except Exception:
                 logger.exception("Effect failed: %s", eff)
-                # DSL spec: log warning but continue executing remaining effects
                 applied.append(eff["type"])
-
-        # Also include the command's success_message if present and non-empty
-        if cmd.get("success_message"):
-            all_messages.append(_substitute_slots(cmd["success_message"], resolved_slots))
 
         # Mark one-shot commands as executed
         if cmd["one_shot"]:
