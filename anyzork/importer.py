@@ -742,6 +742,31 @@ quest side:vault_secret {
 # and requires (use batteries on flashlight auto-works when requires is set).
 # ONLY author on blocks for CUSTOM verbs the engine doesn't know.
 #
+# Available effects for on/when blocks (use ONLY these, do not invent new ones):
+#   set_flag(id)              -- set a flag to true
+#   set_flag(id, false)       -- clear a flag
+#   unlock(lock_id)           -- unlock a lock
+#   remove_item(id)           -- destroy an item
+#   spawn_item(id, location)  -- place an item (_inventory, room_id)
+#   move_item(id, from, to)   -- move item between locations
+#   move_player(room_id)      -- teleport player
+#   change_health(N)          -- heal (+) or damage (-) player
+#   add_score(N)              -- award points
+#   reveal_exit(exit_id)      -- unhide a hidden exit
+#   solve_puzzle(id)          -- mark puzzle solved
+#   discover_quest(id)        -- activate a quest
+#   print("msg")              -- display text
+#   open_container(id)        -- open a container
+#   move_item_to_container(item, container) -- put item in container
+#   take_item_from_container(item)          -- remove from container
+#   consume_quantity(item, N) -- use up consumable charges
+#   restore_quantity(item, N) -- refill charges
+#   set_toggle_state(item, state)           -- change toggle state
+#   make_visible(item_id)     -- reveal a hidden item
+#   make_hidden(item_id)      -- hide an item from view
+#   make_takeable(item_id)    -- make scenery pickupable
+#   move_npc(npc_id, room_id) -- relocate an NPC
+#
 # Tiered command pattern (highest priority fires first):
 # 1. SPECIFIC: room-scoped on blocks with exact preconditions (one-shot story moments)
 # 2. TAG-BASED: interaction responses match item tags to target categories automatically
@@ -824,8 +849,12 @@ when room_enter(cellar) {
 # Items can have multiple tags: tags ["weapon", "metal", "sharp"]
 # NPCs and items must have a category set for interactions to work.
 #
-# Effects: kill_target(), damage_target(N), destroy_target() (breaks container,
-# scatters contents), open_target(), add_score(N), set_flag(id), print("msg").
+# Effects for interactions (target-aware + standard):
+#   kill_target()       -- kill the target NPC, spawn lootable body
+#   damage_target(N)    -- deal N damage to target NPC
+#   destroy_target()    -- break target container, scatter contents
+#   open_target()       -- open target container
+#   Plus all standard effects: add_score(N), set_flag(id), print("msg"), etc.
 #
 # Be creative -- define fun emergent combos the player can discover:
 #   "weapon" on "character"      -> kill NPCs with kill_target()
