@@ -8,10 +8,8 @@ falls back to its own deterministic output and the game continues.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
-from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from anyzork.generator.providers.base import NarratorContext, ProviderError
@@ -23,7 +21,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 MIN_NARRATION_LENGTH = 20
-MAX_RECENT_ACTIONS = 5
 
 
 @dataclass
@@ -35,7 +32,6 @@ class NarratorGameContext:
     tone: str = ""
     era: str = ""
     setting: str = ""
-    vocabulary_hints: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -61,12 +57,9 @@ class Narrator:
     The narrator never writes to the database.
     """
 
-    TIMEOUT_SECONDS: float = 5.0
-
     def __init__(self, provider: BaseProvider, db: GameDB) -> None:
         self._provider = provider
         self._db = db
-        self._recent_actions: deque[str] = deque(maxlen=MAX_RECENT_ACTIONS)
         self._room_cache: dict[str, tuple[str, str]] = {}
         self._action_cache: dict[str, str] = {}
         self._failure_count: int = 0
@@ -80,23 +73,8 @@ class Narrator:
         meta = self._db.get_all_meta()
         title = meta.get("title", "Untitled") if meta else "Untitled"
 
-        concept: dict = {}
-        raw = self._db.get_meta("author_prompt")
-        if raw:
-            try:
-                parsed = json.loads(raw)
-                if isinstance(parsed, dict):
-                    concept = parsed.get("concept", parsed)
-            except (json.JSONDecodeError, TypeError):
-                pass
-
         return NarratorGameContext(
             title=title,
-            theme=concept.get("theme", ""),
-            tone=concept.get("tone", ""),
-            era=concept.get("era", ""),
-            setting=concept.get("setting", ""),
-            vocabulary_hints=concept.get("vocabulary_hints", []),
         )
 
     def _build_system_prompt(self) -> str:
@@ -110,11 +88,6 @@ class Narrator:
         )
 
     # ---------------------------------------------------------------- public API
-
-    @property
-    def enabled(self) -> bool:
-        """Whether the narrator is active. Always True for a live instance."""
-        return True
 
     def narrate_room(
         self,
@@ -160,7 +133,6 @@ class Narrator:
 
         # Skip narration for short outputs.
         if len(combined) < MIN_NARRATION_LENGTH:
-            self._record_action(verb, target, combined)
             return None
 
         # Check action cache.
@@ -169,7 +141,6 @@ class Narrator:
         ).hexdigest()
         cached = self._action_cache.get(cache_key)
         if cached:
-            self._record_action(verb, target, combined)
             return cached
 
         target_text = f" {target}" if target else ""
@@ -178,12 +149,7 @@ class Narrator:
         prose = self._call_provider(prompt)
         if prose:
             self._action_cache[cache_key] = prose
-        self._record_action(verb, target, combined)
         return prose
-
-    def record_action(self, verb: str, target: str | None, result: str) -> None:
-        """Record an action in the history buffer (called even when not narrating)."""
-        self._record_action(verb, target, result)
 
     # --------------------------------------------------------------- internals
 
@@ -217,20 +183,6 @@ class Narrator:
             if self._failure_count == 1:
                 logger.warning("Narrator call failed unexpectedly: %s", exc)
             return None
-
-    def _record_action(self, verb: str, target: str | None, result: str) -> None:
-        """Append a short action summary to the ring buffer."""
-        summary = f"{verb} {target}: {result}" if target else f"{verb}: {result}"
-        # Truncate long results to keep the context small.
-        if len(summary) > 120:
-            summary = summary[:117] + "..."
-        self._recent_actions.append(summary)
-
-    def _format_recent_actions(self) -> str:
-        """Format the action history for inclusion in the turn prompt."""
-        if not self._recent_actions:
-            return "(none)"
-        return "\n".join(f"- {a}" for a in self._recent_actions)
 
     def _format_item_list(self, items: list[dict]) -> str:
         """Format items for the narrator prompt -- names with descriptions."""

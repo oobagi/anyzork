@@ -6,7 +6,9 @@ import contextlib
 import re
 import shutil
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING, TypeVar
 from uuid import uuid4
 
 import click
@@ -18,6 +20,10 @@ from anyzork.config import (
 )
 
 console = Console()
+T = TypeVar("T")
+
+if TYPE_CHECKING:
+    from anyzork.db.schema import GameDB
 
 
 @click.group()
@@ -112,20 +118,18 @@ def play(
         )
         console.print(f"[dim]Save path:[/dim] [cyan]{play_path}[/cyan]")
 
-    db = GameDB(play_path)
-    try:
-        db.touch_last_played()
-        engine = GameEngine(
-            db,
-            narrator_enabled=narrator_enabled,
-            narrator_provider=provider,
-            narrator_model=model,
-        )
-        engine.start()
-    except KeyboardInterrupt:
-        console.print("\nFarewell, adventurer.", style="dim italic")
-    finally:
-        db.close()
+    with GameDB(play_path) as db:
+        try:
+            db.touch_last_played()
+            engine = GameEngine(
+                db,
+                narrator_enabled=narrator_enabled,
+                narrator_provider=provider,
+                narrator_model=model,
+            )
+            engine.start()
+        except KeyboardInterrupt:
+            console.print("\nFarewell, adventurer.", style="dim italic")
 
 
 def _slugify_name(value: str) -> str:
@@ -160,30 +164,39 @@ def _is_within(path: Path, root: Path) -> bool:
 
 def _read_zork_metadata(path: Path) -> dict | None:
     """Return metadata for a .zork file, or None on read errors."""
-    from anyzork.db.schema import GameDB
-
-    try:
-        db = GameDB(path)
-        try:
-            return db.get_all_meta()
-        finally:
-            db.close()
-    except Exception:
-        return None
+    return _read_game_data(path, lambda db: db.get_all_meta())
 
 
 def _read_player_state(path: Path) -> dict | None:
     """Return player state for a .zork file, or None on read errors."""
+    return _read_game_data(path, lambda db: db.get_player())
+
+
+def _read_game_data(path: Path, reader: Callable[[GameDB], T]) -> T | None:
+    """Read derived data from a .zork file while tolerating failures."""
     from anyzork.db.schema import GameDB
 
     try:
-        db = GameDB(path)
-        try:
-            return db.get_player()
-        finally:
-            db.close()
+        with GameDB(path) as db:
+            return reader(db)
     except Exception:
         return None
+
+
+def _save_last_played_timestamp(path: Path) -> str:
+    """Return the raw last-played timestamp used for save ordering."""
+    return str((_read_zork_metadata(path) or {}).get("last_played_at") or "")
+
+
+def _format_save_last_played(path: Path) -> str:
+    """Return a compact display string for the save timestamp."""
+    timestamp = _save_last_played_timestamp(path)
+    return timestamp[:16].replace("T", " ") if timestamp else ""
+
+
+def _sorted_save_files(save_dir: Path) -> list[Path]:
+    """Return save files sorted by descending last-played timestamp."""
+    return sorted(save_dir.glob("*.zork"), key=_save_last_played_timestamp, reverse=True)
 
 
 def _resolve_game_reference(game_ref: str, cfg: Config) -> Path:
@@ -239,24 +252,18 @@ def _prepare_managed_save(
 
     if restart or not save_path.exists():
         _copy_zork_file(source_path, save_path)
-        db = GameDB(save_path)
-        try:
+        with GameDB(save_path) as db:
             db.set_meta("game_id", str(uuid4()))
             db.set_meta("source_game_id", str(source_game_id))
             db.set_meta("source_path", str(source_path))
             db.set_meta("save_slot", slot)
             db.set_meta("is_template", 0)
             db.touch_last_played()
-        finally:
-            db.close()
         return save_path, "reset" if restart else "created"
 
-    db = GameDB(save_path)
-    try:
+    with GameDB(save_path) as db:
         db.set_meta("save_slot", slot)
         db.touch_last_played()
-    finally:
-        db.close()
     return save_path, "resume"
 
 
@@ -279,10 +286,10 @@ def _library_game_id(path: Path) -> str | None:
 @click.option(
     "--print-template",
     is_flag=True,
-    help="Print the public AnyZork import-spec authoring template and exit.",
+    help="Print the public AnyZork ZorkScript authoring template and exit.",
 )
 def import_game(spec_source: str, output: Path | None, print_template: bool) -> None:
-    """Compile a ZorkScript file (.zorkscript) into a .zork game."""
+    """Compile ZorkScript into a .zork game."""
     from anyzork.importer import (
         ZORKSCRIPT_AUTHORING_TEMPLATE,
         ImportSpecError,
@@ -366,7 +373,10 @@ def _write_authoring_prompt(
             "[bold green]Done![/bold green] Authoring prompt saved to "
             f"[cyan]{output}[/cyan]"
         )
-        console.print("[dim]Send that prompt to Claude/ChatGPT, then import the JSON with:[/dim]")
+        console.print(
+            "[dim]Send that prompt to your LLM, then import the returned "
+            "ZorkScript with:[/dim]"
+        )
         console.print("[dim]  anyzork import -[/dim]")
         return
 
@@ -412,11 +422,11 @@ def generate(
     output: Path | None,
     realism: str,
 ) -> None:
-    """Build an external-AI authoring prompt for a new AnyZork game.
+    """Build a ZorkScript authoring prompt for a new AnyZork game.
 
     \b
     Usage modes:
-      anyzork generate "prompt"          Build an external authoring prompt
+      anyzork generate "prompt"          Build a ZorkScript authoring prompt
       anyzork generate                   Launch the interactive wizard
       anyzork generate --guided          Launch the wizard explicitly
       anyzork generate --preset zombie-survival   Load a preset, preview, confirm
@@ -490,7 +500,8 @@ def _resolve_generation_inputs(
     if not sys.stdin.isatty():
         console.print(
             "[red]No prompt provided and stdin is not a terminal.[/red]\n"
-            "[dim]Provide a prompt argument or use --preset with --no-edit.[/dim]"
+            "[dim]Provide a prompt argument or use --preset with --no-edit, "
+            "then import the result with anyzork import.[/dim]"
         )
         sys.exit(1)
 
@@ -513,7 +524,7 @@ def list_games() -> None:
             f"{cfg.games_dir} and no saves found in {cfg.saves_dir}[/dim]"
         )
         console.print("[dim]Create an authoring prompt with:[/dim]  anyzork generate")
-        console.print("[dim]Then compile returned JSON with:[/dim]  anyzork import -")
+        console.print("[dim]Then compile returned ZorkScript with:[/dim]  anyzork import -")
         return
 
     if library_files:
@@ -570,15 +581,9 @@ def list_games() -> None:
         saves_table.add_column("Moves", justify="right", style="green")
         saves_table.add_column("Updated", style="dim")
 
-        save_files.sort(
-            key=lambda path: (_read_zork_metadata(path) or {}).get("last_played_at") or "",
-            reverse=True,
-        )
-        for save_file in save_files:
+        for save_file in sorted(save_files, key=_save_last_played_timestamp, reverse=True):
             meta = _read_zork_metadata(save_file) or {}
             player = _read_player_state(save_file) or {}
-            updated_raw = meta.get("last_played_at") or ""
-            updated = updated_raw[:16].replace("T", " ") if updated_raw else ""
             source_game_id = str(meta.get("source_game_id") or "")
             game_label = title_by_source_game_id.get(source_game_id, save_file.parent.name)
             saves_table.add_row(
@@ -587,7 +592,7 @@ def list_games() -> None:
                 str(player.get("game_state", "?")),
                 str(player.get("score", 0)),
                 str(player.get("moves", 0)),
-                updated,
+                _format_save_last_played(save_file),
             )
 
         console.print()
@@ -615,7 +620,7 @@ def list_saves(game_ref: str) -> None:
         console.print(f"[red]Missing game_id metadata in {source_path}[/red]")
         return
 
-    save_files = sorted((cfg.saves_dir / str(game_id)).glob("*.zork"))
+    save_files = _sorted_save_files(cfg.saves_dir / str(game_id))
     if not save_files:
         console.print(
             f"[dim]No managed saves found for[/dim] [cyan]{source_path.stem}[/cyan]"
@@ -629,21 +634,15 @@ def list_saves(game_ref: str) -> None:
     table.add_column("Moves", justify="right", style="green")
     table.add_column("Updated", style="dim")
 
-    save_files.sort(
-        key=lambda path: (_read_zork_metadata(path) or {}).get("last_played_at") or "",
-        reverse=True,
-    )
     for save_file in save_files:
         save_meta = _read_zork_metadata(save_file) or {}
         player = _read_player_state(save_file) or {}
-        updated_raw = save_meta.get("last_played_at") or ""
-        updated = updated_raw[:16].replace("T", " ") if updated_raw else ""
         table.add_row(
             str(save_meta.get("save_slot") or save_file.stem),
             str(player.get("game_state", "?")),
             str(player.get("score", 0)),
             str(player.get("moves", 0)),
-            updated,
+            _format_save_last_played(save_file),
         )
 
     console.print(table)
@@ -718,180 +717,6 @@ def delete_game(game_ref: str, yes: bool) -> None:
         f"[green]Deleted library game[/green] [cyan]{source_path.stem}[/cyan] "
         f"[dim]and {save_count} managed save(s).[/dim]"
     )
-
-
-@cli.command()
-@click.argument("game_ref", type=str)
-def playtest(game_ref: str) -> None:
-    """Analyze playtest logs for a game to find friction points."""
-    from datetime import datetime as _dt
-
-    from rich.panel import Panel
-    from rich.table import Table
-
-    cfg = Config()
-    source_path = _resolve_game_reference(game_ref, cfg)
-
-    from anyzork.db.schema import GameDB
-
-    db = GameDB(source_path)
-    try:
-        log = db.get_playtest_log()
-        meta = db.get_all_meta()
-        all_rooms = db.get_all_rooms()
-    finally:
-        db.close()
-
-    if not log:
-        console.print("No playtest data recorded yet.")
-        return
-
-    title = meta.get("title", source_path.stem) if meta else source_path.stem
-    total_rooms = len(all_rooms) if all_rooms else 0
-
-    # -- Summary stats --
-    total_moves = len(log)
-    unique_rooms = len({row["room_id"] for row in log if row["room_id"]})
-
-    # Duration from first to last timestamp.
-    try:
-        first_ts = _dt.fromisoformat(log[0]["timestamp"])
-        last_ts = _dt.fromisoformat(log[-1]["timestamp"])
-        duration_secs = max(0, int((last_ts - first_ts).total_seconds()))
-        mins, secs = divmod(duration_secs, 60)
-        duration_str = f"{mins}m {secs:02d}s"
-    except (ValueError, KeyError):
-        duration_str = "?"
-
-    outcomes: dict[str, int] = {}
-    for row in log:
-        outcomes[row["outcome"]] = outcomes.get(row["outcome"], 0) + 1
-
-    summary_parts = [
-        f"Moves: {total_moves}",
-        f"Rooms: {unique_rooms}/{total_rooms}",
-        f"Duration: {duration_str}",
-    ]
-    outcome_parts = []
-    for label in ("success", "fail", "unknown", "builtin"):
-        count = outcomes.get(label, 0)
-        if count:
-            outcome_parts.append(f"{label.title()}: {count}")
-    summary_line = "  |  ".join(summary_parts)
-    outcome_line = "  |  ".join(outcome_parts)
-
-    console.print(
-        Panel(
-            f"{summary_line}\n{outcome_line}",
-            title=f"Playtest Analysis: {title}",
-            border_style="bright_cyan",
-            padding=(1, 2),
-        )
-    )
-
-    # -- Friction points --
-    # Unknown commands grouped by frequency.
-    unknown_counts: dict[str, int] = {}
-    for row in log:
-        if row["outcome"] == "unknown":
-            key = row["raw_input"].lower().strip()
-            unknown_counts[key] = unknown_counts.get(key, 0) + 1
-    sorted_unknowns = sorted(unknown_counts.items(), key=lambda x: -x[1])
-
-    # Fail commands grouped by room + detail.
-    fail_counts: dict[str, int] = {}
-    for row in log:
-        if row["outcome"] == "fail":
-            key = f'"{row["raw_input"]}" in {row["room_id"] or "?"}'
-            fail_counts[key] = fail_counts.get(key, 0) + 1
-    sorted_fails = sorted(fail_counts.items(), key=lambda x: -x[1])
-
-    # Rooms by move count.
-    room_moves: dict[str, int] = {}
-    for row in log:
-        rid = row["room_id"]
-        if rid:
-            room_moves[rid] = room_moves.get(rid, 0) + 1
-    sorted_rooms = sorted(room_moves.items(), key=lambda x: -x[1])
-
-    # Repeated identical inputs.
-    repeated: dict[str, int] = {}
-    for row in log:
-        key = f'{row["raw_input"].lower().strip()}@{row["room_id"] or "?"}'
-        repeated[key] = repeated.get(key, 0) + 1
-    repeated_filtered = {k: v for k, v in repeated.items() if v >= 2}
-    sorted_repeated = sorted(repeated_filtered.items(), key=lambda x: -x[1])
-
-    has_friction = sorted_fails or sorted_unknowns or sorted_repeated
-
-    if has_friction:
-        console.print()
-        console.print("[bold]Friction Points:[/bold]")
-
-        if sorted_fails:
-            for desc, count in sorted_fails[:8]:
-                console.print(f"  [red]{desc}[/red] -- failed {count} time(s)")
-
-        if sorted_unknowns:
-            console.print()
-            console.print("[bold]Most Typed Unknown Commands:[/bold]")
-            for cmd_text, count in sorted_unknowns[:8]:
-                console.print(f'  [yellow]"{cmd_text}"[/yellow]     x{count}')
-
-        if sorted_repeated:
-            console.print()
-            console.print("[bold]Repeated Identical Inputs:[/bold]")
-            for key, count in sorted_repeated[:8]:
-                text, room = key.rsplit("@", 1)
-                console.print(f'  [dim]"{text}" in {room}[/dim]     x{count}')
-
-    if sorted_rooms:
-        console.print()
-        console.print("[bold]Rooms by Time Spent:[/bold]")
-        max_bar = max(v for _, v in sorted_rooms) if sorted_rooms else 1
-        for room_id, count in sorted_rooms[:10]:
-            bar_len = max(1, int(20 * count / max_bar))
-            bar = "\u2588" * bar_len
-            console.print(f"  {room_id:<20s} {count:>3d} moves  [green]{bar}[/green]")
-
-    # -- Timeline view --
-    console.print()
-    timeline_table = Table(
-        title="Timeline",
-        show_lines=False,
-        border_style="dim",
-        title_style="bold",
-    )
-    timeline_table.add_column("#", style="dim", justify="right", width=5)
-    timeline_table.add_column("Room", style="cyan", width=20, no_wrap=True)
-    timeline_table.add_column("Input", width=30)
-    timeline_table.add_column("Outcome", width=24)
-
-    outcome_styles = {
-        "success": "green",
-        "fail": "red",
-        "unknown": "yellow",
-        "builtin": "dim",
-        "error": "bold red",
-    }
-    for row in log:
-        move_num = str(row["move_number"])
-        room_id = row["room_id"] or ""
-        raw_input = row["raw_input"]
-        outcome = row["outcome"]
-        detail = row.get("outcome_detail") or ""
-        style = outcome_styles.get(outcome, "")
-        outcome_display = outcome
-        if detail:
-            outcome_display = f"{outcome}  ({detail})"
-        timeline_table.add_row(
-            move_num,
-            room_id,
-            raw_input,
-            f"[{style}]{outcome_display}[/]" if style else outcome_display,
-        )
-
-    console.print(timeline_table)
 
 
 def main() -> None:

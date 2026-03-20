@@ -19,7 +19,7 @@ class LLMProvider(StrEnum):
     GEMINI = "gemini"
 
 
-# Default model per provider — kept in sync with docs/providers/integration.md.
+# Default model per provider.
 _DEFAULT_MODELS: dict[LLMProvider, str] = {
     LLMProvider.CLAUDE: "claude-sonnet-4-6",
     LLMProvider.OPENAI: "gpt-4o",
@@ -29,13 +29,6 @@ _DEFAULT_MODELS: dict[LLMProvider, str] = {
 # Path constants.
 CONFIG_DIR: Path = Path.home() / ".anyzork"
 CONFIG_FILE: Path = CONFIG_DIR / "config.toml"
-
-# Maps config file key names to provider enum / env var names.
-_KEY_TYPE_TO_PROVIDER: dict[str, LLMProvider] = {
-    "anthropic": LLMProvider.CLAUDE,
-    "openai": LLMProvider.OPENAI,
-    "google": LLMProvider.GEMINI,
-}
 
 _PROVIDER_TO_KEY_TYPE: dict[LLMProvider, str] = {
     LLMProvider.CLAUDE: "anthropic",
@@ -73,63 +66,11 @@ def load_config_file() -> dict:
 
     # [keys] section — map to the Config field names
     keys_section = data.get("keys", {})
-    if "anthropic" in keys_section:
-        result["anthropic_api_key"] = keys_section["anthropic"]
-    if "openai" in keys_section:
-        result["openai_api_key"] = keys_section["openai"]
-    if "google" in keys_section:
-        result["google_api_key"] = keys_section["google"]
+    for key_type in _PROVIDER_TO_KEY_TYPE.values():
+        if key_type in keys_section:
+            result[f"{key_type}_api_key"] = keys_section[key_type]
 
     return result
-
-
-def save_config_file(
-    provider: str,
-    model: str | None,
-    api_key: str,
-    key_type: str,
-) -> Path:
-    """Write config to ``~/.anyzork/config.toml``.
-
-    Merges with any existing config file content so that keys for other
-    providers are preserved.
-
-    Args:
-        provider: Provider name (``claude``, ``openai``, ``gemini``).
-        model: Model name, or ``None`` for the provider default.
-        api_key: The API key to store.
-        key_type: Key section name (``anthropic``, ``openai``, ``google``).
-
-    Returns:
-        Path to the written config file.
-    """
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-
-    # Load existing keys so we don't clobber other providers.
-    existing_keys: dict[str, str] = {}
-    if CONFIG_FILE.is_file():
-        try:
-            with CONFIG_FILE.open("rb") as f:
-                existing = tomllib.load(f)
-            existing_keys = dict(existing.get("keys", {}))
-        except Exception:
-            pass
-
-    # Update with new key.
-    existing_keys[key_type] = api_key
-
-    # Build TOML content.
-    lines: list[str] = ["[anyzork]", f'provider = "{provider}"']
-    if model:
-        lines.append(f'model = "{model}"')
-    lines.append("")
-    lines.append("[keys]")
-    for k, v in sorted(existing_keys.items()):
-        lines.append(f'{k} = "{v}"')
-    lines.append("")  # trailing newline
-
-    CONFIG_FILE.write_text("\n".join(lines), encoding="utf-8")
-    return CONFIG_FILE
 
 
 class Config(BaseSettings):
@@ -157,10 +98,6 @@ class Config(BaseSettings):
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     google_api_key: str | None = None
-
-    # --- Generation settings ---
-    seed: int | None = None
-    max_retries: int = 3
 
     # --- Runtime settings ---
     narrator_enabled: bool = False
@@ -239,18 +176,3 @@ class Config(BaseSettings):
     def active_model(self) -> str | None:
         """The model to use — explicit override or provider default."""
         return self.model or self.default_model
-
-    def get_value_source(self, field_name: str) -> str:
-        """Return a human-readable source for a config value.
-
-        Checks env vars, config file, and defaults to determine provenance.
-        """
-        env_key = f"ANYZORK_{field_name.upper()}"
-        if os.environ.get(env_key):
-            return "env var"
-
-        file_values = load_config_file()
-        if field_name in file_values:
-            return "config file"
-
-        return "default"

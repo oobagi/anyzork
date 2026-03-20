@@ -751,15 +751,28 @@ def resolve_command(
         if cmd["one_shot"]:
             db.mark_command_executed(cmd["id"])
 
-        return CommandResult(success=True, messages=all_messages, effects_applied=applied, command_id=cmd["id"])
+        return CommandResult(
+            success=True,
+            messages=all_messages,
+            effects_applied=applied,
+            command_id=cmd["id"],
+        )
 
     # An already-executed one-shot matched — show its done_message as fallback
     if best_done_message:
-        return CommandResult(success=True, messages=[best_done_message], command_id=best_done_command_id)
+        return CommandResult(
+            success=True,
+            messages=[best_done_message],
+            command_id=best_done_command_id,
+        )
 
     # No command's preconditions passed (but at least one pattern matched)
     if best_fail_message:
-        return CommandResult(success=False, messages=[best_fail_message], command_id=best_fail_command_id)
+        return CommandResult(
+            success=False,
+            messages=[best_fail_message],
+            command_id=best_fail_command_id,
+        )
 
     # No pattern matched at all
     return CommandResult(success=False, messages=["I don't understand that."])

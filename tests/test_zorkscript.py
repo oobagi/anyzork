@@ -9,7 +9,6 @@ import pytest
 
 from anyzork.zorkscript import ZorkScriptError, parse_zorkscript
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1176,7 +1175,7 @@ class TestEndToEnd:
 
         spec = parse_zorkscript(source)
         output = tmp_path / "iron_door.zork"
-        compiled_path, warnings = compile_import_spec(spec, output)
+        compiled_path, _warnings = compile_import_spec(spec, output)
 
         assert compiled_path.exists()
         assert compiled_path.suffix == ".zork"

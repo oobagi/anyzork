@@ -2,7 +2,7 @@
 
 Turn a prompt into a playable, portable Zork-style text adventure.
 
-AnyZork uses an LLM to generate a game world once, then runs that world with a deterministic engine. The result is a text adventure that keeps its state, stays internally consistent, and can be shared as a single `.zork` file.
+AnyZork helps you author a game world once, compile it into a portable SQLite `.zork` file, and then run that world with a deterministic engine. The result is a text adventure that keeps its state, stays internally consistent, and can be shared as a single file.
 
 ## Why It Exists
 
@@ -20,11 +20,10 @@ That means no runtime world drift, no changing rules, and no server required to 
 
 - Deterministic runtime engine
 - Portable `.zork` game files
-- Multi-pass world generation
+- ZorkScript authoring wizard
 - Command DSL for game logic
 - Quest and trigger systems
 - Optional narrator mode
-- Provider support for Claude, OpenAI, and Gemini
 - Guided prompt builder and presets
 
 ## Quickstart
@@ -39,23 +38,7 @@ pip install -e .
 
 Python 3.11+ is required.
 
-### 2. Configure a Provider
-
-The easiest way:
-
-```bash
-anyzork init
-```
-
-Or set an API key manually:
-
-```bash
-export ANTHROPIC_API_KEY=...
-export OPENAI_API_KEY=...
-export GOOGLE_API_KEY=...
-```
-
-### 3. Generate a Game
+### 2. Generate a ZorkScript Prompt
 
 ```bash
 anyzork generate "A haunted lighthouse on a foggy coast"
@@ -65,6 +48,20 @@ You can also use the guided wizard:
 
 ```bash
 anyzork generate --guided
+```
+
+This writes a ZorkScript authoring prompt. Send that prompt to your LLM, then save the returned ZorkScript to a file or pipe it directly into `anyzork import`.
+
+### 3. Import
+
+```bash
+anyzork import haunted_lighthouse.zorkscript -o haunted_lighthouse.zork
+```
+
+You can also import from stdin:
+
+```bash
+cat haunted_lighthouse.zorkscript | anyzork import -
 ```
 
 ### 4. Play
@@ -85,42 +82,34 @@ anyzork play game.zork --narrator
 anyzork generate "your prompt"
 anyzork generate --guided
 anyzork generate --list-presets
+anyzork import -
 anyzork play game.zork
-anyzork init
-anyzork config
 anyzork list
 ```
 
 ## How It Works
 
-Generation is split into focused passes:
+The shipped authoring flow is:
 
-1. Concept
-2. Rooms
-3. Locks
-4. Items
-5. NPCs
-6. Interactions
-7. Puzzles
-8. Commands
-9. Quests
-10. Triggers
-11. Validation
-
-At runtime, the engine reads the generated database and executes the game deterministically.
+1. `anyzork generate` builds a ZorkScript authoring prompt.
+2. You send that prompt to an LLM and get back ZorkScript.
+3. `anyzork import` compiles the ZorkScript into a `.zork` file.
+4. `anyzork play` runs the resulting database deterministically.
 
 ## Docs
 
 - [Design Brief](docs/guides/design-brief.md)
 - [System Architecture](docs/architecture/system-design.md)
-- [Generation Pipeline](docs/architecture/generation-pipeline.md)
+- [ADR-001: SQLite Game Storage](docs/architecture/adrs/adr-001-sqlite-game-storage.md)
+- [Game Design Document](docs/game-design/gdd.md)
 - [World Schema](docs/game-design/world-schema.md)
+- [ZorkScript Spec](docs/dsl/zorkscript-spec.md)
 - [Command DSL Spec](docs/dsl/command-spec.md)
 - [Implementation Phases](docs/guides/implementation-phases.md)
 
 ## Project Status
 
-The core generator and deterministic runtime are in place and playable. Some areas, like immersive narrator mode and combat, are still planned or in progress.
+The `generate -> import -> play` flow is shipped and playable. The remaining roadmap is focused on deeper narrator-mode immersion and optional combat.
 
 ## License
 

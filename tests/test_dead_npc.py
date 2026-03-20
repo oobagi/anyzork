@@ -19,7 +19,6 @@ from anyzork.db.schema import GameDB
 from anyzork.engine.game import GameEngine
 from tests.build_test_game import build_test_game
 
-
 # ----------------------------------------------------------------- fixtures
 
 

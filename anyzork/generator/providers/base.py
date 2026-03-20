@@ -1,28 +1,13 @@
-"""Abstract base provider interface for LLM providers.
-
-Every provider (Claude, OpenAI, Gemini) implements this interface.  The
-orchestrator and pass modules only depend on ``BaseProvider`` -- never on a
-concrete provider class.
-"""
+"""Abstract base provider interface for narrator-capable LLM providers."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-
-@dataclass(frozen=True)
-class GenerationContext:
-    """Immutable bag of context passed alongside a generation prompt.
-
-    Providers may use these fields to tune API parameters (temperature,
-    seed) or to inject prior-pass output into the conversation.
-    """
-
-    existing_data: dict = field(default_factory=dict)
-    seed: int | None = None
-    temperature: float = 0.7
-    max_tokens: int = 32_768
+if TYPE_CHECKING:
+    from anyzork.config import Config, LLMProvider
 
 
 @dataclass(frozen=True)
@@ -42,32 +27,27 @@ class ProviderError(Exception):
     """Raised when a provider encounters an unrecoverable error."""
 
 
+RETRY_DELAYS: tuple[float, ...] = (1.0, 2.0, 4.0)
+
+
+def validate_provider_config(
+    config: Config,
+    *,
+    expected_provider: LLMProvider,
+    provider_name: str,
+    missing_key_message: str,
+) -> None:
+    """Validate provider selection and credential availability."""
+    if config.provider != expected_provider:
+        raise ProviderError(
+            f"{provider_name} provider created but active provider is {config.provider.value!r}"
+        )
+    if not config.get_api_key():
+        raise ProviderError(missing_key_message)
+
+
 class BaseProvider(ABC):
     """Interface that all LLM providers implement."""
-
-    # -------------------------------------------------------------- core API
-
-    @abstractmethod
-    def generate_structured(
-        self,
-        prompt: str,
-        schema: dict,
-        context: GenerationContext | None = None,
-    ) -> dict:
-        """Send a prompt and get structured JSON output matching *schema*.
-
-        Args:
-            prompt: The generation instructions for this pass.
-            schema: JSON schema describing the expected output format.
-            context: Optional generation context (existing data, seed, etc.).
-
-        Returns:
-            Parsed JSON ``dict`` conforming to *schema*.
-
-        Raises:
-            ProviderError: On unrecoverable API/parse failures.
-        """
-        ...
 
     @abstractmethod
     def generate_text(

@@ -308,8 +308,6 @@ Display goals:
 - Completed quests collapsed into short summaries
 - Side quests visible only once discovered
 
-See [docs/game-design/quest-system.md](/Users/jaden/Developer/anyzork/docs/game-design/quest-system.md) for the full design.
-
 ---
 
 ## Scoring System
@@ -357,7 +355,7 @@ Every generated game defines at least one win condition — a flag or set of fla
 - **Defeat a boss**: reduce an NPC's HP to zero using the correct strategy (e.g., "Defeat the dragon using its weakness to silver").
 - **Achieve a state**: set all required flags through various puzzle solutions (e.g., "Lift the curse by performing the three rituals").
 
-The generator defines the `win_condition` as a set of flags. The engine checks after every command whether all win-condition flags are true.
+The authored game defines the `win_condition` as a set of flags. The engine checks after every command whether all win-condition flags are true.
 
 ### Lose Conditions
 
@@ -372,13 +370,13 @@ Lose conditions are optional. Not every generated game needs them.
 
 ### No-Lose Design Preference
 
-The generator should strongly prefer designs where **the player cannot lose through normal exploration**. Death should only come from clearly dangerous, opt-in actions (attacking a dragon without preparation, drinking an obviously poisoned potion). A player who is cautious and observant should never die by surprise.
+Generated games should strongly prefer designs where **the player cannot lose through normal exploration**. Death should only come from clearly dangerous, opt-in actions (attacking a dragon without preparation, drinking an obviously poisoned potion). A player who is cautious and observant should never die by surprise.
 
 ---
 
 ## What Makes a Good Generated Game
 
-The generation pipeline should evaluate its output against these quality criteria. A game that meets all of these is well-designed; a game that fails any of them needs another pass.
+The import and validation flow should evaluate authored games against these quality criteria. A game that meets all of these is well-designed; a game that fails any of them needs revision.
 
 ### Interconnectedness
 
@@ -418,7 +416,7 @@ The generation pipeline should evaluate its output against these quality criteri
 
 ## Generation Quality Checklist
 
-The validation pass should confirm:
+Validation should confirm:
 
 - [ ] All exits are bidirectional (or explicitly one-way with narrative justification).
 - [ ] All locks have corresponding keys/solutions reachable before the lock is encountered.

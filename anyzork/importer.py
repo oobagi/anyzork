@@ -4,6 +4,8 @@ This module lets users author a full game spec in an external chat UI and
 compile it locally into a validated ``.zork`` game file.
 """
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import contextlib
@@ -32,364 +34,6 @@ PUBLIC_INTERACTION_TYPES = (
     "search_container",
     "travel_action",
 )
-
-_LEGACY_JSON_SPEC_TEMPLATE = """\
-Ask your chat model to return ONLY JSON matching this AnyZork import format.
-Output JSON only. Do not include markdown explanations outside the JSON block.
-
-Strict schema rules:
-- Use the exact key names shown below. Do not rename keys.
-- Do not invent synonymous fields like `text` for `content` or `location_room_id` for `room_id`.
-- If you are unsure about a field, omit it instead of renaming it.
-- Do not add commentary, prose wrappers, or explanatory keys.
-- The output should be rejected if the schema shape changes.
-- Every game must define at least one real victory flag in `game.win_conditions`.
-- At least one trigger, quest outcome, or interaction must set that victory flag.
-- Public authored specs should use top-level `interactions`, not raw `commands`.
-- Use the exact nested object shapes shown below for triggers, locks, quests,
-  dialogue, flags, and interactions.
-- Do not use shorthand forms or convenience aliases.
-
-Content quality rules:
-- Do not return a skeletal world. The game should feel authored, specific, and playable.
-- Cover the major locations, characters, story beats, and objects named in the concept.
-- Do not silently replace the user's requested premise with a different story.
-- If the concept references an existing story, preserve the requested major beats,
-  locations, and relationships as closely as possible in original JSON form.
-- Only adapt the slice of the story the user actually requested.
-- If the prompt asks for an intro, opening, first act, or other bounded segment,
-  stop there instead of expanding into the full plot.
-- Do not add later canon arcs, major set pieces, or endgame content unless the
-  user explicitly asked for them.
-- Each major location should have multiple concrete props or items that make the
-  scene feel real.
-- Social/story scenes should include NPCs, dialogue, and interactions, not just rooms.
-- Prefer concrete scene detail over generic filler.
-- Add enough items, NPCs, interactions, triggers, and quests that the
-  player has something meaningful to do in each major area.
-- Every named or scene-important character who is physically present in a scene
-  must exist as a real NPC in the correct room, not just in prose.
-- Every prop, tool, clue, or obstacle mentioned in room prose should exist as a
-  real item, exit, lock, NPC, or command-supported interaction.
-- Do not mention an interactable object in prose if the player cannot actually
-  find, examine, take, use, or otherwise engage with it.
-- The starting room and its immediate neighboring rooms must support an obvious
-  first playable loop within 1-3 commands.
-- The opening loop must give the player one clear goal, one obvious action, and
-  one visible path to the first meaningful story advance.
-- Do not start with a dead-end, unclear lockout, or hidden-knowledge bottleneck.
-- Do not make the start room dark unless the immediate escape or lighting
-  solution is obvious and reachable right away.
-- `description` is the room's main prose and should be the richest room text:
-  2-4 concrete, atmospheric, scene-setting sentences.
-- `short_description` is a compact label for summaries and should stay brief.
-- `first_visit_text` is a one-time arrival beat that adds a fresh detail,
-  reaction, or reveal without merely repeating `description`.
-- Do not make `description` read like a bland summary line or category label.
-- Prefer specific sensory details, focal objects, mood, and playable clues in
-  `description` instead of generic placeholder prose.
-
-Engine capability catalog:
-- Travel: rooms, directional exits, one-way paths, hidden exits, locked exits,
-  and story-specific travel steps that can move the player to a new room.
-- Items: take, drop, examine, read, use, use-on, search, visible/hidden items,
-  accessible/inaccessible items, consumable items, toggleable items, and
-  quantity-based items.
-- Containers: open, close, lock, unlock, search, hide items inside, reveal
-  items from, and nested containers with meaningful contents.
-- NPCs: talk, show items, give items, receive items, trade-like exchanges,
-  presence-sensitive interactions, and dialogue that reacts to what the player
-  knows or carries.
-- Dialogue: branching conversations, inventory-aware options, flag-aware
-  options, and quest-aware options.
-- Locks and gates: keys, flag-gated progression, puzzle-gated progression, and
-  doors or containers that unlock the world in a solvable order.
-- Puzzles and quests: clue chains, multi-step objectives, discoveries,
-  completions, and progression that depends on items, dialogue, locks, flags,
-  or room state.
-- Light and darkness: dark rooms, portable light sources, and item-based
-  illumination that changes what the player can see and do.
-- World state: flags, triggers, one-shot reactions, room-entry events,
-  item-taken events, and state changes that unlock new responses or areas.
-- Combat and danger: health changes, blocking threats, and fail-pressure when
-  the concept explicitly calls for danger.
-
-Hard limits:
-- Do not invent travel modes beyond explicit exits or typed travel interactions.
-- Do not assume the player can move through locked or hidden routes without the
-  correct key, condition, or unlock step.
-- Do not mention interactable objects in prose unless they exist as real items,
-  NPCs, exits, locks, or typed interactions.
-- Do not create puzzle, item, or dialogue references that the player cannot
-  actually discover first.
-- Express story-specific player actions through `interactions`, not raw command
-  DSL objects.
-
-Minimum density targets unless the concept explicitly asks for something tiny:
-- At least 3 rooms (small), 6 rooms (medium), or 13 rooms (large).
-- At least 10 items.
-- At least 4 NPCs when the concept includes multiple named characters.
-- At least 3 dialogue nodes and 3 dialogue options for story-forward concepts.
-- At least 2 puzzles or gated progression steps.
-- At least 1 main quest with multiple objectives.
-- At least 1 meaningful interaction, command, or trigger for each major room or scene.
-
-Top-level shape:
-{
-  "format": "anyzork.import.v1",
-  "game": {
-    "title": "Game Title",
-    "author_prompt": "Short summary of the intended experience.",
-    "intro_text": "Optional intro text.",
-    "win_text": "Optional win text.",
-    "lose_text": "Optional lose text.",
-    "win_conditions": ["flag_id"],
-    "lose_conditions": ["flag_id"],
-    "max_score": 0,
-    "realism": "medium"
-  },
-  "player": {
-    "start_room_id": "room_id",
-    "hp": 100,
-    "max_hp": 100
-  },
-  "rooms": [
-    {
-      "id": "bedroom",
-      "name": "Bedroom",
-      "description": "Moonlight cuts across an unmade bed. A silver key glints on the desk.",
-      "short_description": "A small bedroom with a desk and rain-streaked window.",
-      "first_visit_text": "Something about the silver key on the desk feels newly important.",
-      "region": "house",
-      "is_dark": false,
-      "is_start": true
-    }
-  ],
-  "exits": [
-    {
-      "id": "bedroom_hall_north",
-      "from_room_id": "bedroom",
-      "to_room_id": "hall",
-      "direction": "north",
-      "description": "Optional exit text.",
-      "is_locked": false,
-      "is_hidden": false
-    }
-  ],
-  "items": [],
-  "npcs": [],
-  "dialogue_nodes": [],
-  "dialogue_options": [],
-  "locks": [],
-  "puzzles": [],
-  "flags": [],
-  "interactions": [],
-  "quests": [],
-  "triggers": []
-}
-
-Notes:
-- Use exact IDs consistently across references.
-- `quests` should contain nested `objectives`.
-- `game.win_conditions` must contain at least one flag id.
-- The game content must make that victory flag reachable.
-- The authored world should be dense enough that the concept does not collapse
-  into a sparse walking simulator.
-- `context_room_ids`, `required_flags`, `excluded_flags`, `required_items`,
-  `set_flags`, `give_items`, `solution_steps`, `hint_text`, and similar JSON columns should
-  be normal arrays/objects; the CLI compiler will encode them.
-- Author short, natural `interactions[*].command` phrases such as `read letter`,
-  `show letter to vernon`, `give key to hagrid`, or `search desk`.
-- Omit raw `commands` from normal authored specs; they are a legacy internal
-  compatibility surface, not the public authoring contract.
-
-Exact field-shape requirements:
-- `dialogue_nodes[*]` uses `content`, not `text`.
-- `dialogue_options[*]` uses `node_id`, not `from_node_id`.
-- `flags[*]` uses `description` and `value`, not `label`, `name`, or `default`.
-- `items[*]` and `npcs[*]` use `room_id`, not `location_room_id`.
-- `locks[*]` uses `lock_type`, `target_exit_id`, `locked_message`, and
-  `unlock_message`.
-- `quests[*]` uses `quest_type`, `completion_flag`, `score_value`, and
-  `sort_order`.
-- `triggers[*]` uses `event_type`, `event_data`, `message`, `preconditions`,
-  and `effects`.
-- `interactions[*]` uses `type`, `command`, `success_message`,
-  `failure_message`, and explicit canonical target fields like `item_id`,
-  `npc_id`, `container_id`, `room_id`, `move_player_room_id`, or
-  `context_room_ids`.
-
-Allowed enum/value lists:
-- `exits[*].direction` must be one of:
-  `north`, `south`, `east`, `west`, `up`, `down`.
-- Do not use `in`, `out`, `enter`, `leave`, `board`, `through`, or any other
-  non-canonical movement label for exits.
-- `interactions[*].type` must be one of:
-  `read_item`, `show_item_to_npc`, `give_item_to_npc`, `search_room`,
-  `search_container`, `travel_action`.
-- `quests[*].quest_type` must be one of: `main`, `side`.
-- `triggers[*].event_type` must be one of:
-  `room_enter`, `flag_set`, `dialogue_node`, `item_taken`, `item_dropped`.
-- Trigger precondition `type` must be one of:
-  `in_room`, `has_item`, `has_flag`, `not_flag`, `item_in_room`,
-  `item_accessible`, `npc_in_room`, `lock_unlocked`, `puzzle_solved`,
-  `health_above`, `container_open`, `item_in_container`,
-  `not_item_in_container`, `container_has_contents`, `container_empty`,
-  `has_quantity`, `toggle_state`.
-- Trigger effect `type` must be one of:
-  `move_item`, `remove_item`, `set_flag`, `unlock`, `move_player`,
-  `spawn_item`, `change_health`, `add_score`, `reveal_exit`, `solve_puzzle`,
-  `discover_quest`, `print`, `open_container`, `move_item_to_container`,
-  `take_item_from_container`, `consume_quantity`, `restore_quantity`,
-  `set_toggle_state`.
-
-Do not use these shorthand or alias forms:
-- Do not use `response_text` where the schema expects `success_message` or `message`.
-- Do not use trigger forms like `trigger_type`, `on_enter`, `on_flag`,
-  `enter_room`, or `room_turn`. Use canonical `event_type` values only.
-- Do not use effect shorthands like `{ "set_flag": "..." }`,
-  `{ "show_item": "..." }`, or `{ "give_item": "..." }`. Every effect must
-  include a `type` key and canonical parameter names.
-- Do not use condition shorthands like `{ "flag": "...", "value": true }`.
-  Every precondition must include a canonical `type` key.
-- Do not use `is_main_quest`; use `quest_type`.
-- Do not author raw `commands[*]` objects in normal specs.
-
-Canonical nested examples:
-```json
-{
-  "flags": [
-    {
-      "id": "found_letter",
-      "description": "Found the letter",
-      "value": false
-    }
-  ],
-  "dialogue_nodes": [
-    {
-      "id": "node_hagrid_intro",
-      "npc_id": "hagrid",
-      "content": "You're a wizard, Harry.",
-      "is_root": true
-    }
-  ],
-  "dialogue_options": [
-    {
-      "id": "opt_accept_truth",
-      "node_id": "node_hagrid_intro",
-      "text": "Listen to Hagrid.",
-      "next_node_id": null,
-      "required_flags": [],
-      "excluded_flags": [],
-      "required_items": [],
-      "set_flags": ["heard_truth"],
-      "sort_order": 0
-    }
-  ],
-  "locks": [
-    {
-      "id": "study_door_lock",
-      "lock_type": "flag",
-      "target_exit_id": "hall_to_study",
-      "required_flags": ["found_key"],
-      "locked_message": "The way is still shut.",
-      "unlock_message": "The door clicks open.",
-      "is_locked": true,
-      "consume_key": false
-    }
-  ],
-  "interactions": [
-    {
-      "id": "read_letter",
-      "type": "read_item",
-      "command": "read letter",
-      "item_id": "letter",
-      "context_room_ids": ["bedroom"],
-      "required_flags": [],
-      "excluded_flags": [],
-      "required_items": [],
-      "set_flags": ["found_letter"],
-      "give_items": [],
-      "unlock_lock_ids": [],
-      "reveal_exit_ids": [],
-      "discover_quest_ids": [],
-      "solve_puzzle_ids": [],
-      "move_player_room_id": null,
-      "success_message": "The letter changes everything.",
-      "failure_message": "You have nothing to read.",
-      "priority": 0,
-      "one_shot": false
-    }
-  ],
-  "quests": [
-    {
-      "id": "main_quest",
-      "name": "Leave Home Behind",
-      "description": "Follow the truth into a new life.",
-      "quest_type": "main",
-      "status": "undiscovered",
-      "discovery_flag": null,
-      "completion_flag": "main_quest_complete",
-      "score_value": 25,
-      "sort_order": 0,
-      "objectives": [
-        {
-          "id": "obj_read_letter",
-          "description": "Read the mysterious letter.",
-          "completion_flag": "found_letter",
-          "order_index": 0,
-          "is_optional": false,
-          "bonus_score": 0
-        }
-      ]
-    }
-  ],
-  "triggers": [
-    {
-      "id": "enter_hut_intro",
-      "event_type": "room_enter",
-      "event_data": { "room_id": "hut" },
-      "preconditions": [
-        { "type": "not_flag", "flag": "met_hagrid" }
-      ],
-      "effects": [
-        { "type": "set_flag", "flag": "met_hagrid", "value": true },
-        { "type": "print", "message": "A thunderous knock shakes the door." }
-      ],
-      "message": "Hagrid has arrived.",
-      "priority": 0,
-      "one_shot": true,
-      "executed": false,
-      "is_enabled": true
-    }
-  ]
-}
-```
-
-Required self-check before final answer:
-- Re-read every top-level array entry and verify the keys exactly match this
-  schema.
-- Verify every `exits[*].direction` is one of `north`, `south`, `east`, `west`,
-  `up`, or `down`.
-- Verify the main quest and objectives stay inside the requested story slice and
-  do not drift into later acts the user did not ask for.
-- Verify every named character who is present in prose also exists as a real
-  NPC in game state.
-- Verify every interactable named in room prose exists as real state the player
-  can meaningfully interact with.
-- Verify the starting room and its neighbors provide an obvious first playable
-  loop without hidden knowledge.
-- Verify `description` carries the main room atmosphere, `short_description`
-  stays compact, and `first_visit_text` adds new information instead of
-  repeating the same prose.
-- Verify `interactions[*]` use only the allowed interaction types and canonical
-  target/effect fields.
-- Verify triggers use canonical `preconditions` and `effects` objects with
-  explicit `type` keys.
-- Verify all required cross-references point at real IDs.
-- Verify at least one reachable win flag appears in `game.win_conditions`.
-"""
-
 ZORKSCRIPT_AUTHORING_TEMPLATE = """\
 You are authoring a complete, playable text adventure in ZorkScript format.
 Output ONLY valid ZorkScript. No markdown, no commentary, no prose outside
@@ -922,19 +566,6 @@ Concept:
 {concept}
 """
 
-IMPORT_SPEC_AUTHORING_TEMPLATE = ZORKSCRIPT_AUTHORING_TEMPLATE  # public alias
-
-IMPORT_CONCEPT_PROMPT_PREFIX = """\
-You are authoring an AnyZork world spec for an external model.
-Use the concept brief below as the creative source of truth.
-Return only valid JSON that matches the public import format.
-Do not rename fields. Do not invent aliases. Use the exact schema keys shown below.
-Do not reduce the concept to a thin or generic world; preserve the requested scope.
-Do not use shorthand field forms. Emit the canonical schema directly.
-
-Concept brief:
-"""
-
 _REALISM_GUIDANCE: dict[str, list[str]] = {
     "low": [
         "Keep mechanics simple and accessible. Minimal nested item systems.",
@@ -956,31 +587,6 @@ _REALISM_GUIDANCE: dict[str, list[str]] = {
         "Environmental consequences matter: dark rooms need light, locked things need keys.",
     ],
 }
-
-
-_SMART_PUNCT_TRANSLATION = str.maketrans(
-    {
-        "\u2018": "'",
-        "\u2019": "'",
-        "\u201c": '"',
-        "\u201d": '"',
-        "\u00a0": " ",
-    }
-)
-
-
-def build_import_prompt(
-    concept: str,
-    *,
-    realism: str | None = None,
-    authoring_fields: dict[str, Any] | None = None,
-    **_kwargs: Any,
-) -> str:
-    """Build a ZorkScript authoring prompt. Legacy alias for build_zorkscript_prompt."""
-    return build_zorkscript_prompt(
-        concept, realism=realism, authoring_fields=authoring_fields,
-    )
-
 
 def build_zorkscript_prompt(
     concept: str,
@@ -1158,63 +764,11 @@ def _build_authoring_requirements(authoring_fields: dict[str, Any]) -> str:
 
     if not lines:
         return ""
-    return "Authoring requirements:\n" + "\n".join(f"- {l}" if not l.startswith("  ") else l for l in lines)
-
-
-def _normalize_json_like_text(raw_text: str) -> str:
-    """Normalize common chat-export punctuation that breaks JSON parsing."""
-    return raw_text.translate(_SMART_PUNCT_TRANSLATION)
-
-
-def parse_import_spec_text(raw_text: str) -> dict[str, Any]:
-    """Parse import-spec text, tolerating fenced JSON blocks."""
-    text = _normalize_json_like_text(raw_text).strip()
-    if not text:
-        raise ImportSpecError("No import spec was provided.")
-
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"```(?:json)?\s*\n?(.*?)\n?\s*```", text, re.DOTALL)
-        if not match:
-            raise ImportSpecError("Import spec must be valid JSON.") from None
-        try:
-            data = json.loads(match.group(1).strip())
-        except json.JSONDecodeError as exc:
-            raise ImportSpecError(f"Import spec contained invalid fenced JSON: {exc}") from exc
-
-    if not isinstance(data, dict):
-        raise ImportSpecError("Import spec must decode to a top-level JSON object.")
-
-    if "game" not in data or not isinstance(data["game"], dict):
-        raise ImportSpecError("Import spec must include a top-level 'game' object.")
-    if "rooms" not in data or not isinstance(data["rooms"], list):
-        raise ImportSpecError("Import spec must include a top-level 'rooms' array.")
-    if "exits" not in data or not isinstance(data["exits"], list):
-        raise ImportSpecError("Import spec must include a top-level 'exits' array.")
-    if "format" in data and data["format"] != IMPORT_SPEC_FORMAT:
-        raise ImportSpecError(
-            f"Unsupported import format {data['format']!r}; expected {IMPORT_SPEC_FORMAT!r}."
-        )
-
-    return data
-
-
-def load_import_spec(source: str) -> dict[str, Any]:
-    """Load and parse an import spec from stdin, a file path, or inline text."""
-    if source == "-":
-        raw_text = sys.stdin.read()
-    else:
-        source_path = Path(source)
-        if source_path.exists():
-            raw_text = source_path.read_text(encoding="utf-8")
-        else:
-            stripped = source.lstrip()
-            if stripped.startswith("{") or stripped.startswith("```"):
-                raw_text = source
-            else:
-                raise FileNotFoundError(source)
-    return parse_import_spec_text(raw_text)
+    formatted = [
+        f"- {entry}" if not entry.startswith("  ") else entry
+        for entry in lines
+    ]
+    return "Authoring requirements:\n" + "\n".join(formatted)
 
 
 def load_import_source(source: str) -> dict[str, Any]:
@@ -1225,10 +779,7 @@ def load_import_source(source: str) -> dict[str, Any]:
         raw_text = sys.stdin.read()
     else:
         candidate = Path(source).expanduser()
-        if candidate.exists():
-            raw_text = candidate.read_text(encoding="utf-8")
-        else:
-            raw_text = source
+        raw_text = candidate.read_text(encoding="utf-8") if candidate.exists() else source
 
     return parse_zorkscript(raw_text)
 
@@ -1286,12 +837,6 @@ def compile_import_spec(
     finally:
         if output_path.exists():
             db.close()
-
-
-def compile_import_spec_to_game(spec: dict[str, Any], output_path: Path) -> Path:
-    """Compile an import spec and return the output path."""
-    compiled_path, _warnings = compile_import_spec(spec, output_path)
-    return compiled_path
 
 
 def _initialize_metadata(db: GameDB, spec: dict[str, Any]) -> None:

@@ -1,7 +1,7 @@
 """ZorkScript parser and compiler for AnyZork.
 
-Parses ZorkScript DSL source text and returns a dict matching the JSON import
-shape expected by ``compile_import_spec``.  The parser is a hand-written
+Parses ZorkScript DSL source text and returns the normalized import-spec
+shape expected by ``compile_import_spec``. The parser is a hand-written
 recursive descent tokenizer + block parser.
 
 Public API::
@@ -9,14 +9,13 @@ Public API::
     from anyzork.zorkscript import parse_zorkscript, ZorkScriptError
 
     spec = parse_zorkscript(source_text)
-    # spec is identical in shape to what parse_import_spec_text returns
+    # spec is ready for compile_import_spec
 """
 
 from __future__ import annotations
 
 import re
-from typing import Any
-
+from typing import Any, ClassVar
 
 # ---------------------------------------------------------------------------
 # Error type
@@ -59,7 +58,7 @@ _TOKEN_RE = re.compile("|".join(f"(?P<{name}>{pattern})" for name, pattern in _T
 
 
 class _Token:
-    __slots__ = ("kind", "value", "line")
+    __slots__ = ("kind", "line", "value")
 
     def __init__(self, kind: str, value: str, line: int):
         self.kind = kind
@@ -154,9 +153,7 @@ class _Parser:
         tok = self._peek()
         if tok.kind != kind:
             return False
-        if value is not None and tok.value != value:
-            return False
-        return True
+        return not (value is not None and tok.value != value)
 
     def _match(self, kind: str, value: str | None = None) -> _Token | None:
         if self._at(kind, value):
@@ -240,7 +237,7 @@ class _Parser:
 
     # -- Precondition / effect compilation --
 
-    _PRECONDITION_ARGS: dict[str, list[str]] = {
+    _PRECONDITION_ARGS: ClassVar[dict[str, list[str]]] = {
         "in_room":                ["room"],
         "has_item":               ["item"],
         "has_flag":               ["flag"],
@@ -260,7 +257,7 @@ class _Parser:
         "toggle_state":           ["item", "state"],
     }
 
-    _EFFECT_ARGS: dict[str, list[str]] = {
+    _EFFECT_ARGS: ClassVar[dict[str, list[str]]] = {
         "move_item":               ["item", "from", "to"],
         "remove_item":             ["item"],
         "set_flag":                ["flag", "value"],
@@ -365,7 +362,7 @@ class _Parser:
 
     # -- Game block --
 
-    _GAME_FIELD_MAP = {
+    _GAME_FIELD_MAP: ClassVar[dict[str, str]] = {
         "author": "author_prompt",
         "intro": "intro_text",
         "win": "win_conditions",
@@ -385,7 +382,7 @@ class _Parser:
 
     # -- Player block --
 
-    _PLAYER_FIELD_MAP = {
+    _PLAYER_FIELD_MAP: ClassVar[dict[str, str]] = {
         "start": "start_room_id",
         "start_room": "start_room_id",
     }
@@ -403,7 +400,7 @@ class _Parser:
 
     # -- Room block --
 
-    _ROOM_FIELD_MAP = {
+    _ROOM_FIELD_MAP: ClassVar[dict[str, str]] = {
         "short": "short_description",
         "first_visit": "first_visit_text",
         "dark": "is_dark",
@@ -494,7 +491,7 @@ class _Parser:
 
     # -- Item block --
 
-    _ITEM_FIELD_MAP = {
+    _ITEM_FIELD_MAP: ClassVar[dict[str, str]] = {
         "examine": "examine_description",
         "examine_text": "examine_description",
         "in": "room_id",
@@ -557,7 +554,7 @@ class _Parser:
 
     # -- NPC block --
 
-    _NPC_FIELD_MAP = {
+    _NPC_FIELD_MAP: ClassVar[dict[str, str]] = {
         "examine": "examine_description",
         "examine_text": "examine_description",
         "in": "room_id",
@@ -700,7 +697,7 @@ class _Parser:
 
     # -- Lock block --
 
-    _LOCK_FIELD_MAP = {
+    _LOCK_FIELD_MAP: ClassVar[dict[str, str]] = {
         "type": "lock_type",
         "key": "key_item_id",
         "consume": "consume_key",
@@ -746,7 +743,7 @@ class _Parser:
 
     # -- Puzzle block --
 
-    _PUZZLE_FIELD_MAP = {
+    _PUZZLE_FIELD_MAP: ClassVar[dict[str, str]] = {
         "in": "room_id",
         "score": "score_value",
         "steps": "solution_steps",
@@ -951,17 +948,19 @@ class _Parser:
 
             # Skip unknown fields
             self._advance()
-            if self._at("STRING") or self._at("NUMBER") or self._at("IDENT") or self._at("LBRACKET"):
+            if (
+                self._at("STRING")
+                or self._at("NUMBER")
+                or self._at("IDENT")
+                or self._at("LBRACKET")
+            ):
                 self._parse_value()
 
         self._expect("RBRACE")
 
         # Auto-generate ID from pattern, deduplicate.
         slug = re.sub(r"[^a-z0-9]+", "_", pattern.lower()).strip("_")
-        if context_rooms:
-            base_id = f"on_{slug}_{context_rooms[0]}"
-        else:
-            base_id = f"on_{slug}"
+        base_id = f"on_{slug}_{context_rooms[0]}" if context_rooms else f"on_{slug}"
         existing_ids = {c["id"] for c in self._commands}
         cmd_id = base_id
         counter = 2
@@ -990,7 +989,7 @@ class _Parser:
 
     # -- Trigger (when) block --
 
-    _EVENT_TYPE_ARGS: dict[str, str] = {
+    _EVENT_TYPE_ARGS: ClassVar[dict[str, str]] = {
         "room_enter": "room_id",
         "flag_set": "flag",
         "item_taken": "item_id",
@@ -1043,7 +1042,12 @@ class _Parser:
 
             # Skip unknown fields
             self._advance()
-            if self._at("STRING") or self._at("NUMBER") or self._at("IDENT") or self._at("LBRACKET"):
+            if (
+                self._at("STRING")
+                or self._at("NUMBER")
+                or self._at("IDENT")
+                or self._at("LBRACKET")
+            ):
                 self._parse_value()
 
         self._expect("RBRACE")
@@ -1237,7 +1241,7 @@ class _Parser:
 
     # -- Interaction response block --
 
-    _INTERACTION_FIELD_MAP = {
+    _INTERACTION_FIELD_MAP: ClassVar[dict[str, str]] = {
         "tag": "item_tag",
         "target": "target_category",
         "response": "response",
@@ -1350,7 +1354,7 @@ def _strip_fences(source: str) -> str:
 
 
 def parse_zorkscript(source: str) -> dict[str, Any]:
-    """Parse ZorkScript source and return a dict matching the JSON import shape."""
+    """Parse ZorkScript source and return a normalized import spec dict."""
     tokens = _tokenize(_strip_fences(source))
     parser = _Parser(tokens)
     return parser.parse()
