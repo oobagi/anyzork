@@ -556,6 +556,29 @@ def apply_effect(
         new_state = _substitute_slots(effect["state"], slots)
         db.toggle_item_state(item_id, new_state)
 
+    # -- Visibility / NPC movement effects ------------------------------------
+
+    elif effect_type == "make_visible":
+        item_ref = _substitute_slots(effect.get("item", ""), slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        db._mutate("UPDATE items SET is_visible = 1 WHERE id = ?", (item_id,))
+
+    elif effect_type == "make_hidden":
+        item_ref = _substitute_slots(effect.get("item", ""), slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        db._mutate("UPDATE items SET is_visible = 0 WHERE id = ?", (item_id,))
+
+    elif effect_type == "make_takeable":
+        item_ref = _substitute_slots(effect.get("item", ""), slots)
+        item_id = _resolve_name_to_id(item_ref, db)
+        db._mutate("UPDATE items SET is_takeable = 1 WHERE id = ?", (item_id,))
+
+    elif effect_type == "move_npc":
+        npc_ref = _substitute_slots(effect.get("npc", ""), slots)
+        room_ref = _substitute_slots(effect.get("room", ""), slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        db.move_npc(npc_id, room_ref)
+
     # -- Target-aware effects (interaction response context only) -----------
     # These read _target_id / _target_type from resolved_slots, which are
     # injected by _handle_interaction in game.py.  When called outside that

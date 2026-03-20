@@ -279,6 +279,11 @@ class _Parser:
         "consume_quantity":        ["item", "amount"],
         "restore_quantity":        ["item", "amount"],
         "set_toggle_state":        ["item", "state"],
+        # Visibility / NPC movement
+        "make_visible":            ["item"],
+        "make_hidden":             ["item"],
+        "make_takeable":           ["item"],
+        "move_npc":                ["npc", "room"],
         # Target-aware effects (interaction response context only)
         "kill_target":             [],
         "damage_target":           ["amount"],
