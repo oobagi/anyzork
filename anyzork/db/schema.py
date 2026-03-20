@@ -15,6 +15,7 @@ import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from anyzork import __version__
 
@@ -44,7 +45,13 @@ CREATE TABLE IF NOT EXISTS metadata (
     lose_text       TEXT,
     region_count    INTEGER NOT NULL DEFAULT 0,
     room_count      INTEGER NOT NULL DEFAULT 0,
-    realism         TEXT NOT NULL DEFAULT 'medium'   -- "low", "medium", "high"
+    realism         TEXT NOT NULL DEFAULT 'medium',  -- "low", "medium", "high"
+    game_id         TEXT,
+    source_game_id  TEXT,
+    source_path     TEXT,
+    save_slot       TEXT,
+    last_played_at  TEXT,
+    is_template     INTEGER NOT NULL DEFAULT 0
 );
 
 -- -------------------------------------------------------
@@ -362,7 +369,58 @@ CREATE TABLE IF NOT EXISTS triggers (
 );
 CREATE INDEX IF NOT EXISTS idx_triggers_event_type ON triggers(event_type);
 CREATE INDEX IF NOT EXISTS idx_triggers_event_data ON triggers(event_data);
+
+-- -------------------------------------------------------
+-- playtest_log: records every player action for playtest analysis
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS playtest_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    move_number     INTEGER NOT NULL,
+    room_id         TEXT,
+    raw_input       TEXT NOT NULL,
+    outcome         TEXT NOT NULL,   -- "success", "fail", "unknown", "builtin", "error"
+    outcome_detail  TEXT,            -- what happened: command id, error message, etc.
+    timestamp       TEXT NOT NULL    -- ISO 8601
+);
+
+CREATE INDEX IF NOT EXISTS idx_playtest_log_move ON playtest_log(move_number);
+CREATE INDEX IF NOT EXISTS idx_playtest_log_outcome ON playtest_log(outcome);
 """
+
+
+_METADATA_FIELDS: frozenset[str] = frozenset(
+    {
+        "title",
+        "author_prompt",
+        "seed",
+        "version",
+        "created_at",
+        "max_score",
+        "win_conditions",
+        "lose_conditions",
+        "intro_text",
+        "win_text",
+        "lose_text",
+        "region_count",
+        "room_count",
+        "realism",
+        "game_id",
+        "source_game_id",
+        "source_path",
+        "save_slot",
+        "last_played_at",
+        "is_template",
+    }
+)
+
+_METADATA_MIGRATIONS: dict[str, str] = {
+    "game_id": "TEXT",
+    "source_game_id": "TEXT",
+    "source_path": "TEXT",
+    "save_slot": "TEXT",
+    "last_played_at": "TEXT",
+    "is_template": "INTEGER NOT NULL DEFAULT 0",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -393,8 +451,41 @@ class GameDB:
         self._conn.execute("PRAGMA journal_mode=DELETE")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.row_factory = sqlite3.Row
+        self._conn.executescript(SCHEMA_SQL)
+        self._ensure_metadata_columns()
 
     # ----------------------------------------------------------- lifecycle
+
+    def _ensure_metadata_columns(self) -> None:
+        """Backfill metadata columns for older .zork files."""
+        columns = {
+            row["name"]
+            for row in self._conn.execute("PRAGMA table_info(metadata)").fetchall()
+        }
+        if not columns:
+            return
+
+        for name, column_sql in _METADATA_MIGRATIONS.items():
+            if name not in columns:
+                self._conn.execute(
+                    f"ALTER TABLE metadata ADD COLUMN {name} {column_sql}"
+                )
+
+        row = self._conn.execute(
+            "SELECT id, game_id, is_template FROM metadata WHERE id = 1"
+        ).fetchone()
+        if row is not None:
+            if not row["game_id"]:
+                self._conn.execute(
+                    "UPDATE metadata SET game_id = ? WHERE id = 1",
+                    (str(uuid4()),),
+                )
+            if row["is_template"] is None:
+                self._conn.execute(
+                    "UPDATE metadata SET is_template = 0 WHERE id = 1"
+                )
+
+        self._conn.commit()
 
     def initialize(
         self,
@@ -411,6 +502,12 @@ class GameDB:
         max_score: int = 0,
         region_count: int = 0,
         room_count: int = 0,
+        game_id: str | None = None,
+        source_game_id: str | None = None,
+        source_path: str | None = None,
+        save_slot: str | None = None,
+        last_played_at: str | None = None,
+        is_template: bool = False,
     ) -> None:
         """Create all tables and insert the initial metadata row."""
         self._conn.executescript(SCHEMA_SQL)
@@ -420,8 +517,9 @@ class GameDB:
                 (id, title, author_prompt, seed, version, created_at,
                  max_score, win_conditions, lose_conditions,
                  intro_text, win_text, lose_text,
-                 region_count, room_count)
-            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 region_count, room_count, game_id, source_game_id,
+                 source_path, save_slot, last_played_at, is_template)
+            VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 game_name,
@@ -437,6 +535,12 @@ class GameDB:
                 lose_text,
                 region_count,
                 room_count,
+                game_id or str(uuid4()),
+                source_game_id,
+                source_path,
+                save_slot,
+                last_played_at,
+                1 if is_template else 0,
             ),
         )
         self._conn.commit()
@@ -475,13 +579,7 @@ class GameDB:
     def get_meta(self, key: str) -> Any:
         """Return a single metadata field value by column name."""
         # Validate key is a real column to prevent injection.
-        valid = {
-            "title", "author_prompt", "seed", "version", "created_at",
-            "max_score", "win_conditions", "lose_conditions",
-            "intro_text", "win_text", "lose_text",
-            "region_count", "room_count", "realism",
-        }
-        if key not in valid:
+        if key not in _METADATA_FIELDS:
             raise KeyError(f"Unknown metadata key: {key!r}")
         row = self._conn.execute(
             f"SELECT {key} FROM metadata WHERE id = 1"
@@ -490,13 +588,7 @@ class GameDB:
 
     def set_meta(self, key: str, value: Any) -> None:
         """Update a single metadata field by column name."""
-        valid = {
-            "title", "author_prompt", "seed", "version", "created_at",
-            "max_score", "win_conditions", "lose_conditions",
-            "intro_text", "win_text", "lose_text",
-            "region_count", "room_count", "realism",
-        }
-        if key not in valid:
+        if key not in _METADATA_FIELDS:
             raise KeyError(f"Unknown metadata key: {key!r}")
         self._mutate(
             f"UPDATE metadata SET {key} = ? WHERE id = 1", (value,)
@@ -505,6 +597,10 @@ class GameDB:
     def get_all_meta(self) -> dict | None:
         """Return the full metadata row as a dict."""
         return self._fetchone("SELECT * FROM metadata WHERE id = 1")
+
+    def touch_last_played(self) -> None:
+        """Stamp the metadata row with the current UTC time."""
+        self.set_meta("last_played_at", datetime.now(UTC).isoformat())
 
     # ---------------------------------------------------------------- rooms
 
@@ -1158,6 +1254,9 @@ class GameDB:
                     # Treat unparseable as global (defensive)
                     filtered.append(row)
                     continue
+                if not room_list:
+                    filtered.append(row)
+                    continue
                 if current_room_id in room_list:
                     filtered.append(row)
         return filtered
@@ -1673,3 +1772,38 @@ class GameDB:
             "UPDATE triggers SET executed = 1 WHERE id = ?",
             (trigger_id,),
         )
+
+    # ------------------------------------------------------- playtest log
+
+    def log_playtest_event(
+        self,
+        move_number: int,
+        room_id: str,
+        raw_input: str,
+        outcome: str,
+        outcome_detail: str | None = None,
+    ) -> None:
+        """Record a single player action to the playtest log."""
+        self._mutate(
+            "INSERT INTO playtest_log "
+            "(move_number, room_id, raw_input, outcome, outcome_detail, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                move_number,
+                room_id,
+                raw_input,
+                outcome,
+                outcome_detail,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+
+    def get_playtest_log(self) -> list[dict]:
+        """Return all playtest log rows ordered by move_number."""
+        return self._fetchall(
+            "SELECT * FROM playtest_log ORDER BY move_number, id"
+        )
+
+    def clear_playtest_log(self) -> None:
+        """Delete all rows from the playtest log."""
+        self._mutate("DELETE FROM playtest_log")

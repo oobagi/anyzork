@@ -82,35 +82,23 @@ class FieldDef:
 # ---------------------------------------------------------------------------
 
 SCALE_OPTIONS = [
-    ("Small", "8-15 rooms, 1 region. A single building or ship. ~15 min."),
-    (
-        "Medium",
-        "16-30 rooms, 2-3 regions. Multiple wings or districts. ~45 min.",
-    ),
-    ("Large", "31-50 rooms, 4-6 regions. A sprawling world. ~90 min."),
+    ("Small", "3-5 rooms, 1 region. Tight and focused."),
+    ("Medium", "6-12 rooms, 1-2 regions. A solid adventure."),
+    ("Large", "13-25 rooms, 2-4 regions. A sprawling world."),
 ]
 
 SCALE_VALUES = ["small", "medium", "large"]
 
 SCALE_DETAIL = {
-    "small": "small (8-15 rooms, 1 region)",
-    "medium": "medium (16-30 rooms, 2-3 regions)",
-    "large": "large (31-50 rooms, 4-6 regions)",
+    "small": "small (3-5 rooms, 1 region)",
+    "medium": "medium (6-12 rooms, 1-2 regions)",
+    "large": "large (13-25 rooms, 2-4 regions)",
 }
 
 REALISM_OPTIONS = [
-    (
-        "Low",
-        "Arcade-friendly logic. Looser item behavior and simpler simulation.",
-    ),
-    (
-        "Medium",
-        "Balanced. Grounded behavior without overcomplicating interactions.",
-    ),
-    (
-        "High",
-        "More simulation-heavy. Stricter item dynamics and grounded interactions.",
-    ),
+    ("Low", "Simple mechanics. Items just work. No nested dependencies."),
+    ("Medium", "Grounded. Locks need keys, torches need lighting. 1-3 step puzzles."),
+    ("High", "Realistic. Guns need ammo, devices need fuel. Multi-step chains."),
 ]
 
 REALISM_VALUES = ["low", "medium", "high"]

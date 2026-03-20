@@ -34,11 +34,13 @@ class CommandResult:
         messages: Ordered list of text messages to display to the player.
         effects_applied: List of effect type strings that were executed
             (e.g. ``["remove_item", "unlock", "print"]``).
+        command_id: The id of the matched DSL command, if any.
     """
 
     success: bool
     messages: list[str] = field(default_factory=list)
     effects_applied: list[str] = field(default_factory=list)
+    command_id: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -618,8 +620,10 @@ def resolve_command(
 
     # Track the best failure message from a matching-but-failing command
     best_fail_message: str | None = None
+    best_fail_command_id: str = ""
     # Track done_message from an already-executed one-shot (fallback, not immediate return)
     best_done_message: str | None = None
+    best_done_command_id: str = ""
 
     for cmd in candidates:
         # Parse preconditions and effects from JSON strings
@@ -649,6 +653,7 @@ def resolve_command(
                 )
                 if preconds_pass:
                     best_done_message = done_msg
+                    best_done_command_id = cmd["id"]
             continue
 
         # Check all preconditions
@@ -662,6 +667,7 @@ def resolve_command(
             fail_msg = cmd.get("failure_message")
             if fail_msg:
                 best_fail_message = fail_msg
+                best_fail_command_id = cmd["id"]
             continue
 
         # All preconditions passed — apply effects
@@ -690,15 +696,15 @@ def resolve_command(
         if cmd["one_shot"]:
             db.mark_command_executed(cmd["id"])
 
-        return CommandResult(success=True, messages=all_messages, effects_applied=applied)
+        return CommandResult(success=True, messages=all_messages, effects_applied=applied, command_id=cmd["id"])
 
     # An already-executed one-shot matched — show its done_message as fallback
     if best_done_message:
-        return CommandResult(success=True, messages=[best_done_message])
+        return CommandResult(success=True, messages=[best_done_message], command_id=best_done_command_id)
 
     # No command's preconditions passed (but at least one pattern matched)
     if best_fail_message:
-        return CommandResult(success=False, messages=[best_fail_message])
+        return CommandResult(success=False, messages=[best_fail_message], command_id=best_fail_command_id)
 
     # No pattern matched at all
     return CommandResult(success=False, messages=["I don't understand that."])

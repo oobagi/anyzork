@@ -134,20 +134,27 @@ def test_run_pass_caches_generated_intents_after_failed_compile(tmp_path: Path) 
     provider = RecordingTwoStageProvider(
         intents_response=intents_response,
         command_responses=[
-            {
-                "commands": [
-                    {
-                        "id": "broken_examine_override",
-                        "verb": "examine",
-                        "pattern": "examine bookshelf",
-                        "preconditions": [],
-                        "effects": [],
-                        "success_message": "A seam appears.",
-                        "priority": 10,
-                        "one_shot": 0,
-                    }
-                ],
-                "flags": [],
+                {
+                    "commands": [
+                        {
+                            "id": "assemble_will_fragments",
+                            "verb": "assemble",
+                            "pattern": "assemble will fragments",
+                            "preconditions": [],
+                            "effects": [
+                                {
+                                    "type": "spawn_item",
+                                    "item": "reconstructed_will",
+                                    "location": "_inventory",
+                                }
+                            ],
+                            "success_message": "A seam appears.",
+                            "failure_message": "You are still missing pieces.",
+                            "priority": 10,
+                            "one_shot": 0,
+                        }
+                    ],
+                    "flags": [],
             }
         ],
     )
@@ -188,19 +195,26 @@ def test_second_run_reuses_cached_intents_without_regenerating_them(
     provider = RecordingTwoStageProvider(
         intents_response=intents_response,
         command_responses=[
-            {
-                "commands": [
-                    {
-                        "id": "broken_examine_override",
-                        "verb": "examine",
-                        "pattern": "examine bookshelf",
-                        "preconditions": [],
-                        "effects": [],
-                        "success_message": "A seam appears.",
-                        "priority": 10,
-                        "one_shot": 0,
-                    }
-                ],
+                {
+                    "commands": [
+                        {
+                            "id": "assemble_will_fragments",
+                            "verb": "assemble",
+                            "pattern": "assemble will fragments",
+                            "preconditions": [],
+                            "effects": [
+                                {
+                                    "type": "spawn_item",
+                                    "item": "reconstructed_will",
+                                    "location": "_inventory",
+                                }
+                            ],
+                            "success_message": "A seam appears.",
+                            "failure_message": "You are still missing pieces.",
+                            "priority": 10,
+                            "one_shot": 0,
+                        }
+                    ],
                 "flags": [],
             },
             {

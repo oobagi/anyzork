@@ -74,6 +74,10 @@ CANONICAL_DIRECTIONS: set[str] = {
 # All recognised direction tokens (canonical + aliases).
 ALL_DIRECTION_TOKENS: set[str] = CANONICAL_DIRECTIONS | set(DIRECTION_ALIASES.keys())
 
+SCENE_TOKEN_STOPWORDS: set[str] = {
+    "a", "an", "and", "at", "for", "from", "in", "of", "on", "the", "to",
+}
+
 
 class GameEngine:
     """Deterministic text-adventure engine.
@@ -205,6 +209,17 @@ class GameEngine:
         self.main_loop()
 
     # ------------------------------------------------------------------
+    # Playtest logging
+    # ------------------------------------------------------------------
+
+    def _log_action(self, raw_input: str, outcome: str, detail: str = "") -> None:
+        """Record a player action to the playtest log."""
+        player = self.db.get_player()
+        move = player["moves"] if player else 0
+        room = player["current_room_id"] if player else ""
+        self.db.log_playtest_event(move, room, raw_input, outcome, detail)
+
+    # ------------------------------------------------------------------
     # Main REPL
     # ------------------------------------------------------------------
 
@@ -228,39 +243,48 @@ class GameEngine:
             if not raw:
                 continue
 
+            self._current_raw = raw  # stash for sub-methods that log
             tokens = raw.lower().split()
             verb = tokens[0]
 
             # ---- Built-in commands (handled before DSL) ----
 
             if verb in ("quit", "exit", "q"):
+                self._log_action(raw, "builtin", "quit")
                 self.console.print("Farewell, adventurer.", style=STYLE_SYSTEM)
                 break
 
             if verb in ("look", "l") and len(tokens) == 1:
+                self._log_action(raw, "builtin", "look")
                 self.display_room(player["current_room_id"], force_full=True)
                 self._tick()
                 continue
 
             if verb in ("inventory", "i") and len(tokens) == 1:
+                self._log_action(raw, "builtin", "inventory")
                 self.show_inventory()
                 self._tick()
                 continue
 
             if verb == "score" and len(tokens) == 1:
+                self._log_action(raw, "builtin", "score")
                 self._show_score()
                 self._tick()
                 continue
 
-            if verb == "help" and len(tokens) == 1:
+            if verb in ("help", "h", "?") and len(tokens) == 1:
+                self._log_action(raw, "builtin", "help")
                 self.show_help()
                 self._has_seen_help = True
                 continue  # help doesn't cost a move
 
             if verb == "save" and len(tokens) == 1:
+                self._log_action(raw, "builtin", "save")
                 self.console.print(
-                    "Your game is saved automatically. The [bold].zork[/] file "
-                    "[italic]is[/] your save — copy it to back up, or share it with a friend.",
+                    "Your progress is saved automatically to "
+                    f"[bold]{self.db.path}[/bold]. Use "
+                    "[bold]anyzork play <game> --slot <name> --new[/bold] "
+                    "for a fresh replay of a managed save slot.",
                     style=STYLE_SYSTEM,
                 )
                 continue  # save info doesn't cost a move
@@ -287,9 +311,11 @@ class GameEngine:
                         f"Narrator: {status}. Use 'narrator on' or 'narrator off'.",
                         style=STYLE_SYSTEM,
                     )
+                self._log_action(raw, "builtin", "narrator")
                 continue  # narrator toggle doesn't cost a move
 
             if verb in ("quests", "journal", "quest", "j") and len(tokens) == 1:
+                self._log_action(raw, "builtin", "journal")
                 self._show_quests()
                 continue  # quest log doesn't cost a move
 
@@ -315,6 +341,7 @@ class GameEngine:
                     emit_event=self._emit_event,
                 )
                 if result.success:
+                    self._log_action(raw, "success", result.command_id)
                     for msg in result.messages:
                         self.console.print(msg)
                     dsl_handled = True
@@ -322,6 +349,7 @@ class GameEngine:
                     # DSL matched a command but preconditions failed with a
                     # specific failure message (e.g. "You need a loaded gun
                     # to shoot"). Show it so the player gets useful feedback.
+                    self._log_action(raw, "fail", result.command_id or result.messages[0])
                     for msg in result.messages:
                         self.console.print(msg)
                     dsl_handled = True
@@ -341,16 +369,19 @@ class GameEngine:
                     if from_idx > 0 and from_idx < len(rest_tokens) - 1:
                         item_name = " ".join(rest_tokens[:from_idx])
                         container_name = " ".join(rest_tokens[from_idx + 1:])
+                        self._log_action(raw, "builtin", f"take:{item_name} from:{container_name}")
                         self._handle_take_from(item_name, container_name, player["current_room_id"])
                         self._tick()
                         continue
                 item_name = " ".join(rest_tokens)
+                self._log_action(raw, "builtin", f"take:{item_name}")
                 self._handle_take(item_name, player["current_room_id"])
                 self._tick()
                 continue
 
             if verb == "pick" and len(tokens) >= 3 and tokens[1] == "up":
                 item_name = " ".join(tokens[2:])
+                self._log_action(raw, "builtin", f"take:{item_name}")
                 self._handle_take(item_name, player["current_room_id"])
                 self._tick()
                 continue
@@ -358,6 +389,7 @@ class GameEngine:
             # drop
             if verb == "drop" and len(tokens) >= 2:
                 item_name = " ".join(tokens[1:])
+                self._log_action(raw, "builtin", f"drop:{item_name}")
                 self._handle_drop(item_name, player["current_room_id"])
                 self._tick()
                 continue
@@ -365,12 +397,14 @@ class GameEngine:
             # examine / look at / x
             if verb == "examine" and len(tokens) >= 2:
                 target_name = " ".join(tokens[1:])
+                self._log_action(raw, "builtin", f"examine:{target_name}")
                 self._handle_examine(target_name, player["current_room_id"])
                 self._tick()
                 continue
 
             if verb == "x" and len(tokens) >= 2:
                 target_name = " ".join(tokens[1:])
+                self._log_action(raw, "builtin", f"examine:{target_name}")
                 self._handle_examine(target_name, player["current_room_id"])
                 self._tick()
                 continue
@@ -378,6 +412,7 @@ class GameEngine:
             # read — routes to examine with read_description preference
             if verb == "read" and len(tokens) >= 2:
                 target_name = " ".join(tokens[1:])
+                self._log_action(raw, "builtin", f"read:{target_name}")
                 self._handle_examine(target_name, player["current_room_id"], prefer_read=True)
                 self._tick()
                 continue
@@ -385,12 +420,14 @@ class GameEngine:
             # look in / look inside (search container) — must come BEFORE "look at"
             if verb == "look" and len(tokens) >= 3 and tokens[1] in ("in", "inside"):
                 target_name = " ".join(tokens[2:])
+                self._log_action(raw, "builtin", f"search:{target_name}")
                 self._handle_search(target_name, player["current_room_id"])
                 self._tick()
                 continue
 
             if verb == "look" and len(tokens) >= 3 and tokens[1] == "at":
                 target_name = " ".join(tokens[2:])
+                self._log_action(raw, "builtin", f"examine:{target_name}")
                 self._handle_examine(target_name, player["current_room_id"])
                 self._tick()
                 continue
@@ -398,6 +435,7 @@ class GameEngine:
             # search
             if verb == "search" and len(tokens) >= 2:
                 target_name = " ".join(tokens[1:])
+                self._log_action(raw, "builtin", f"search:{target_name}")
                 self._handle_search(target_name, player["current_room_id"])
                 self._tick()
                 continue
@@ -405,6 +443,7 @@ class GameEngine:
             # open
             if verb == "open" and len(tokens) >= 2:
                 target_name = " ".join(tokens[1:])
+                self._log_action(raw, "builtin", f"open:{target_name}")
                 self._handle_open(target_name, player["current_room_id"])
                 self._tick()
                 continue
@@ -412,6 +451,7 @@ class GameEngine:
             # unlock (only tries locked exits/containers — won't "open" something already unlocked)
             if verb == "unlock" and len(tokens) >= 2:
                 target_name = " ".join(tokens[1:])
+                self._log_action(raw, "builtin", f"unlock:{target_name}")
                 self._handle_unlock(target_name, player["current_room_id"])
                 self._tick()
                 continue
@@ -420,6 +460,7 @@ class GameEngine:
             if verb == "turn" and len(tokens) >= 3 and tokens[1] in ("on", "off"):
                 target_state = tokens[1]
                 item_name = " ".join(tokens[2:])
+                self._log_action(raw, "builtin", f"turn_{target_state}:{item_name}")
                 self._handle_turn(item_name, target_state, player["current_room_id"])
                 self._tick()
                 continue
@@ -431,6 +472,7 @@ class GameEngine:
                     if on_idx > 1 and on_idx < len(tokens) - 1:
                         item_name = " ".join(tokens[1:on_idx])
                         target_name = " ".join(tokens[on_idx + 1:])
+                        self._log_action(raw, "builtin", f"use:{item_name} on:{target_name}")
                         # Try key-on-lock first.
                         handled = self._handle_use_on(
                             item_name,
@@ -454,6 +496,7 @@ class GameEngine:
                 else:
                     # "use X" without "on Y" — toggle if toggleable, else syntax hint
                     item_name = " ".join(tokens[1:])
+                    self._log_action(raw, "builtin", f"use:{item_name}")
                     self._handle_use_bare(item_name, player["current_room_id"])
                     self._tick()
                     continue
@@ -467,6 +510,7 @@ class GameEngine:
                         emit_event=self._emit_event,
                     )
                     if result.success:
+                        self._log_action(raw, "success", result.command_id)
                         for msg in result.messages:
                             self.console.print(msg)
                         self._tick()
@@ -482,6 +526,7 @@ class GameEngine:
                 if split_idx is not None and split_idx > 0 and split_idx < len(rest_tokens) - 1:
                     item_name = " ".join(rest_tokens[:split_idx])
                     container_name = " ".join(rest_tokens[split_idx + 1:])
+                    self._log_action(raw, "builtin", f"put:{item_name} in:{container_name}")
                     self._handle_put_in(item_name, container_name, player["current_room_id"])
                     self._tick()
                     continue
@@ -489,20 +534,23 @@ class GameEngine:
             # talk to
             if verb == "talk" and len(tokens) >= 3 and tokens[1] == "to":
                 npc_name = " ".join(tokens[2:])
+                self._log_action(raw, "builtin", f"talk:{npc_name}")
                 self._enter_dialogue(npc_name, player["current_room_id"])
                 self._tick()
                 continue
 
             if verb == "talk" and len(tokens) >= 2 and tokens[1] != "to":
                 npc_name = " ".join(tokens[1:])
+                self._log_action(raw, "builtin", f"talk:{npc_name}")
                 self._enter_dialogue(npc_name, player["current_room_id"])
                 self._tick()
                 continue
 
             # ---- Nothing matched ----
+            self._log_action(raw, "unknown", raw)
             if not self._has_seen_help:
                 self.console.print(
-                    "I don't understand that. Type 'help' for available commands.",
+                    "I don't understand that. Type 'help' or 'h' for available commands.",
                     style=STYLE_SYSTEM,
                 )
                 self._has_seen_help = True
@@ -581,7 +629,26 @@ class GameEngine:
     def _scene_mentions_name(scene_text: str, name: str) -> bool:
         """Return ``True`` if *name* already appears in the current scene text."""
         pattern = re.compile(re.escape(name), re.IGNORECASE)
-        return bool(pattern.search(scene_text))
+        if pattern.search(scene_text):
+            return True
+
+        scene_tokens = {
+            GameEngine._normalize_scene_token(token)
+            for token in re.findall(r"\b[a-z0-9']+\b", scene_text.lower())
+        }
+        name_tokens = [
+            GameEngine._normalize_scene_token(token)
+            for token in re.findall(r"\b[a-z0-9']+\b", name.lower())
+            if token not in SCENE_TOKEN_STOPWORDS
+        ]
+        return bool(name_tokens) and name_tokens[-1] in scene_tokens
+
+    @staticmethod
+    def _normalize_scene_token(token: str) -> str:
+        """Return a lightweight normalized token for scene-text comparisons."""
+        if len(token) > 4 and token.endswith("s"):
+            return token[:-1]
+        return token
 
     @staticmethod
     def _with_definite_article(name: str) -> str:
@@ -766,7 +833,10 @@ class GameEngine:
         current_room = player["current_room_id"]
         exit_row = self.db.get_exit_by_direction(current_room, direction)
 
+        raw = getattr(self, "_current_raw", direction)
+
         if exit_row is None:
+            self._log_action(raw, "fail", f"no_exit:{direction}")
             self.console.print("You can't go that way.", style=STYLE_SYSTEM)
             return
 
@@ -774,10 +844,12 @@ class GameEngine:
         if exit_row.get("is_locked"):
             lock = self.db.get_lock_for_exit(exit_row["id"])
             raw_msg = lock["locked_message"] if lock else "The way is blocked."
+            self._log_action(raw, "fail", f"locked:{direction}")
             self.console.print(raw_msg, style=STYLE_LOCKED)
             return
 
         # Move the player.
+        self._log_action(raw, "builtin", f"go:{direction}")
         dest_room_id = exit_row["to_room_id"]
         self.db.update_player(current_room_id=dest_room_id)
         self.display_room(dest_room_id)
@@ -872,9 +944,9 @@ class GameEngine:
             f"  [{c}]quests[/] (j)          — view your quest log\n"
             f"  [{c}]narrator on[/]/[{c}]off[/]    — toggle narrator mode "
             f"(currently {narrator_status})\n"
-            f"  [{c}]save[/]               — how saving works\n"
-            f"  [{c}]help[/]               — this message\n"
-            f"  [{c}]quit[/] / [{c}]exit[/]        — leave the game\n"
+            f"  [{c}]save[/]               — show the active save path\n"
+            f"  [{c}]help[/] (h)           — this message\n"
+            f"  [{c}]quit[/] / [{c}]exit[/] / [{c}]q[/]    — leave the game\n"
             "\n"
             "[bold]Interaction[/]\n"
             f"  [{c}]take[/] / [{c}]get[/] / [{c}]pick up[/] {{item}}  — pick up an item\n"
@@ -953,7 +1025,11 @@ class GameEngine:
             if context_room_ids:
                 with suppress(json.JSONDecodeError, TypeError):
                     room_ids = json.loads(context_room_ids)
-                    if current_room_id not in room_ids:
+                    if not room_ids:
+                        room_ids = None
+                    if room_ids is None:
+                        pass
+                    elif current_room_id not in room_ids:
                         continue
 
             if verb in seen_verbs:

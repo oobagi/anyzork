@@ -20,6 +20,8 @@ from anyzork.generator.providers.base import BaseProvider, GenerationContext
 
 logger = logging.getLogger(__name__)
 
+_MAX_GENERATION_ATTEMPTS = 3
+
 # ---------------------------------------------------------------------------
 # JSON schema the LLM must conform to
 # ---------------------------------------------------------------------------
@@ -213,6 +215,30 @@ def _build_prompt(context: dict) -> str:
     if "concept" in context and isinstance(context["concept"], dict):
         win_conditions = context["concept"].get("win_conditions", "[]")
 
+    retry_guidance = ""
+    last_error = context.get("_last_error")
+    if last_error:
+        retry_guidance = f"""
+
+## Previous Attempt Failed
+Your previous quest draft was rejected with these validation errors:
+{last_error}
+
+Fix those exact issues in this new draft.
+
+Critical repair rules:
+- Do NOT reuse an existing flag ID from the Existing Flags list.
+- Quest-generated flags must be new IDs that do not conflict with any
+  existing flag, quest completion flag, or objective completion flag.
+- If a quest needs to reference a pre-existing state flag, reference it in
+  an objective completion_flag or discovery_flag only when the schema allows
+  an existing flag.
+- Every new quest completion_flag must be unique.
+- Every new objective completion_flag must be unique.
+- Do NOT invent flags that duplicate common win-state flags like
+  `game_won` unless the world already explicitly defines them as existing.
+"""
+
     return f"""\
 You are designing quests for a Zork-style text adventure. You have the
 complete world from prior passes. Your job is to organize the player's
@@ -241,6 +267,7 @@ experience into clear objectives.
 
 ## Win Conditions
 {win_conditions}
+{retry_guidance}
 
 ## Your Task
 
@@ -438,23 +465,40 @@ def run_pass(db: GameDB, provider: BaseProvider, context: dict) -> dict:
 
     logger.info("Pass 8: Generating quests...")
 
-    prompt = _build_prompt(context)
-    gen_ctx = GenerationContext(
-        existing_data={},
-        seed=context.get("seed"),
-        temperature=0.8,
-        max_tokens=16_384,
-    )
+    result: dict[str, Any] = {}
+    quests: list[dict] = []
+    flags_data: list[dict] = []
+    errors: list[str] = []
 
-    result = provider.generate_structured(prompt, QUEST_SCHEMA, gen_ctx)
-    quests: list[dict] = result.get("quests", [])
-    flags_data: list[dict] = result.get("flags", [])
+    for attempt in range(1, _MAX_GENERATION_ATTEMPTS + 1):
+        prompt = _build_prompt(context)
+        gen_ctx = GenerationContext(
+            existing_data={},
+            seed=context.get("seed"),
+            temperature=0.8,
+            max_tokens=16_384,
+        )
 
-    # Validate.
-    errors = _validate_quests(quests, flags_data, context)
-    if errors:
+        result = provider.generate_structured(prompt, QUEST_SCHEMA, gen_ctx)
+        quests = result.get("quests", [])
+        flags_data = result.get("flags", [])
+
+        errors = _validate_quests(quests, flags_data, context)
+        if not errors:
+            break
+
         preview = "; ".join(errors[:8])
-        raise ValueError(f"Quest validation failed: {preview}")
+        logger.warning(
+            "Pass 8 validation failed (attempt %d/%d): %s",
+            attempt,
+            _MAX_GENERATION_ATTEMPTS,
+            preview,
+        )
+        if attempt == _MAX_GENERATION_ATTEMPTS:
+            raise ValueError(f"Quest validation failed: {preview}")
+        context["_last_error"] = preview
+
+    context.pop("_last_error", None)
 
     # Insert into DB.
     _insert_quests(db, quests, flags_data)

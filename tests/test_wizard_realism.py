@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from click.testing import CliRunner
 
 from anyzork import cli as cli_module
@@ -45,44 +43,40 @@ def test_resolve_generation_inputs_uses_preset_realism_on_no_edit(
     assert resolved == (
         "A cliffside monastery under siege by ghosts.",
         "low",
+        {
+            "world_description": "A cliffside monastery under siege by ghosts.",
+            "realism": "low",
+        },
     )
 
 
-def test_generate_uses_wizard_selected_realism(monkeypatch, tmp_path: Path) -> None:
+def test_generate_uses_wizard_selected_realism(monkeypatch) -> None:
     runner = CliRunner()
-    captured: dict[str, object] = {}
 
     monkeypatch.setattr(
         cli_module,
         "_resolve_generation_inputs",
-        lambda *args, **kwargs: ("A moonlit museum heist.", "high"),
+        lambda *args, **kwargs: (
+            "A moonlit museum heist.",
+            "high",
+            {
+                "world_description": "A moonlit museum heist.",
+                "scale": "medium",
+                "locations": ["Grand gallery", "Archive vault"],
+                "items": ["Glass cutter", "Forgery ledger"],
+            },
+        ),
     )
 
-    class FakeConfig:
-        def __init__(self, **kwargs) -> None:
-            self.provider = cli_module.LLMProvider.CLAUDE
-            self.seed = kwargs.get("seed")
-            self.active_model = "fake-model"
-            self.games_dir = tmp_path
-
-        def get_api_key(self) -> str:
-            return "test-key"
-
-    def fake_generate_game(prompt, config, output_path, *, realism):
-        captured["prompt"] = prompt
-        captured["realism"] = realism
-        captured["output_path"] = output_path
-        return output_path
-
-    monkeypatch.setattr(cli_module, "Config", FakeConfig)
     monkeypatch.setattr(
-        "anyzork.generator.orchestrator.generate_game",
-        fake_generate_game,
+        "anyzork.importer.build_zorkscript_prompt",
+        lambda prompt, *, realism=None, authoring_fields=None: (
+            f"PROMPT::{prompt}::REALISM::{realism}::FIELDS::{authoring_fields}"
+        ),
     )
 
     result = runner.invoke(cli_module.cli, ["generate"])
 
     assert result.exit_code == 0
-    assert captured["prompt"] == "A moonlit museum heist."
-    assert captured["realism"] == "high"
-    assert captured["output_path"] == tmp_path / "a_moonlit_museum_heist.zork"
+    assert "PROMPT::A moonlit museum heist.::REALISM::high" in result.output
+    assert "Grand gallery" in result.output

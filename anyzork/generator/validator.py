@@ -184,6 +184,15 @@ def _is_slot_ref(value: str) -> bool:
     return isinstance(value, str) and value.startswith("{") and value.endswith("}")
 
 
+def _is_inventory_alias(value: str) -> bool:
+    """Return True if *value* refers to the player inventory alias."""
+    return isinstance(value, str) and value.strip().lower() in {
+        "inventory",
+        "_inventory",
+        "_player_inventory",
+    }
+
+
 # ── BFS reachability on the full exit graph (ignoring locks) ─────────────
 
 
@@ -818,7 +827,16 @@ def _validate_rule_preconditions(
                         f"{label} precondition {pc_type} references unknown item '{item_val}'.",
                     )
                 )
-            if not _is_slot_ref(container_val) and container_val not in item_set:
+            if _is_inventory_alias(container_val):
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} precondition {pc_type} cannot use inventory as a "
+                        "container; use has_item for possession or a real container ID.",
+                    )
+                )
+            elif not _is_slot_ref(container_val) and container_val not in item_set:
                 errors.append(
                     ValidationError(
                         "warning",

@@ -167,6 +167,7 @@ class Config(BaseSettings):
 
     # --- Paths ---
     games_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "games")
+    saves_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "saves")
 
     # ------------------------------------------------------------------
     # Validators
@@ -194,9 +195,10 @@ class Config(BaseSettings):
         return values
 
     @model_validator(mode="after")
-    def _ensure_games_dir_is_absolute(self) -> Config:
-        """Resolve games_dir to an absolute path."""
+    def _ensure_paths_are_absolute(self) -> Config:
+        """Resolve managed AnyZork directories to absolute paths."""
         self.games_dir = self.games_dir.expanduser().resolve()
+        self.saves_dir = self.saves_dir.expanduser().resolve()
         return self
 
     # ------------------------------------------------------------------

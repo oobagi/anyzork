@@ -897,6 +897,7 @@ def _validate_triggers(triggers: list[dict], context: dict) -> list[str]:
     room_ids = {r["id"] for r in context.get("rooms", [])}
     item_ids = {i["id"] for i in context.get("items", [])}
     dialogue_node_ids = {d["id"] for d in context.get("dialogue_nodes", [])}
+    puzzle_ids = {p["id"] for p in context.get("puzzles", [])}
     flag_ids = {f["id"] for f in context.get("flags", [])}
 
     seen_ids: set[str] = set()
@@ -978,6 +979,12 @@ def _validate_triggers(triggers: list[dict], context: dict) -> list[str]:
             etype = eff.get("type", "")
             if etype not in VALID_EFFECT_TYPES:
                 errors.append(f"Trigger {tid} has invalid effect type: {etype}")
+            elif etype == "solve_puzzle":
+                puzzle_id = eff.get("puzzle", "")
+                if puzzle_id and puzzle_id not in puzzle_ids:
+                    errors.append(
+                        f"Trigger {tid} references unknown puzzle in effect: {puzzle_id}"
+                    )
 
         if event_type == "flag_set":
             watched_flag = event_data.get("flag")

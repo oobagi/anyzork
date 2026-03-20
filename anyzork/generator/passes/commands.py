@@ -326,6 +326,7 @@ Fix those exact issues in this new draft.
 
 Critical repair rules:
 - Do NOT invent IDs. Only use IDs listed in Rooms, Exits, Items, NPCs, Locks, and Puzzles.
+- `pattern` must begin with the command verb. If the draft omits it, prefix the verb.
 - `toggle_state` is a PRECONDITION. `set_toggle_state` is an EFFECT.
 - `not_flag` is a PRECONDITION only. To clear a flag, use
   `{{"type": "set_flag", "flag": "some_flag", "value": false}}`.
@@ -335,8 +336,16 @@ Critical repair rules:
   Do NOT use `move_item` with a container in `from`.
 - To place an item into a container, use `move_item_to_container`.
   Do NOT use `move_item` with a container in `to`.
+- `_inventory` is not a real container for containment checks. Use `has_item`
+  for inventory possession, and use a real container ID for `item_in_container`
+  or `not_item_in_container`.
 - `unlock` must reference a lock ID from the Locks list, never an exit ID
   or a container/item ID.
+- `_player_inventory` is not a valid alias. Use `_inventory`.
+- `item_in_container` with `_inventory` should become `has_item`.
+- `not_item_in_container` must not use `_inventory`; use a real container.
+- NPCs are not items. Do NOT model NPC relocation with `move_item`; if an NPC
+  move is only flavor, express it with text or flags instead.
 - Commands that only provide special text, such as an `examine` override,
   are allowed to have an empty `effects` array.
 """
@@ -379,7 +388,7 @@ Each command is a JSON rule:
 - **preconditions**: ALL must be true for the command to fire.
 - **effects**: Executed in order when all preconditions pass.
 - **success_message**: Shown when the command fires.
-- **failure_message**: Shown when preconditions fail. Must be informative.
+- **failure_message**: Shown when preconditions fail. Must be informative and non-empty.
 - **one_shot**: 1 = fires only once (key unlocks, puzzle solutions, quest
   discoveries). 0 = repeatable.
 - **context_room_ids**: JSON array of room IDs where the command is active.
@@ -449,6 +458,7 @@ Use these precondition types to gate nesting commands:
   (prevent double-loading)
 - `container_has_contents` — check that a container is non-empty
 - `container_empty` — check that a container is empty
+  The player inventory is not a valid container target for these checks.
 
 **Placement puzzles**: When the world design requires placing an item at a
 specific location (putting a crystal on an altar, placing an offering in a
@@ -747,6 +757,9 @@ For each intent:
   that item must already exist in the Items list above
 - commands are not allowed to mint brand-new items like combined objects or
   hidden rewards unless those items already exist in the generated item set
+- NPC movement is not a supported DSL effect. If a scene needs an NPC to
+  "move", represent the consequence with text, a flag change, or another
+  supported state transition instead of `move_item`.
 - if an idea depends on a brand-new item that does not exist, rewrite it as a
   flag change, text reveal, or an interaction with an existing item instead
 - keep `failure_message` specific and helpful
@@ -766,7 +779,10 @@ def _build_compile_prompt(context: dict, intents: list[dict]) -> str:
         f"{json.dumps(intents, indent=2)}\n\n"
         "Compile these intents into valid AnyZork DSL rules without losing "
         "their meaning. Do not redesign the interaction list or invent extra "
-        "commands unless needed to express one of these intents in valid DSL.\n\n"
+        "commands unless needed to express one of these intents in valid DSL.\n"
+        "If a draft uses `_player_inventory`, normalize it to `_inventory`.\n"
+        "If a draft uses `move_item` for an NPC, remove that state move and "
+        "preserve the narrative consequence with text or other supported effects.\n\n"
     )
     base_prompt = base_prompt.replace(
         "You are the command systems designer for a Zork-style text adventure engine.\n"
@@ -968,10 +984,52 @@ VALID_EFFECT_TYPES = {
 }
 
 
+def _default_failure_message(verb: str, pattern: str) -> str:
+    """Return a generic but informative failure message for a command."""
+    verb = verb.lower().strip()
+    tail = pattern[len(verb) :].strip() if pattern.lower().startswith(verb) else pattern.strip()
+
+    if verb in {"examine", "read"}:
+        return (
+            f"You don't notice anything unusual about {tail}."
+            if tail
+            else "You don't notice anything unusual."
+        )
+    if verb in {"take", "get"}:
+        return (
+            f"You can't take {tail} right now."
+            if tail
+            else "You can't take that right now."
+        )
+    if verb in {"open", "unlock"}:
+        return (
+            f"That doesn't seem to open {tail}."
+            if tail
+            else "That doesn't seem to open anything useful."
+        )
+    if verb in {"use", "put", "insert", "give", "show", "combine", "pour"}:
+        return (
+            f"That doesn't seem to work with {tail}."
+            if tail
+            else "That doesn't seem to work."
+        )
+    if verb in {"pull", "push", "turn", "light", "extinguish", "bang", "climb"}:
+        return (
+            f"Nothing obvious happens when you try {tail}."
+            if tail
+            else "Nothing obvious happens."
+        )
+    if tail:
+        return f"That doesn't seem to do anything useful with {tail}."
+    return "That doesn't seem to do anything useful."
+
+
 def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
     """Normalize common provider aliases to canonical DSL constants."""
+    inventory_aliases = {"inventory", "_inventory", "_player_inventory"}
     location_aliases = {
         "inventory": "_inventory",
+        "_player_inventory": "_inventory",
         "current": "_current",
         "current_room": "_current",
         "null": "_current",
@@ -994,11 +1052,33 @@ def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
         for item in context.get("items", [])
         if item.get("is_takeable")
     }
+    npc_ids = {
+        npc["id"]
+        for npc in context.get("npcs", [])
+        if npc.get("id")
+    }
 
     for cmd in commands:
+        verb = str(cmd.get("verb", "")).strip().lower()
+        pattern = str(cmd.get("pattern", "")).strip()
+        if verb and pattern and not pattern.lower().startswith(verb):
+            cmd["pattern"] = f"{verb} {pattern}".strip()
+
+        if not str(cmd.get("failure_message", "")).strip():
+            cmd["failure_message"] = _default_failure_message(
+                verb,
+                str(cmd.get("pattern", "")),
+            )
+
         for pre in cmd.get("preconditions", []):
             if pre.get("type") == "set_toggle_state":
                 pre["type"] = "toggle_state"
+            elif (
+                pre.get("type") == "item_in_container"
+                and str(pre.get("container", "")).strip().lower() in inventory_aliases
+            ):
+                pre["type"] = "has_item"
+                pre.pop("container", None)
             elif (
                 pre.get("type") == "item_in_room"
                 and cmd.get("verb") in {"examine", "read"}
@@ -1007,6 +1087,7 @@ def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
                 pre["type"] = "item_accessible"
                 pre.pop("room", None)
 
+        normalized_effects: list[dict] = []
         for eff in cmd.get("effects", []):
             eff_type = eff.get("type")
             if eff_type == "not_flag":
@@ -1032,10 +1113,32 @@ def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
                     eff["type"] = "remove_item"
                     eff.pop("from", None)
                     eff.pop("to", None)
+                elif eff.get("item") in npc_ids:
+                    logger.warning(
+                        "Dropping unsupported NPC move_item effect from command %s.",
+                        cmd.get("id", "<unknown>"),
+                    )
+                    continue
                 elif from_loc in container_ids and to_loc == "_inventory":
                     eff["type"] = "take_item_from_container"
                     eff.pop("from", None)
                     eff.pop("to", None)
+                elif from_loc in container_ids and to_loc not in container_ids:
+                    normalized_effects.append(
+                        {
+                            "type": "take_item_from_container",
+                            "item": eff["item"],
+                        }
+                    )
+                    normalized_effects.append(
+                        {
+                            "type": "move_item",
+                            "item": eff["item"],
+                            "from": "_inventory",
+                            "to": to_loc,
+                        }
+                    )
+                    continue
                 elif to_loc in container_ids and from_loc in {"_inventory", "_current"}:
                     eff["type"] = "move_item_to_container"
                     eff.pop("from", None)
@@ -1048,6 +1151,10 @@ def _normalize_command_aliases(commands: list[dict], context: dict) -> None:
                     eff["type"] = "open_container"
                     eff["container"] = target
                     eff.pop("lock", None)
+
+            normalized_effects.append(eff)
+
+        cmd["effects"] = normalized_effects
 
 
 def _validate_commands(

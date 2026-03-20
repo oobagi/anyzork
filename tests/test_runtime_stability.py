@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import shutil
 from pathlib import Path
 
@@ -160,6 +161,27 @@ def test_help_summarizes_special_verbs_without_spoiling_raw_patterns(
     assert "accuse {suspect}" not in lines
 
 
+def test_show_help_lists_help_alias(engine: GameEngine) -> None:
+    engine.show_help()
+
+    output = _output(engine)
+
+    assert "help (h)" in output
+    assert "quit / exit / q" in output
+
+
+def test_main_loop_accepts_help_alias(game_db: GameDB, engine: GameEngine) -> None:
+    inputs = iter(["h", "q"])
+    engine.console.input = lambda *_args, **_kwargs: next(inputs)  # type: ignore[assignment]
+
+    engine.main_loop()
+
+    output = _output(engine)
+
+    assert "Built-in commands" in output
+    assert "I don't understand that" not in output
+
+
 def test_scene_prose_skips_entities_already_mentioned() -> None:
     prose = GameEngine._build_scene_prose(
         (
@@ -168,6 +190,19 @@ def test_scene_prose_skips_entities_already_mentioned() -> None:
         ),
         [{"name": "stern ancestral portrait"}],
         [{"name": "Mr. Finch"}],
+    )
+
+    assert prose == ""
+
+
+def test_scene_prose_skips_items_already_covered_by_room_nouns() -> None:
+    prose = GameEngine._build_scene_prose(
+        (
+            "A pile of post sits on the doormat. Among the letters, one stands "
+            "out in emerald-green ink."
+        ),
+        [{"name": "Dursley Post"}, {"name": "Hogwarts Letter"}],
+        [],
     )
 
     assert prose == ""
@@ -316,3 +351,63 @@ def test_install_command_unlocks_observatory_and_completes_main_quest(
         ("quest:restore_archive",),
     )
     assert score_count == {"count": 1}
+
+
+def test_resolve_command_treats_empty_context_array_as_global(game_db: GameDB) -> None:
+    game_db.insert_command(
+        id="global_empty_scope",
+        verb="read",
+        pattern="read bulletin",
+        preconditions="[]",
+        effects="[]",
+        success_message="You read the bulletin.",
+        failure_message="",
+        context_room_ids=json.dumps([]),
+        is_enabled=1,
+    )
+
+    result = resolve_command("read bulletin", game_db, current_room_id="entrance_hall")
+
+    assert result.success is True
+    assert result.messages == ["You read the bulletin."]
+
+
+def test_resolve_command_treats_null_context_as_global(game_db: GameDB) -> None:
+    game_db.insert_command(
+        id="global_null_scope",
+        verb="read",
+        pattern="read placard",
+        preconditions="[]",
+        effects="[]",
+        success_message="You read the placard.",
+        failure_message="",
+        context_room_ids=None,
+        is_enabled=1,
+    )
+
+    result = resolve_command("read placard", game_db, current_room_id="entrance_hall")
+
+    assert result.success is True
+    assert result.messages == ["You read the placard."]
+
+
+def test_resolve_command_respects_non_empty_room_scope(game_db: GameDB) -> None:
+    game_db.insert_command(
+        id="scoped_only_observatory",
+        verb="read",
+        pattern="read chart",
+        preconditions="[]",
+        effects="[]",
+        success_message="You read the star chart.",
+        failure_message="",
+        context_room_ids=json.dumps(["observatory"]),
+        is_enabled=1,
+    )
+
+    wrong_room = resolve_command("read chart", game_db, current_room_id="entrance_hall")
+    right_room = resolve_command("read chart", game_db, current_room_id="observatory")
+
+    assert wrong_room.success is False
+    assert wrong_room.messages == ["I don't understand that."]
+    assert right_room.success is True
+    assert right_room.messages == ["You read the star chart."]

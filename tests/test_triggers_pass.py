@@ -147,6 +147,29 @@ def test_validate_triggers_rejects_flag_self_loop() -> None:
     assert "watches flag range_ready and sets it again" in errors[0]
 
 
+def test_validate_triggers_rejects_unknown_solve_puzzle_reference() -> None:
+    errors = _validate_triggers(
+        [
+            {
+                "id": "trigger_bad_puzzle_ref",
+                "event_type": "dialogue_node",
+                "event_data": {"node_id": "blacksmith_forges_key"},
+                "preconditions": [],
+                "effects": [{"type": "solve_puzzle", "puzzle": "dudleys_hoard"}],
+                "message": None,
+                "priority": 10,
+                "one_shot": True,
+            }
+        ],
+        _make_context(),
+    )
+
+    assert errors == [
+        "Trigger trigger_bad_puzzle_ref references unknown puzzle in effect: "
+        "dudleys_hoard"
+    ]
+
+
 def test_insert_missing_flags_for_triggers_adds_referenced_flags(tmp_path: Path) -> None:
     db = GameDB(tmp_path / "triggers_pass_test.zork")
     db.initialize(
