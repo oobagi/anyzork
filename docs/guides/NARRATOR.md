@@ -44,6 +44,8 @@ Set it in `~/.anyzork/config.toml` (see the [Configuration guide](configuration.
 [anyzork]
 provider = "claude"
 # model = "claude-sonnet-4-6"  # optional — omit to use provider default
+# narrator_temperature = 0.9   # optional — LLM temperature (0.0–2.0)
+# narrator_max_tokens = 4096   # optional — max tokens per narrator response
 ```
 
 ### In-game toggle
@@ -129,6 +131,30 @@ Or in the config file:
 provider = "claude"
 model = "claude-sonnet-4-5"
 ```
+
+## Performance tuning
+
+Two settings control the narrator's LLM behavior:
+
+- **`narrator_temperature`** — Controls randomness in narrated prose. Default `0.9`. Range 0.0--2.0. Lower values produce more predictable, consistent prose; higher values add variety and surprise. A value around 0.7--1.0 works well for most games.
+- **`narrator_max_tokens`** — Maximum tokens the LLM may generate per narrator response. Default `4096`. Minimum 1. Lower values reduce latency and cost but may truncate longer room descriptions.
+
+### Config file
+
+```toml
+[anyzork]
+narrator_temperature = 0.8
+narrator_max_tokens = 2048
+```
+
+### Environment variables
+
+```sh
+export ANYZORK_NARRATOR_TEMPERATURE=0.8
+export ANYZORK_NARRATOR_MAX_TOKENS=2048
+```
+
+CLI flags and environment variables override config file values as described in the [Configuration guide](configuration.md).
 
 ## Caching
 

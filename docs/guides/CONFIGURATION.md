@@ -22,6 +22,10 @@ The file uses two sections: `[anyzork]` for engine settings and `[keys]` for API
 |---|---|---|---|
 | `provider` | `"claude"` \| `"openai"` \| `"gemini"` | `"claude"` | LLM provider for the narrator. |
 | `model` | string | *(per-provider default)* | Model name override. When unset, uses the provider default (see below). |
+| `narrator_temperature` | float | `0.9` | LLM temperature for narrator mode. Range 0.0--2.0. |
+| `narrator_max_tokens` | int | `4096` | Max tokens per narrator response. Minimum 1. |
+| `catalog_url` | string | `https://anyzork.com/catalog.json` | Game catalog URL. |
+| `upload_url` | string | `https://anyzork.com/api/games` | Upload endpoint for publish. |
 
 ### `[keys]` section
 
@@ -45,6 +49,10 @@ All `Config` fields can be set via environment variables prefixed with `ANYZORK_
 | `ANYZORK_GAMES_DIR` | `games_dir` | `~/.anyzork/games` |
 | `ANYZORK_SAVES_DIR` | `saves_dir` | `~/.anyzork/saves` |
 | `ANYZORK_PUBLIC_CATALOG_DIR` | `public_catalog_dir` | `~/.anyzork/public_catalog` |
+| `ANYZORK_NARRATOR_TEMPERATURE` | `narrator_temperature` | `0.9` |
+| `ANYZORK_NARRATOR_MAX_TOKENS` | `narrator_max_tokens` | `4096` |
+| `ANYZORK_CATALOG_URL` | `catalog_url` | `https://anyzork.com/catalog.json` |
+| `ANYZORK_UPLOAD_URL` | `upload_url` | `https://anyzork.com/api/games` |
 
 API keys use the standard provider variables (not the `ANYZORK_` prefix):
 
