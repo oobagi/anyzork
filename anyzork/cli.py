@@ -1043,55 +1043,105 @@ def list_saves(game_ref: str | None) -> None:
 
 
 @cli.command("delete-save")
-@click.argument("game_ref", type=str)
-@click.option("--slot", required=True, help="Managed save slot to delete.")
-def delete_save(game_ref: str, slot: str) -> None:
+@click.argument("game_ref", type=str, required=False)
+def delete_save(game_ref: str | None) -> None:
     """Delete a managed save slot for a library game."""
-    cfg = Config()
-    try:
-        source_path = library_service.resolve_game_reference(game_ref, cfg)
-    except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="game_ref") from exc
+    from rich.table import Table
 
-    if library_service.is_within(source_path, cfg.saves_dir):
-        raise click.BadParameter(
-            "Pass a library game, not an individual save file.",
-            param_hint="game_ref",
-        )
+    cfg = Config()
+
+    if game_ref:
+        try:
+            source_path = library_service.resolve_game_reference(game_ref, cfg)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="game_ref") from exc
+        if library_service.is_within(source_path, cfg.saves_dir):
+            raise click.BadParameter(
+                "Pass a library game, not an individual save file.",
+                param_hint="game_ref",
+            )
+    else:
+        source_path = _prompt_for_play_target(cfg)
+        if source_path is None:
+            return
 
     game_id = library_service.library_game_id(source_path)
     if not game_id:
         console.print(f"[red]Missing game_id metadata in {source_path}[/red]")
         return
 
-    save_path = cfg.saves_dir / game_id / f"{library_service.sanitize_slot_name(slot)}.zork"
-    if not save_path.exists():
+    save_files = library_service.sorted_save_files(cfg.saves_dir / str(game_id))
+    if not save_files:
         console.print(
-            f"[dim]No save slot named[/dim] [cyan]{slot}[/cyan] "
-            f"[dim]for[/dim] [cyan]{source_path.stem}[/cyan]"
+            f"[dim]No managed saves found for[/dim] [cyan]{source_path.stem}[/cyan]"
         )
+        return
+
+    table = Table(title=f"Saves for {source_path.stem}", show_lines=False)
+    table.add_column("#", style="cyan", no_wrap=True)
+    table.add_column("Slot", style="bold")
+    table.add_column("State", style="dim")
+    table.add_column("Score", justify="right", style="green")
+    table.add_column("Updated", style="dim")
+
+    for i, save_file in enumerate(save_files, 1):
+        save_meta = library_service.read_zork_metadata(save_file) or {}
+        player = library_service.read_player_state(save_file) or {}
+        table.add_row(
+            str(i),
+            str(save_meta.get("save_slot") or save_file.stem),
+            str(player.get("game_state", "?")),
+            str(player.get("score", 0)),
+            library_service.format_save_last_played(save_file),
+        )
+
+    console.print(table)
+
+    while True:
+        choice = click.prompt("Delete which save? (number, or q to cancel)", type=str).strip()
+        if choice.lower() in {"q", "quit", "exit"}:
+            console.print("[dim]Canceled.[/dim]")
+            return
+        try:
+            index = int(choice)
+        except ValueError:
+            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+            continue
+        if 1 <= index <= len(save_files):
+            break
+        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+
+    save_path = save_files[index - 1]
+    slot_name = save_path.stem
+    if not click.confirm(f"Delete save slot '{slot_name}'?", default=False):
+        console.print("[dim]Canceled.[/dim]")
         return
 
     save_path.unlink()
     console.print(
-        f"[green]Deleted save slot[/green] [cyan]{slot}[/cyan] "
+        f"[green]Deleted save slot[/green] [cyan]{slot_name}[/cyan] "
         f"[dim]for[/dim] [cyan]{source_path.stem}[/cyan]"
     )
-
     with contextlib.suppress(OSError):
         save_path.parent.rmdir()
 
 
 @cli.command("delete")
-@click.argument("game_ref", type=str)
+@click.argument("game_ref", type=str, required=False)
 @click.option("--yes", is_flag=True, help="Delete without prompting for confirmation.")
-def delete_game(game_ref: str, yes: bool) -> None:
+def delete_game(game_ref: str | None, yes: bool) -> None:
     """Delete a library game and all of its managed save slots."""
     cfg = Config()
-    try:
-        source_path = library_service.resolve_game_reference(game_ref, cfg)
-    except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="game_ref") from exc
+
+    if game_ref:
+        try:
+            source_path = library_service.resolve_game_reference(game_ref, cfg)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="game_ref") from exc
+    else:
+        source_path = _prompt_for_play_target(cfg)
+        if source_path is None:
+            return
 
     if library_service.is_within(source_path, cfg.saves_dir):
         raise click.BadParameter(
@@ -1108,7 +1158,7 @@ def delete_game(game_ref: str, yes: bool) -> None:
             f"Delete library game '{source_path.stem}' and {save_count} managed save(s)?"
         )
         if not click.confirm(prompt, default=False):
-            console.print("[dim]Delete cancelled.[/dim]")
+            console.print("[dim]Canceled.[/dim]")
             return
 
     source_path.unlink()
