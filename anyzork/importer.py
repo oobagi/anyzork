@@ -838,7 +838,7 @@ def _build_quality_requirements(realism: str, fields: dict[str, Any]) -> str:
         "  Without tags and categories, 'use X on Y' silently fails."
     )
     lines.append(
-        "- Write interaction responses for EVERY tag×category combo in the game."
+        "- Write interaction responses for EVERY tag x category combo in the game."
     )
     lines.append(
         "  Include a wildcard (target '*') fallback for each tag."

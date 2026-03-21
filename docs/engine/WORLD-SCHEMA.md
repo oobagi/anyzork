@@ -70,10 +70,12 @@ Single-row game metadata.
 Key fields:
 
 - `title`, `author_prompt`, `seed`, `created_at`, `version`
+- `app_version`, `prompt_system_version`
 - `intro_text`, `win_text`, `lose_text`
 - `win_conditions`, `lose_conditions`
 - `max_score`, `region_count`, `room_count`
 - `realism`
+- `game_id`, `source_game_id`, `source_path`, `save_slot`, `last_played_at`, `is_template`
 
 ### `rooms`
 
@@ -105,8 +107,9 @@ Major field groups:
 - Core identity: `id`, `name`, `description`, `examine_description`
 - Placement: `room_id`, `container_id`, `home_room_id`
 - Visibility and portability: `is_takeable`, `is_visible`, `is_consumed_on_use`
-- Containers: `is_container`, `is_open`, `has_lid`, `is_locked`, `key_item_id`, `accepts_items`, `reject_message`
+- Containers: `is_container`, `is_open`, `has_lid`, `is_locked`, `lock_message`, `key_item_id`, `consume_key`, `accepts_items`, `reject_message`
 - Messaging: `take_message`, `drop_message`, `open_message`, `search_message`, `unlock_message`, `drop_description`, `room_description`, `read_description`
+- Physical: `weight`
 - Toggle/state system: `is_toggleable`, `toggle_state`, `toggle_states`, `toggle_messages`, `toggle_on_message`, `toggle_off_message`
 - Dependencies: `requires_item_id`, `requires_message`
 - Quantities: `quantity`, `max_quantity`, `quantity_unit`, `depleted_message`, `quantity_description`
@@ -275,6 +278,7 @@ Key fields:
 - `consumes`
 - `score_change`
 - `flag_to_set`
+- `effects`
 
 ### `triggers`
 

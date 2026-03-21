@@ -28,6 +28,7 @@ from anyzork.sharing import (
     SHARE_PACKAGE_SUFFIX,
     SharePackageError,
 )
+from anyzork.versioning import RUNTIME_COMPAT_VERSION
 
 
 def _upload_url() -> str:
@@ -42,7 +43,6 @@ def _catalog_url() -> str:
     import os
 
     return os.environ.get("ANYZORK_CATALOG_URL", OFFICIAL_CATALOG_URL)
-from anyzork.versioning import RUNTIME_COMPAT_VERSION
 
 console = Console()
 CLI_VERSION = (
@@ -415,8 +415,6 @@ def _resolve_publish_listing_metadata(
     genres_default = [
         str(genre).strip() for genre in listing.get("genres", []) if str(genre).strip()
     ]
-    homepage_default = str(listing.get("homepage_url") or "")
-    cover_default = str(listing.get("cover_image_url") or "")
 
     console.print("[bold]Publish Listing[/bold]")
     console.print("[dim]Press enter to keep a suggested value, or type your own.[/dim]")
@@ -518,17 +516,19 @@ def publish_game(game_ref: str) -> None:
         f"[bold green]Published![/bold green] [cyan]{listing_title}[/cyan]"
         + (f" [dim]as[/dim] [cyan]{uploaded_slug}[/cyan]" if uploaded_slug else "")
     )
-    console.print(f"[dim]Submitted for review. Check status with:[/dim]  anyzork status {uploaded_slug}")
+    console.print(
+        f"[dim]Submitted for review. Check status with:[/dim]"
+        f"  anyzork status {uploaded_slug}"
+    )
 
 
 @cli.command("status")
 @click.argument("slug", type=str)
 def game_status(slug: str) -> None:
     """Check the publish status of a submitted game."""
+    import json as _json
     from urllib.error import HTTPError
     from urllib.request import urlopen
-
-    import json as _json
 
     url = _catalog_url().replace("/catalog.json", f"/api/games/{slug}/status")
     try:
@@ -545,9 +545,15 @@ def game_status(slug: str) -> None:
 
     title = data.get("title", slug)
     if data.get("published"):
-        console.print(f"[bold green]Live[/bold green] — [cyan]{title}[/cyan] is published and visible in browse.")
+        console.print(
+            f"[bold green]Live[/bold green] — [cyan]{title}[/cyan]"
+            " is published and visible in browse."
+        )
     else:
-        console.print(f"[yellow]Pending[/yellow] — [cyan]{title}[/cyan] is submitted but not yet approved.")
+        console.print(
+            f"[yellow]Pending[/yellow] — [cyan]{title}[/cyan]"
+            " is submitted but not yet approved."
+        )
 
 
 @cli.command("import")
