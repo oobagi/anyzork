@@ -259,6 +259,32 @@ item guard_stool {
   room_desc   "A rickety stool sits beside the gate."
 }
 
+# Code-locked container example — the player types "unlock lockbox" and enters the code.
+# Always provide an in-game clue with the exact code somewhere (here it's on the stool: J.R. -> 417).
+item lockbox {
+  name        "Lockbox"
+  description "A small metal box with a three-digit combination dial."
+  examine     "The numbers 0-9 are etched around the dial. A label reads 'J.R. — 417'."
+  in          gate_room
+  takeable    false
+  container   true
+  locked      true
+  code        "417"
+  category    "furniture"
+  lock_msg    "The lockbox is locked. It has a combination dial."
+  open_msg    "The dial clicks and the lid pops open."
+}
+
+item gold_ring {
+  name        "Gold Ring"
+  description "A plain gold band."
+  examine     "Engraved inside: 'To J.R. — Forever.'"
+  in          lockbox
+  takeable    true
+  take_msg    "You slip the ring into your pocket."
+  room_desc   "A gold ring gleams inside the lockbox."
+}
+
 item rusty_pipe {
   name        "Rusty Pipe"
   description "A heavy iron pipe."
@@ -275,6 +301,14 @@ item rusty_pipe {
 # home + room_desc is REQUIRED: room_desc is shown when the NPC is in its home room.
 # drop_desc (optional) is shown if the NPC is moved elsewhere (e.g., via move_npc).
 # NPCs without room_desc or home get a generic "Nearby, {name} lingers." fallback.
+#
+# Every NPC talk branch MUST include a dismissive exit option (e.g., "Never mind" or
+# "Goodbye") so the player can leave the conversation. Do not create dialogue paths
+# with no exit option — the player gets trapped in dialogue mode.
+#
+# Conditions (require_item, require not_flag, etc.) go on OPTIONS, not on
+# talk node headers. Gate access to a dialogue branch by conditioning the
+# option that leads there.
 #
 # NPCs can give items or trigger effects directly in dialogue:
 #   talk give_reward {
@@ -676,6 +710,37 @@ Constraints:
 - Trigger event types MUST be one of: room_enter, flag_set, item_taken, item_dropped, dialogue_node.
   Do NOT invent event types like item_read, npc_talk, etc. Use flag_set triggers instead.
   Players will try verbs in rooms the author didn't anticipate.
+- Every noun mentioned in a room description MUST be a declared item. If a room says
+  "a heavy wooden door" or "a stone workbench", declare it as a non-takeable item with
+  takeable false so the player can examine it. The engine only recognizes declared items.
+  Undeclared nouns are invisible to the parser and frustrate players.
+- In-game clue text MUST match the exact command the player needs to type. If a note
+  says "pull the red book", the item must be named so that "pull red book" or "pull book"
+  works. Never write clues that reference actions or phrasings the parser cannot accept.
+  The player will type exactly what the clue says.
+- For combination locks and code-locked containers, use the code field. The engine
+  prompts the player to enter the code when they type "unlock [target]".
+  Exit lock example: lock safe_lock { exit room -> vault north / type "combination" /
+  code "813" / locked "A combination dial blocks the way." / unlocked "Click. The lock opens." }
+  Container example: item wall_safe { container true / locked true / code "813" /
+  lock_msg "The safe has a three-digit dial." }
+  Always provide an in-game clue with the exact code (a photograph, a note, a date).
+- Prefer built-in engine verbs over custom verbs. Instead of a custom "combine" verb,
+  use "use item_a on item_b" with an interaction response. Instead of "install fuse",
+  use "use fuse on generator". Instead of "light lantern", use "turn on lantern" (toggle).
+  Custom verbs (on blocks) are a last resort — they don't appear in the help menu and
+  players won't know to try them unless clue text spells out the exact command.
+- If you must use a custom verb, the clue text MUST explicitly state the command.
+  Example: A note reading "Type PRAY at the altar" tells the player exactly what to do.
+  Vague hints like "perhaps an offering would help" do NOT teach the player the verb.
+- Every quest objective flag MUST be set by at least one on block, when trigger, or
+  dialogue sets[] effect. Trace each objective: what player action sets the flag?
+  If no action sets it, the objective is stuck forever. Every point in max_score must
+  be reachable through add_score() effects.
+- Avoid item names that share leading words. "Iron Door" and "Iron Key Half" collide
+  because the parser matches on the first word. Use distinct prefixes: "Vault Door"
+  and "Iron Key Half", or "Cell Door" and "Brass Key". Each item name should be
+  unambiguously matchable.
 
 Concept:
 {concept}
@@ -852,6 +917,10 @@ def _build_quality_requirements(realism: str, fields: dict[str, Any]) -> str:
         "- Never include a custom command unless it changes state or prints a visible result on success."
     )
     lines.append("- Starting room offers an obvious first action within 1-2 commands.")
+    lines.append(
+        "- Every object mentioned in room descriptions must be a declared item "
+        "(scenery items with takeable false). No phantom nouns."
+    )
     lines.append("- Win condition must be reachable. No dead ends or softlocks.")
 
     return "\n".join(lines)

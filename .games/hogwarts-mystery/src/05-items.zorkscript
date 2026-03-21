@@ -1,0 +1,719 @@
+# ═══════════════════════════════════════════
+#   ITEMS — Harry Potter and the Founders' Convergence
+#   43 items total: equipment, quest items, lore, containers, toggleables
+# ═══════════════════════════════════════════
+
+# ───────────────────────────────────────────
+#   PLAYER EQUIPMENT (starting inventory)
+# ───────────────────────────────────────────
+
+item wand {
+  name "Harry's Wand"
+  description "Your wand — holly and phoenix feather, eleven inches."
+  examine "Your wand — ten and a quarter inches, supple, warm in your grip. The wood grain spirals in a pattern unique to your bond with it. It hums faintly when you hold it, resonating with your intent. You notice the tip glows slightly brighter when pointed toward sources of strong magic, as if it can sense what you cannot yet see."
+  room_id great_hall
+  room_description "Your wand is here."
+  is_takeable true
+  is_visible true
+  tags ["spell"]
+  category "tool"
+}
+
+item marauders_map {
+  name "The Marauder's Map"
+  description "A large square of worn parchment, blank to the casual eye."
+  examine "A large square of worn parchment, blank to the casual eye. When you tap it with your wand and speak the words 'I solemnly swear that I am up to no good,' ink blooms across its surface like spilled water, revealing a detailed map of Hogwarts — every corridor, every room, every secret passage, labeled in the elegant hand of Messrs. Moony, Wormtail, Padfoot, and Prongs. Tiny labeled dots show the location of everyone in the castle. Some passages on the map are marked that you haven't found yet."
+  room_id great_hall
+  room_description "The Marauder's Map lies here."
+  is_takeable true
+  is_visible true
+  tags ["tool"]
+  category "tool"
+}
+
+# ───────────────────────────────────────────
+#   KEY ITEMS (from Dumbledore)
+# ───────────────────────────────────────────
+
+item enchanted_lantern {
+  name "Enchanted Lantern"
+  description "A brass lantern the size of your fist, burning a steady blue-white."
+  examine "A brass lantern the size of your fist, its flame burning a steady, unwavering blue-white behind beveled glass. It weighs almost nothing. The flame does not flicker in wind, does not dim in darkness, and seems to burn brighter when brought near concealed doorways or hidden mechanisms — as if it is drawn to secrets the way a compass is drawn to north."
+  room_id dumbledore_office
+  room_description "An enchanted lantern sits on Dumbledore's desk, its flame burning a steady blue-white."
+  is_takeable true
+  is_visible true
+  toggle true
+  toggle_default "off"
+  on_msg "You open the lantern's shutter. Blue-white light spills out, banishing shadows and revealing what darkness had hidden."
+  off_msg "You close the shutter. The light retreats to a faint glow behind beveled glass."
+  tags ["light_source"]
+  category "tool"
+}
+
+item permission_slip {
+  name "Signed Permission Slip"
+  description "A creased slip of parchment bearing official signatures in emerald ink."
+  examine "A creased slip of parchment bearing McGonagall's unmistakable signature in emerald ink. It grants you permission to access areas of the castle normally restricted to prefects and staff. The signature shimmers faintly with authentication magic — counterfeit-proof. The bottom margin bears a small annotation in McGonagall's hand: 'Do try not to get killed.'"
+  room_id dumbledore_office
+  room_description "A signed permission slip rests among the papers on the desk."
+  is_takeable true
+  is_visible false
+  tags ["key"]
+  category "key_item"
+}
+
+item invisibility_cloak {
+  name "Invisibility Cloak"
+  description "A cloak of fluid, silvery fabric that slides through your fingers like water."
+  examine "A cloak of fluid, silvery fabric that slides through your fingers like water made of moonlight. When draped over you, it renders you completely invisible — not just hard to see, but genuinely absent from perception. The fabric is weightless and seems to have no temperature. Looking at the cloak too long makes your eyes water, as if the material exists at an angle reality wasn't designed for. One of the Deathly Hallows, though you try not to think about that."
+  room_id dumbledore_office
+  room_description "A shimmering cloak of silvery fabric lies folded on a side table."
+  is_takeable true
+  is_visible false
+  tags ["stealth"]
+  category "tool"
+}
+
+# ───────────────────────────────────────────
+#   KEY ITEMS (from NPCs / found)
+# ───────────────────────────────────────────
+
+item prefect_badge {
+  name "Ron's Prefect Badge"
+  description "A polished silver badge stamped with a large 'P' and the Hogwarts crest."
+  examine "A polished silver badge stamped with a large 'P' and the Hogwarts crest. It feels heavier than it should, weighted with enchantment. When pinned to your robes, it grants a subtle authority — doors that would otherwise resist seem more inclined to open, and portraits are noticeably more cooperative. The back is engraved with tiny text: 'Responsibility is its own reward.'"
+  room_id great_hall
+  room_description "Ron's prefect badge glints on the table."
+  is_takeable true
+  is_visible false
+  tags ["key"]
+  category "key_item"
+}
+
+item gryffindor_map {
+  name "Map to the Gryffindor Trial"
+  description "A fragment of old parchment showing a hand-drawn layout of hidden chambers."
+  examine "A fragment of old parchment showing a hand-drawn layout of corridors and chambers beneath the trophy room. The map is rendered in faded red ink, annotated with warnings in a bold, hurried script: 'Fire ahead — find the rhythm' and 'The guardian demands sacrifice, not blood.' A lion watermark is visible when held to the light."
+  in trophy_case
+  room_description "A fragment of old parchment lies inside the case."
+  is_takeable true
+  is_visible true
+  tags ["lore"]
+  category "lore"
+}
+
+item slytherin_ring {
+  name "Slytherin's Signet Ring"
+  description "A heavy silver ring set with an emerald carved in the shape of a coiled serpent."
+  examine "A heavy silver ring set with an emerald carved in the shape of a coiled serpent. The metal is cold — unnaturally so, colder than the air around it — and the serpent's eyes seem to follow your gaze. When worn, you feel a faint tingling in your fingertips, as if the ring is testing your intentions. Etched inside the band in tiny script: 'To speak is to command.'"
+  in trophy_case
+  room_description "A silver ring set with an emerald serpent rests on a velvet cushion."
+  is_takeable true
+  is_visible true
+  tags ["key"]
+  category "key_item"
+}
+
+item shield_charm_scroll {
+  name "Shield Charm Scroll"
+  description "A tightly rolled scroll of heavy parchment, sealed with blue wax."
+  examine "A tightly rolled scroll of heavy parchment, sealed with blue wax stamped with a stylized shield. When unrolled, it reveals the incantation and wand movement for Protego — the Shield Charm — annotated with tactical notes in a dueling instructor's hand. 'Cast with conviction,' reads a marginal note. 'The shield is only as strong as the will behind it.' Study this to learn the spell permanently."
+  room_id hospital_wing
+  room_description "A scroll sealed with blue wax lies on a bedside table."
+  is_takeable true
+  is_visible true
+  tags ["key"]
+  category "key_item"
+}
+
+item star_chart_south {
+  name "Southern Star Chart"
+  description "A detailed astronomical chart rendered on stiff parchment."
+  examine "A detailed astronomical chart rendered on stiff parchment, showing the southern sky as visible from the Hogwarts Astronomy Tower. Constellations are labeled in Latin and cross-referenced with dates. One constellation is circled in fresh ink — a pattern of stars that, when traced, forms the shape of a key. A notation beside it reads: 'The sky remembers what the Founders hid. Align south to find the eagle's answer.'"
+  room_id library
+  room_description "A star chart is pinned to a reading stand, its constellations labeled in Latin."
+  is_takeable true
+  is_visible true
+  tags ["lore"]
+  category "key_item"
+}
+
+item wrench {
+  name "Hagrid's Wrench"
+  description "A heavy iron wrench, old but well-maintained."
+  examine "A heavy iron wrench, old but well-maintained, its jaws adjustable via a worn brass wheel. Grease stains darken the handle. This is a tool for mechanical work — gears, bolts, clock mechanisms — not magic. Someone left it here deliberately, as if knowing that not every problem in a magical castle has a magical solution."
+  room_id hagrid_hut
+  room_description "A heavy iron wrench sits on Hagrid's workbench."
+  is_takeable false
+  is_visible true
+  tags ["tool"]
+  category "tool"
+}
+
+item small_shovel {
+  name "Small Shovel"
+  description "A compact folding shovel with a wooden handle worn smooth from use."
+  examine "A compact folding shovel with a wooden handle worn smooth from use. The blade is tarnished but sharp, good for digging in soft earth or mud. It collapses to fit in a robe pocket. Simple, Muggle, practical — the kind of tool Hagrid would appreciate and Malfoy would sneer at. Sometimes the best way to find something buried is the obvious way."
+  room_id greenhouse
+  room_description "A small folding shovel leans against a potting bench."
+  is_takeable true
+  is_visible true
+  tags ["tool"]
+  category "tool"
+}
+
+item warming_charm_token {
+  name "Warming Charm Token"
+  description "A small brass disc inscribed with a warming charm, radiating gentle heat."
+  examine "A small brass disc inscribed with the runic formula for a concentrated warming charm. It radiates a gentle heat that intensifies when gripped tightly. Professor Flitwick's handiwork — precise, elegant, and significantly more powerful than it looks. When pressed against enchanted ice, the charm activates and the ice yields."
+  room_id corridor_east
+  room_description "A small brass disc radiating warmth sits where Flitwick left it."
+  is_takeable true
+  is_visible false
+  tags ["key"]
+  category "key_item"
+}
+
+item gryffindor_crest {
+  name "Gryffindor Crest"
+  description "A stone crest bearing the rampant lion of Gryffindor."
+  examine "A carved stone crest bearing the rampant lion of Gryffindor in deep red enamel. The back is worn smooth from handling, and the stone radiates faint warmth. Ron pressed it into your hands with the quiet solemnity of someone entrusting you with something that matters more than either of you will admit. It fits perfectly in the pedestal's circular depression."
+  room_id guardian_hall
+  room_description "A stone crest bearing the Gryffindor lion lies here."
+  is_takeable true
+  is_visible false
+  tags ["key"]
+  category "key_item"
+}
+
+# ───────────────────────────────────────────
+#   POTION INGREDIENTS
+# ───────────────────────────────────────────
+
+item revealer_recipe {
+  name "Revealer Potion Recipe"
+  description "A page torn from an advanced potions textbook, its edges singed."
+  examine "A page torn from an advanced potions textbook, its edges singed. The recipe describes a 'Revealer Potion' capable of exposing hidden magical mechanisms and concealed doorways. The ingredients are listed in Snape's cramped handwriting: moonpetal (found in moonlight), ashwinder egg (stored with volatile ingredients), and a base of standard healing potion. A note in the margin reads: 'Brew in any cauldron. The potion knows what it wants.'"
+  room_id restricted_section
+  room_description "A singed recipe page lies on the reading table."
+  is_takeable true
+  is_visible true
+  tags ["lore"]
+  category "lore"
+}
+
+item moonpetal {
+  name "Moonpetal"
+  description "A single silver-white petal, delicate as tissue paper, faintly luminous."
+  examine "A single silver-white petal, delicate as tissue paper, faintly luminous. It feels cool and dry, and when you tilt it, it catches light that isn't there — reflecting moonbeams from some other sky. The petal came from a flower that blooms only in enchanted moonlight. It smells of night air and distant gardens. An essential ingredient for the Revealer Potion."
+  room_id greenhouse
+  room_description "A faintly luminous silver-white petal grows from a moonlit planter."
+  is_takeable true
+  is_visible true
+  tags ["ingredient"]
+  category "ingredient"
+}
+
+item ashwinder_egg {
+  name "Ashwinder Egg"
+  description "A small egg, warm to the touch, its shell a dull, sullen red."
+  examine "A small egg, warm to the touch, its shell a dull, sullen red that pulses like a dying ember. It is surprisingly heavy for its size. If left unattended, it will eventually ignite whatever surface it rests on — you can feel the heat building slowly in your palm. Handle with care. An essential ingredient for the Revealer Potion."
+  in ingredient_cabinet
+  room_description "A small red egg pulses with warmth inside the cabinet."
+  is_takeable true
+  is_visible true
+  tags ["ingredient"]
+  category "ingredient"
+}
+
+# ───────────────────────────────────────────
+#   POTIONS (consumables)
+# ───────────────────────────────────────────
+
+item revealer_potion {
+  name "Revealer Potion"
+  description "A small vial of iridescent liquid that shifts between silver and transparent."
+  examine "A small vial of iridescent liquid that shifts between silver and transparent, like bottled moonlight. When you hold it near a wall, the surface of the potion tilts toward hidden mechanisms the way water leans downhill — it wants to reveal, to expose, to make the invisible obvious. The cork is sealed with wax. One use. Make it count."
+  room_id great_hall
+  room_description "A vial of iridescent liquid sits here."
+  is_takeable true
+  is_visible false
+  is_consumed_on_use true
+  tags ["potion"]
+  category "consumable"
+}
+
+item healing_potion {
+  name "Healing Potion"
+  description "A stoppered vial of thick, pearlescent liquid that glows faintly pink."
+  examine "A stoppered vial of thick, pearlescent liquid that glows faintly pink. It smells of clean linen and something herbal — dittany, perhaps, or valerian. When swirled, the liquid moves too slowly, as if reluctant to be disturbed. Standard healing potion, effective on cuts, burns, and magical wounds. The label reads 'Madame Pomfrey's Reserve' in a careful hand."
+  room_id hospital_wing
+  room_description "Three vials of pearlescent healing potion stand in a neat row on the medicine cabinet shelf."
+  is_takeable true
+  is_visible true
+  quantity 3
+  max_quantity 3
+  quantity_unit "vials"
+  tags ["potion"]
+  category "consumable"
+}
+
+item flame_freezing_potion {
+  name "Flame-Freezing Potion"
+  description "A flask of pale blue liquid, ice-cold even through the glass."
+  examine "A flask of pale blue liquid, ice-cold even through the glass. Frost crystals form and dissolve on its surface in a slow, hypnotic cycle. When consumed, it renders the drinker immune to magical fire for a short duration — flames will wash over you like a warm breeze. The potion tastes, according to the label's warning, 'like a winter morning, followed by regret.' Useful wherever fire stands between you and progress."
+  in ingredient_cabinet
+  room_description "A flask of icy blue liquid sits beside the ashwinder egg."
+  is_takeable true
+  is_visible true
+  is_consumed_on_use true
+  tags ["potion"]
+  category "consumable"
+}
+
+# ───────────────────────────────────────────
+#   FOUNDER TOKENS (trial vaults)
+# ───────────────────────────────────────────
+
+item gryffindor_token {
+  name "Gryffindor's Token"
+  description "A heavy disc of ruby-veined gold bearing the rampant lion."
+  examine "A heavy disc of ruby-veined gold, warm in your hand, bearing the rampant lion of Gryffindor on one face. The reverse is inscribed with a single word: 'Courage.' When you hold it, you feel a faint surge of warmth in your chest — not heat, but resolve, as if the token is lending you a fraction of the bravery it represents. One of four keys to the Convergence Antechamber."
+  room_id gryffindor_vault
+  room_description "The Gryffindor token rests on the stone pedestal, glowing with ruby-gold light."
+  is_takeable true
+  is_visible true
+  tags ["founder_artifact"]
+  category "quest_item"
+}
+
+item ravenclaw_token {
+  name "Ravenclaw's Token"
+  description "A disc of sapphire-streaked bronze bearing the eagle of Ravenclaw."
+  examine "A disc of sapphire-streaked bronze, cool and precise in your hand, bearing the eagle of Ravenclaw etched with mathematical exactness. The reverse reads: 'Wisdom.' Holding it, your thoughts sharpen — connections form faster, patterns emerge from noise, and for a moment, the world feels like a puzzle you could actually solve. One of four keys to the Convergence Antechamber."
+  room_id ravenclaw_vault
+  room_description "The Ravenclaw token rests on the crystalline pedestal, refracting blue-white light."
+  is_takeable true
+  is_visible true
+  tags ["founder_artifact"]
+  category "quest_item"
+}
+
+item hufflepuff_token {
+  name "Hufflepuff's Token"
+  description "A disc of topaz-flecked onyx bearing the badger of Hufflepuff."
+  examine "A disc of topaz-flecked onyx, warm as sun-baked earth, bearing the badger of Hufflepuff in patient, detailed relief. The reverse reads: 'Loyalty.' It sits in your hand with a comfortable weight, grounding you, and you feel a quiet certainty settle in your stomach — not confidence, but constancy, the assurance that you will not abandon what matters. One of four keys to the Convergence Antechamber."
+  room_id hufflepuff_vault
+  room_description "The Hufflepuff token rests on the pedestal, radiating golden warmth."
+  is_takeable true
+  is_visible true
+  tags ["founder_artifact"]
+  category "quest_item"
+}
+
+item slytherin_token {
+  name "Slytherin's Token"
+  description "A disc of emerald-veined silver bearing the coiled serpent of Slytherin."
+  examine "A disc of emerald-veined silver, cold and heavy, bearing the coiled serpent of Slytherin rendered in unsettling detail — each scale distinct, each curve deliberate. The reverse reads: 'Ambition.' When you hold it, the world narrows to essentials: what you want, what stands in your way, and the shortest path between the two. The clarity is seductive. One of four keys to the Convergence Antechamber."
+  room_id slytherin_vault
+  room_description "The Slytherin token rests beneath the rotating spectral locket, cold and watchful."
+  is_takeable true
+  is_visible true
+  tags ["founder_artifact"]
+  category "quest_item"
+}
+
+# ───────────────────────────────────────────
+#   HUFFLEPUFF TRIAL ITEMS
+# ───────────────────────────────────────────
+
+item golden_locket {
+  name "Golden Locket"
+  description "A small golden locket on a fine chain, engraved with a badger and vines."
+  examine "A small golden locket on a fine chain, its surface engraved with a badger surrounded by intertwined vines. It opens to reveal two tiny compartments — both empty, but the interior surfaces are inscribed with microscopic text: 'Freely given, gladly received.' The locket pulses with a faint warmth, as if it remembers being held by someone who loved it. It feels like it wants to be given away, not kept."
+  room_id loyalty_passage
+  room_description "Something golden glints among the roots on the tunnel floor — a small locket on a fine chain."
+  is_takeable true
+  is_visible true
+  tags ["quest_item"]
+  category "key_item"
+}
+
+item hufflepuff_charm {
+  name "Hufflepuff's Charm"
+  description "A small, polished stone carved in the shape of a wheat sheaf on a leather cord."
+  examine "A small, polished stone carved in the shape of a wheat sheaf, threaded on a leather cord. It radiates a gentle warmth and smells faintly of fresh bread. When held near the garden of patience, it vibrates softly — resonating with the growing magic there. Inscribed on the back: 'Growth cannot be rushed, only tended.'"
+  room_id wounded_stranger
+  room_description "A small stone charm lies beside the spectral figure."
+  is_takeable true
+  is_visible false
+  tags ["quest_item"]
+  category "key_item"
+}
+
+# ───────────────────────────────────────────
+#   SLYTHERIN TRIAL ITEMS
+# ───────────────────────────────────────────
+
+item serpent_key {
+  name "Serpent Key"
+  description "A key carved from a single piece of dark jade, shaped like a striking serpent."
+  examine "A key carved from a single piece of dark jade, shaped like a striking serpent — the blade forms the body, the bow forms the coiled tail. It is cold and smooth and fits in your hand with unsettling precision, as if it was made for your grip specifically. When brought near serpent carvings, the key vibrates and the carved snakes seem to lean toward it. Opens the serpent door in the Slytherin antechamber."
+  in iron_chest
+  room_description "A jade serpent key rests inside the chest."
+  is_takeable true
+  is_visible true
+  tags ["key"]
+  category "key_item"
+}
+
+# ───────────────────────────────────────────
+#   LORE ITEMS
+# ───────────────────────────────────────────
+
+item founders_journal_page_1 {
+  name "Founder's Journal (Page 1)"
+  description "A page of ancient parchment covered in four different handwriting styles."
+  examine "A page of ancient parchment, brittle at the edges, covered in a collaborative hand — four different scripts, four different inks, woven together like a conversation frozen in time. This first page describes the discovery: something beneath the bedrock where Hogwarts would be built, a convergence of magical ley lines crystallized into stone. 'We did not choose this site,' writes one hand. 'The stone chose us.' Another annotates: 'M. insists it can be harnessed. I am not convinced harnessing is the same as controlling.'"
+  room_id clock_tower_base
+  room_description "A page of ancient parchment is wedged between two frozen gears."
+  is_takeable true
+  is_visible false
+  tags ["lore"]
+  category "lore"
+}
+
+item founders_journal_page_2 {
+  name "Founder's Journal (Page 2)"
+  description "The second journal page — the handwriting of all four contributors has grown hurried."
+  examine "The second journal page is more agitated — the handwriting of all four contributors has grown hurried, the ink pressed deeper. The text describes experiments with the Convergence Stone, attempts to channel its power into the castle's defenses. 'M. grows impatient with our caution,' notes one writer. 'He speaks of unity as if it were a tool rather than a principle.' A diagram in the margin shows the four ward stones arranged around the Convergence Stone — the same configuration you've seen below. Beneath it: 'If the wards fail, the stone consumes.'"
+  room_id restricted_section
+  room_description "An agitated page of ancient parchment lies on the reading table, its ink pressed deep."
+  is_takeable true
+  is_visible true
+  tags ["lore"]
+  category "lore"
+}
+
+item founders_journal_page_3 {
+  name "Founder's Journal (Page 3)"
+  description "The final page — written in a single hand, patient and rounded."
+  examine "The final page is written in a single hand — Helga Hufflepuff's, judging by the patient, rounded script. The others have stopped contributing. 'Malachar is sealed below. The wards hold, but they are not eternal. Should they falter, know this: the Stone cannot be destroyed. It can only be stabilized. Not by power, not by cunning, not by knowledge, not by courage alone — but by all four in concert. The tokens are the key. Unity is the lock. We were four, and that is what saved us. Remember.'"
+  room_id malachar_gallery
+  room_description "A final journal page lies beneath the mural of the Founders' last stand."
+  is_takeable true
+  is_visible true
+  tags ["lore"]
+  category "lore"
+}
+
+item malachar_journal {
+  name "Malachar's Journal"
+  description "A small, leather-bound journal, its cover cracked and stained with something dark."
+  examine "A small, leather-bound journal, its cover cracked and stained with something dark. The handwriting inside is elegant but increasingly erratic. Malachar writes of the Convergence Stone with reverence bordering on obsession: 'The Founders see a foundation. I see a source. They wish to build upon it. I wish to become it.' Later entries devolve into diagrams, calculations, and a growing paranoia: 'They conspire against me because they fear what I understand. The Stone does not want four stewards. It wants one voice.' The final entry is a single line: 'They will seal me, but the Stone remembers.'"
+  room_id malachar_gallery
+  room_description "A cracked leather journal lies beneath the final mural panel, stained with something dark."
+  is_takeable true
+  is_visible true
+  tags ["lore"]
+  category "lore"
+}
+
+item rusted_amulet {
+  name "Rusted Amulet"
+  description "A corroded amulet dug from the mud, its original shape barely discernible."
+  examine "A corroded amulet dug from the mud of the lake shore, its original shape barely discernible beneath centuries of rust and silt. You can make out the faint outline of a symbol — neither any of the four house crests nor the Hogwarts seal, but something older: a five-pointed convergence, five lines meeting at a central point. Malachar's mark. The amulet is inert now — whatever power it held has long since bled into the earth. But it confirms the history: there was a fifth."
+  room_id lake_shore
+  room_description "Something corroded and metallic protrudes from the mud at the water's edge."
+  is_takeable true
+  is_visible false
+  tags ["lore"]
+  category "lore"
+}
+
+# ───────────────────────────────────────────
+#   TRADE AND UTILITY ITEMS
+# ───────────────────────────────────────────
+
+item galleons {
+  name "Galleons"
+  description "A small pouch of heavy gold coins stamped with a goblin mint seal."
+  examine "A small pouch of Galleons — heavy gold coins stamped with a goblin mint seal. They clink with the satisfying weight of genuine wizarding currency. Useful for trading with anyone who values gold over favors, which in the current crisis, is fewer people than you'd expect."
+  room_id great_hall
+  room_description "A pouch of gold Galleons lies here."
+  is_takeable true
+  is_visible true
+  quantity 10
+  max_quantity 10
+  quantity_unit "coins"
+  tags ["currency"]
+  category "currency"
+}
+
+item magical_candy {
+  name "Magical Candy"
+  description "An assortment of wizarding sweets — Chocolate Frogs, Bertie Bott's Beans, and Pepper Imps."
+  examine "An assortment of wizarding sweets: Chocolate Frogs (cards included), Bertie Bott's Every Flavour Beans (every flavour means every flavour), and a couple of Pepper Imps that smoke at the ears. Comforting, familiar, and surprisingly effective at convincing reluctant allies that you come in peace. Everyone trusts someone who shares their sweets."
+  room_id corridor_west
+  room_description "A small bag of wizarding sweets sits where Fred and George left it."
+  is_takeable true
+  is_visible false
+  quantity 3
+  max_quantity 3
+  quantity_unit "pieces"
+  is_consumed_on_use true
+  tags ["food"]
+  category "consumable"
+}
+
+item peruvian_darkness_powder {
+  name "Peruvian Darkness Powder"
+  description "A small cloth pouch filled with fine, glittering black powder."
+  examine "A small cloth pouch filled with fine, glittering black powder that seems to absorb light even through the fabric. Peruvian Instant Darkness Powder — when thrown, it creates a patch of absolute, impenetrable darkness that no spell can illuminate. Fred and George's stock. Useful for escaping situations where visibility is your enemy's advantage, or for creating distractions in areas you'd rather not be seen."
+  room_id corridor_west
+  room_description "A small pouch of glittering black powder sits beside the candy."
+  is_takeable true
+  is_visible false
+  is_consumed_on_use true
+  tags ["stealth"]
+  category "consumable"
+}
+
+# ───────────────────────────────────────────
+#   SCENERY / NON-TAKEABLE ITEMS
+# ───────────────────────────────────────────
+
+item logic_poem {
+  name "The Logic Verse"
+  description "A roll of singed parchment describing a logic puzzle of reason, not magic."
+  examine "The parchment reads in an elegant, clinical hand:
+
+'Danger lies before you, while safety lies behind,
+Two of us will help you, whichever you would find,
+One among us seven will let you move ahead,
+Another will transport the drinker back instead,
+Two among our number hold only nettle wine,
+Three of us are killers, waiting biding in line.
+Choose, unless you wish to stay here forevermore,
+To help you in your choice, we give you these clues four:
+First, however slyly the poison tries to hide
+You will always find some on nettle wine's left side;
+Second, different are those who stand at either end,
+But if you would move onward, neither is your friend;
+Third, as you see clearly, all are different size,
+Neither dwarf nor giant holds death in their insides;
+Fourth, the second left and the second on the right
+Are twins once you taste them, though different at first sight.'"
+  room_id logic_chamber
+  room_description "A roll of singed parchment lies before the seven bottles, its logic verse waiting to be solved."
+  is_takeable false
+  is_visible true
+  tags ["scenery"]
+  category "scenery"
+}
+
+item clock_mechanism {
+  name "Clock Mechanism"
+  description "The massive frozen clock mechanism — a cathedral of brass gears and iron pendulums."
+  examine "A towering assembly of interlocking brass gears, iron pendulums, and crystal escapements, all frozen mid-motion. One gear is visibly jammed — a tooth bent inward, preventing rotation. A wrench could straighten it. The mechanism groans occasionally, straining against whatever has locked it in place, as if the clock desperately wants to resume counting time."
+  room_id clock_tower_base
+  room_description "The massive clock mechanism looms overhead, its gears frozen and silent."
+  is_takeable false
+  is_visible true
+  toggle true
+  toggle_default "jammed"
+  on_msg "The wrench grips the bent tooth. You heave — metal screeches, gives, and the gear straightens with a satisfying clang. The mechanism shudders to life, pendulums swinging, gears meshing, the great clock resuming its ancient count. Something dislodges from between two gears and clatters to the floor — a page of ancient parchment."
+  off_msg "The mechanism is already running smoothly."
+  tags ["scenery"]
+  category "scenery"
+}
+
+# ───────────────────────────────────────────
+#   WARD STONES (toggleable, ward_chamber)
+# ───────────────────────────────────────────
+
+item ward_stone_red {
+  name "Red Ward Stone"
+  description "A rough-hewn monolith pulsing with fading ruby light."
+  examine "A ward stone taller than a person, its surface carved with Gryffindor symbols and pulsing with a fading ruby light. Black veins crawl across its surface, thicker toward the base, creeping upward like a disease. Each pulse is weaker than the last. It represents Godric Gryffindor's contribution to the binding — courage made manifest in stone. It needs to be reactivated in the correct sequence to restore the wards."
+  room_id ward_chamber
+  room_description "The red ward stone pulses with fading ruby light at the northern point of the circle."
+  is_takeable false
+  is_visible true
+  toggle true
+  toggle_default "inactive"
+  on_msg "You press your wand to the red stone. Ruby light flares through the black veins, burning them back, and the stone's pulse strengthens — steady, strong, the heartbeat of courage restored."
+  off_msg "The red stone's light fades to a weak pulse."
+  tags ["ward"]
+  category "scenery"
+}
+
+item ward_stone_blue {
+  name "Blue Ward Stone"
+  description "A rough-hewn monolith pulsing with fading sapphire light."
+  examine "A ward stone inscribed with Ravenclaw eagles and mathematical formulae, pulsing with a fading sapphire light. The black veins are thicker here, nearly reaching the top, and the stone's surface is cold to the touch — not the cold of stone, but the cold of something dying. It represents Rowena Ravenclaw's wisdom, crystallized into the ward network. Reactivation requires the correct sequence."
+  room_id ward_chamber
+  room_description "The blue ward stone pulses with fading sapphire light at the eastern point."
+  is_takeable false
+  is_visible true
+  toggle true
+  toggle_default "inactive"
+  on_msg "You press your wand to the blue stone. Sapphire light surges through the carvings, eagles taking flight in luminous relief, and the stone's pulse steadies — sharp, precise, the clarity of wisdom renewed."
+  off_msg "The blue stone's light fades to a distant glimmer."
+  tags ["ward"]
+  category "scenery"
+}
+
+item ward_stone_yellow {
+  name "Yellow Ward Stone"
+  description "A rough-hewn monolith pulsing with fading topaz light."
+  examine "A ward stone carved with Hufflepuff badgers and wheat sheaves, pulsing with a fading topaz light. The black veins have nearly consumed the lower half, but the upper carvings remain warm to the touch — stubbornly alive, refusing to fade entirely. It represents Helga Hufflepuff's loyalty, the binding force that holds the other three together. Reactivation requires the correct sequence."
+  room_id ward_chamber
+  room_description "The yellow ward stone pulses with fading topaz light at the southern point."
+  is_takeable false
+  is_visible true
+  toggle true
+  toggle_default "inactive"
+  on_msg "You press your wand to the yellow stone. Golden light blooms outward like sunrise, warming the chamber, and the stone's pulse deepens — steady, enduring, the constancy of loyalty rekindled."
+  off_msg "The yellow stone's light retreats to a flickering warmth."
+  tags ["ward"]
+  category "scenery"
+}
+
+item ward_stone_green {
+  name "Green Ward Stone"
+  description "A rough-hewn monolith pulsing with fading emerald light."
+  examine "A ward stone coiled with carved serpents and alchemical symbols, pulsing with a fading emerald light. The black veins are thickest here — Malachar's corruption striking hardest at the tradition closest to his own. The stone is cold, calculating, and the light it emits has a quality of assessment, as if it is deciding whether you are worthy. It represents Salazar Slytherin's ambition — the drive that gives the wards their edge. Reactivation requires the correct sequence."
+  room_id ward_chamber
+  room_description "The green ward stone pulses with fading emerald light at the western point."
+  is_takeable false
+  is_visible true
+  toggle true
+  toggle_default "inactive"
+  on_msg "You press your wand to the green stone. Emerald light coils through the serpent carvings like living venom, and the stone's pulse sharpens — calculating, driven, the ambition of Slytherin unsheathed."
+  off_msg "The green stone's light dims to a reptilian flicker."
+  tags ["ward"]
+  category "scenery"
+}
+
+# ───────────────────────────────────────────
+#   CONTAINERS
+# ───────────────────────────────────────────
+
+item trophy_case {
+  name "Trophy Case"
+  description "A large glass display case at the center of the trophy room, locked with a heavy brass mechanism."
+  examine "A large glass display case with polished brass fittings, locked with a mechanism that responds to authority — the kind of lock designed to open for prefects and staff, not for students with wands and ambition. Inside, you can see a velvet cushion bearing two objects: a fragment of old parchment and a heavy silver ring set with an emerald. The glass is enchanted — unbreakable by force."
+  room_id trophy_room
+  room_description "A locked glass display case stands at the center of the room, its contents gleaming under enchanted spotlights."
+  is_takeable false
+  is_visible true
+  container true
+  has_lid true
+  locked true
+  key prefect_badge
+  unlock_msg "The prefect badge clicks against the brass lock and the case swings open with a soft chime. Authority acknowledged."
+  open_msg "The velvet cushion inside holds a parchment map and a silver ring."
+}
+
+item ingredient_cabinet {
+  name "Ingredient Cabinet"
+  description "A heavy wooden cabinet beside Snape's desk, its doors slightly ajar."
+  examine "A cabinet of dark wood with iron hinges, standing beside Snape's desk. The interior smells of sulfur, peppermint, and something volatile. Shelves of jars contain ingredients in various states of preservation — some pickled, some dried, some actively squirming. The cabinet is unlocked, either because Snape trusts the fear he inspires more than any lock, or because he wants to see who is foolish enough to touch his supplies."
+  room_id potions_classroom
+  room_description "Snape's ingredient cabinet stands beside the teacher's desk, its doors slightly ajar."
+  is_takeable false
+  is_visible true
+  container true
+  has_lid true
+  locked false
+  open_msg "The cabinet doors swing open, releasing a wave of competing chemical smells."
+}
+
+item cold_stores {
+  name "Enchanted Cold Stores"
+  description "A heavy iron door at the back of the kitchens, sealed with enchanted chains of ice."
+  examine "The cold stores are sealed behind a heavy iron door wrapped in chains of actual ice — not conjured, not natural, but something older. The ice burns to touch and screams faintly when disturbed, a high-pitched keen just at the edge of hearing. Whatever locked this door did so with magic that predates the house-elves. A concentrated warming charm might break the seal."
+  room_id kitchens
+  room_description "Enchanted chains of ice seal the cold stores at the back of the kitchens."
+  is_takeable false
+  is_visible true
+  container true
+  has_lid true
+  locked true
+  key warming_charm_token
+  consume_key true
+  unlock_msg "The warming charm token flares in your hand, melting the enchanted ice with a hiss of steam. The chains shatter and fall away, and the iron door swings open, releasing a wave of cold but perfectly preserved air."
+  open_msg "The cold stores are stocked with butter, cream, preserved meats, and enough ingredients to feed the school for a week."
+}
+
+item iron_chest {
+  name "Iron Chest"
+  description "A plain, dented iron chest sitting apart from the others."
+  examine "The iron chest is plain, dented, and unremarkable. Its hinges are rusted but functional, and it carries no ornamentation, no enchantment you can detect. It sits slightly apart from the others, as if placed as an afterthought — or as if the other chests were placed to draw attention away from it. Slytherin valued cunning. The obvious choice is rarely the right one. Sometimes the least impressive vessel holds the most important contents."
+  room_id deception_room
+  room_description "A plain iron chest sits slightly apart from the others, dented and unassuming."
+  is_takeable false
+  is_visible true
+  container true
+  has_lid true
+  locked false
+  open_msg "The lid lifts with a rusty groan. Inside, resting on faded velvet, is a key carved from dark jade."
+}
+
+item silver_chest {
+  name "Silver Chest"
+  description "A silver chest polished to a mirror shine, dazzling under the green torchlight."
+  examine "The silver chest gleams with a polished perfection that seems almost aggressive, reflecting the green torchlight in dazzling patterns across the walls. It is beautiful, ornate, and draws the eye immediately. But beauty in a Slytherin trial is a warning sign, not an invitation. The silver surface is flawless — too flawless, as if the chest exists to be looked at rather than opened. A faint inscription along the base reads: 'Admire, but do not trust.'"
+  room_id deception_room
+  room_description "A dazzling silver chest gleams under the green torchlight, demanding attention."
+  is_takeable false
+  is_visible true
+  container true
+  has_lid true
+  locked false
+  open_msg "The silver chest springs open — and a blast of freezing air strikes you full in the face. The chest is empty. It was always empty. The cold bites into your skin like a rebuke."
+}
+
+item gold_chest {
+  name "Gold Chest"
+  description "A magnificent gold chest encrusted with gemstones, practically demanding to be opened."
+  examine "The gold chest is magnificent — encrusted with emeralds, its lid carved with a serpent motif so detailed the scales catch individual motes of light. It practically demands to be opened. Every surface screams 'treasure.' And that is precisely what makes it suspicious. In a trial designed by Salazar Slytherin — a man who valued subtlety above all — the chest that shouts the loudest is almost certainly the one designed to punish greed. The serpent's carved eye seems to wink."
+  room_id deception_room
+  room_description "A magnificent gold chest encrusted with emeralds sits at the triangle's apex, practically begging to be opened."
+  is_takeable false
+  is_visible true
+  container true
+  has_lid true
+  locked false
+  open_msg "The gold lid opens with theatrical grandeur — and a serpent of green flame erupts from within, striking you before dissolving into mocking laughter. The chest contains nothing but a note: 'Greed is the most predictable weakness.'"
+}
+
+item token_alcove {
+  name "Token Alcove"
+  description "Four alcoves carved into the black stone walls, each bearing a house crest above a circular depression."
+  examine "Four alcoves carved at equal intervals into the polished black walls, each bearing the crest of a Hogwarts house above a circular depression perfectly sized for a Founder's token. Three of the four alcoves are dark. The fourth pulses weakly, as if remembering what it was meant to hold. Place all four tokens to open the sealed door to the south."
+  room_id convergence_antechamber
+  room_description "Four alcoves bearing house crests wait in the polished black walls, their circular depressions empty."
+  is_takeable false
+  is_visible true
+  container true
+  has_lid false
+  locked false
+  open_msg "The alcoves accept the tokens with a resonant hum."
+}
+
+item offering_stone {
+  name "Offering Stone"
+  description "A flat ledge of polished obsidian with a circular depression, jutting from the wall."
+  examine "A flat ledge of polished obsidian jutting from the wall at the base of the staircase, its surface polished to a dark mirror. A circular depression is carved into its center, sized to hold something specific — not a token, but a sacrifice. An offering of something the player values. The serpent carvings around it are denser here, more agitated, their coils suggesting that what you give up determines what you gain. Slytherin's trial demands you choose what matters less to you — and hope you chose correctly."
+  room_id ambition_stair
+  room_description "An offering stone of polished obsidian juts from the wall, its circular depression waiting for a sacrifice."
+  is_takeable false
+  is_visible true
+  container true
+  has_lid false
+  locked false
+  open_msg "You place your offering on the obsidian surface. The stone hums, the serpent carvings writhe, and the staircase above begins to glow with green light — ascending further than before."
+}

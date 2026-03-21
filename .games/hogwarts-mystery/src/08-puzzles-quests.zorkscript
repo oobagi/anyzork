@@ -1,0 +1,587 @@
+# ===============================================
+#   PUZZLES
+# ===============================================
+#
+# All 23 puzzles from GDD Section 4.
+# Score budget: 500 total (puzzle score + quest
+# score + moral choice score + ending bonus).
+# ===============================================
+
+
+# -----------------------------------------------
+#   Hogwarts Commons Puzzles (4)
+# -----------------------------------------------
+
+puzzle gargoyle_password {
+  name "The Gargoyle's Password"
+  description "The stone gargoyle guards the spiral staircase to Dumbledore's office. It seems to be waiting for a sweet word."
+  in grand_staircase
+  difficulty 1
+  score 10
+  is_optional false
+  steps [
+    "Talk to McGonagall in the Great Hall — she reveals the password",
+    "At the gargoyle, say 'sherbet lemon'"
+  ]
+  hint [
+    "Perhaps someone on the staff knows the password.",
+    "Professor McGonagall is Dumbledore's deputy. She might help.",
+    "Talk to McGonagall and ask about the Headmaster's office."
+  ]
+}
+
+puzzle restricted_section_access {
+  name "The Restricted Section"
+  description "Hermione says the books about the Convergence Stone are in the Restricted Section, but it is roped off. A signed permission slip from a professor is required."
+  in library
+  difficulty 2
+  score 15
+  is_optional false
+  steps [
+    "Complete the gargoyle password puzzle to access Dumbledore's office",
+    "Talk to Dumbledore to receive the permission slip",
+    "Show the permission slip to Hermione in the library"
+  ]
+  hint [
+    "Hermione mentioned needing written permission for the Restricted Section.",
+    "A professor — perhaps the Headmaster — could grant access.",
+    "Show the permission slip to Hermione in the library."
+  ]
+}
+
+puzzle trophy_compartment {
+  name "The Locked Trophy Case"
+  description "A locked compartment in the trophy case holds something important. The inscription mentions 'the key carried by the brave at heart.'"
+  in trophy_room
+  difficulty 2
+  score 15
+  is_optional false
+  steps [
+    "Examine the trophy case to read the inscription",
+    "Talk to Ron and ask about his prefect badge",
+    "Use the prefect badge on the trophy case to open it",
+    "Examine the gryffindor_map inside to reveal the trial entrance"
+  ]
+  hint [
+    "The inscription mentions bravery. Who among your friends embodies that?",
+    "Ron's prefect badge might be the key the inscription describes.",
+    "Talk to Ron and ask about his badge, then use it on the trophy case."
+  ]
+}
+
+puzzle potions_recipe {
+  name "The Revealer Potion"
+  description "The dungeon wall has a faint shimmer — something is hidden there. A potion to reveal hidden things requires a recipe from the Restricted Section and ingredients from the greenhouse and potions stores."
+  in potions_classroom
+  difficulty 3
+  score 20
+  is_optional false
+  steps [
+    "Read the revealer_recipe in the Restricted Section",
+    "Take the moonpetal from the greenhouse",
+    "Take the ashwinder_egg from the ingredient cabinet in the potions classroom",
+    "Combine moonpetal with ashwinder_egg to brew the revealer_potion",
+    "Use the revealer_potion on the dungeon wall in the potions classroom"
+  ]
+  hint [
+    "That shimmer on the wall suggests concealment magic. A revealing potion might help.",
+    "The Restricted Section likely has a recipe for such a potion.",
+    "You need a moonpetal and an ashwinder egg. Try the greenhouse and the potions stores."
+  ]
+}
+
+
+# -----------------------------------------------
+#   Hogwarts Grounds Puzzles (3 — all optional)
+# -----------------------------------------------
+
+puzzle clock_tower_mechanism {
+  name "The Jammed Clock"
+  description "The clock mechanism is frozen mid-motion. A misaligned gear could be set right with a sturdy tool."
+  in clock_tower_base
+  difficulty 2
+  score 15
+  is_optional true
+  steps [
+    "Examine the clock mechanism — a gear is misaligned",
+    "Find the wrench in Hagrid's hut",
+    "Use the wrench on the clock mechanism"
+  ]
+  hint [
+    "A sturdy tool could fix that gear. Who keeps tools around here?",
+    "Hagrid's workbench might have something useful.",
+    "Use the wrench from Hagrid's hut on the clock mechanism."
+  ]
+}
+
+puzzle forest_passage {
+  name "Into the Forest"
+  description "Hagrid blocks the forest path — says it is too dangerous. A demonstration of magical protection might convince him."
+  in forest_edge
+  difficulty 2
+  score 10
+  is_optional true
+  steps [
+    "Find the shield_charm_scroll in the hospital wing",
+    "Show it to Hagrid at the forest edge"
+  ]
+  hint [
+    "Hagrid needs to see that you can protect yourself.",
+    "The hospital wing might have something related to defensive magic.",
+    "Show the Shield Charm Scroll to Hagrid."
+  ]
+}
+
+puzzle lake_shore_dig {
+  name "The Buried Artifact"
+  description "Something metallic glints beneath the mud at the lake shore. A digging tool could unearth it."
+  in lake_shore
+  difficulty 1
+  score 10
+  is_optional true
+  steps [
+    "Examine the muddy shore — something is half-buried",
+    "Find the small_shovel in the greenhouse",
+    "Use the small_shovel on the mud at the lake shore"
+  ]
+  hint [
+    "You need a tool to dig. Where would you find one?",
+    "The greenhouse has gardening supplies.",
+    "Use the small shovel on the mud at the lake shore."
+  ]
+}
+
+
+# -----------------------------------------------
+#   Gryffindor Trial Puzzles (3)
+# -----------------------------------------------
+
+puzzle boggart_confrontation {
+  name "Facing the Boggart"
+  description "The Fear Chamber is pitch black. Something shifts in the darkness. A light source and the right spell are needed to dispel the threat."
+  in fear_chamber
+  difficulty 3
+  score 25
+  is_optional false
+  steps [
+    "Enter the Fear Chamber with the enchanted_lantern toggled on",
+    "The room description reveals the Boggart — examine it",
+    "Cast riddikulus to dispel the Boggart"
+  ]
+  hint [
+    "You need light to see what you're facing. Do you have a light source?",
+    "The enchanted lantern from Dumbledore's office can illuminate dark rooms.",
+    "With the lantern lit, cast the Riddikulus charm to defeat the Boggart."
+  ]
+}
+
+puzzle bridge_crossing {
+  name "Crossing the Flames"
+  description "The Bridge of Flames is wreathed in magical fire. Crossing unprotected will cause severe burns. A protective potion exists."
+  in bridge_of_flames
+  difficulty 2
+  score 20
+  is_optional false
+  steps [
+    "Find or acquire a flame_freezing_potion",
+    "Drink the flame_freezing_potion on the bridge",
+    "Cross the bridge safely"
+  ]
+  hint [
+    "Walking through magical fire unprotected would be painful. A potion might help.",
+    "The Flame-Freezing Potion is somewhere in the potions classroom stores.",
+    "Drink the Flame-Freezing Potion before crossing the bridge."
+  ]
+}
+
+puzzle guardian_rescue {
+  name "Rescue Ron"
+  description "Ron is pinned under rubble in the Guardian Hall. He is hurt and needs healing. Helping costs a resource; leaving him changes the story."
+  in guardian_hall
+  difficulty 2
+  score 20
+  is_optional false
+  steps [
+    "Find Ron trapped in the Guardian Hall",
+    "Give a healing_potion to Ron (courage path) OR proceed without helping (selfish path)"
+  ]
+  hint [
+    "Ron is hurt. Do you have anything that could help him?",
+    "A healing potion would ease his pain and free him from the rubble.",
+    "Give a healing potion to Ron, or move north to proceed without him."
+  ]
+}
+
+
+# -----------------------------------------------
+#   Ravenclaw Trial Puzzles (4)
+# -----------------------------------------------
+
+puzzle eagle_doorknock {
+  name "The Eagle's Riddle"
+  description "The bronze eagle knocker guards the entrance to the Ravenclaw Trial. It poses a riddle that must be answered to pass."
+  in ravenclaw_antechamber
+  difficulty 2
+  score 15
+  is_optional false
+  steps [
+    "Examine the eagle door-knocker to hear the riddle",
+    "Answer the riddle correctly"
+  ]
+  hint [
+    "The riddle describes something without weight that makes a barrel lighter.",
+    "Luna Lovegood might have mentioned something relevant in conversation.",
+    "The answer is 'nothing' — a hole has no weight, can be seen but not touched, and makes a barrel lighter."
+  ]
+}
+
+puzzle three_pedestals {
+  name "The Three Pedestals"
+  description "Three stone pedestals in the Riddle Hall each bear a symbol and await a specific object. The correct items represent Hogwarts values: bravery, knowledge, and unity."
+  in riddle_hall
+  difficulty 3
+  score 25
+  is_optional false
+  steps [
+    "Place the gryffindor_crest on the Pedestal of Bravery",
+    "Place a founders_journal page on the Pedestal of Knowledge",
+    "Place the rusted_amulet on the Pedestal of Unity"
+  ]
+  hint [
+    "Each pedestal represents a value. What items embody bravery, knowledge, and unity?",
+    "The Gryffindor Crest from Ron, a Founder's Journal page, and the Rusted Amulet from the lake.",
+    "Alternate items exist if you missed optional content — check the Mirror Maze and Trophy Room."
+  ]
+}
+
+puzzle potions_logic {
+  name "The Seven Bottles"
+  description "Seven bottles stand on a stone table. A poem on the wall provides logical constraints. Only one bottle lets you advance. Two are harmless. One is poison. Three are empty."
+  in logic_chamber
+  difficulty 4
+  score 30
+  is_optional false
+  steps [
+    "Read the logic verse on the wall carefully",
+    "Examine individual bottles for size and color clues",
+    "Drink the fifth bottle to advance safely"
+  ]
+  hint [
+    "Snape's puzzle relies on elimination. The verse tells you what each bottle is NOT.",
+    "Start by identifying the smallest bottle — the poem says it's empty.",
+    "The poison cannot be next to the correct bottle. Use that to narrow down. The answer is the fifth bottle."
+  ]
+}
+
+puzzle star_chart_alignment {
+  name "The Celestial Alignment"
+  description "Hermione has found a path to the Celestial Room and holds the northern star chart. Harry has the southern chart. Together the constellations can be aligned."
+  in celestial_room
+  difficulty 3
+  score 20
+  is_optional false
+  steps [
+    "Find the star_chart_south in the library",
+    "Bring it to the Celestial Room where Hermione waits",
+    "Talk to Hermione and combine the charts"
+  ]
+  hint [
+    "Hermione has half the chart. Where would the other half be?",
+    "Check the astronomy section in the library for the southern star chart.",
+    "With both charts, talk to Hermione in the Celestial Room to combine them."
+  ]
+}
+
+
+# -----------------------------------------------
+#   Hufflepuff Trial Puzzles (3)
+# -----------------------------------------------
+
+puzzle stranger_healing {
+  name "The Wounded Stranger"
+  description "A spectral student lies wounded in the Hufflepuff Trial. They need healing. Giving up a resource demonstrates generosity."
+  in wounded_stranger
+  difficulty 2
+  score 20
+  is_optional false
+  steps [
+    "Find the spectral student in the Wounded Stranger chamber",
+    "Give a healing_potion (or magical_candy as backup) to the spectral_student"
+  ]
+  hint [
+    "The spectral figure is hurt. Do you have anything that could help?",
+    "A healing potion or even magical candy might ease their pain.",
+    "Give a healing potion to the spectral student. They will reward your kindness."
+  ]
+}
+
+puzzle patience_garden {
+  name "The Patient Gardener"
+  description "A magical seedling in enchanted soil. The plaque says 'Patience bears fruit.' The plant will not grow while you watch. Leave, accomplish something, and return."
+  in garden_of_patience
+  difficulty 3
+  score 25
+  is_optional false
+  steps [
+    "Plant the hufflepuff_charm in the seedling's soil",
+    "Leave the garden and solve at least one other puzzle elsewhere",
+    "Return to find the plant has bloomed, revealing the path forward"
+  ]
+  hint [
+    "Perhaps this plant needs time, not attention. Go attend to other matters and return.",
+    "Plant the Hufflepuff Charm, then leave and accomplish something elsewhere.",
+    "After planting the charm and solving any other puzzle, return to the garden."
+  ]
+}
+
+puzzle loyalty_gift {
+  name "The Gift of Loyalty"
+  description "A golden locket found in the Loyalty Passage belongs to the ghostly student at the Crossroads of Need. Returning it proves loyalty; keeping it proves something else."
+  in loyalty_passage
+  difficulty 2
+  score 15
+  is_optional false
+  steps [
+    "Take the golden_locket from the Loyalty Passage",
+    "Talk to the ghostly_student_2 at the Crossroads of Need",
+    "Give the golden_locket to the ghostly_student_2"
+  ]
+  hint [
+    "The ghost at the crossroads seems to recognize the locket. It was theirs in life.",
+    "Give the golden locket to the ghostly student at the Crossroads of Need.",
+    "Keeping the locket changes the story. Giving it away proves loyalty."
+  ]
+}
+
+
+# -----------------------------------------------
+#   Slytherin Trial Puzzles (3)
+# -----------------------------------------------
+
+puzzle serpent_door {
+  name "The Serpent's Demand"
+  description "The serpent door's stone eyes follow your movements. Its mouth is open, as if expecting something to be placed inside. Brute force will not work."
+  in slytherin_antechamber
+  difficulty 2
+  score 15
+  is_optional false
+  steps [
+    "Examine the serpent door — its mouth expects an offering",
+    "Use the slytherin_ring on the serpent door"
+  ]
+  hint [
+    "The serpent's mouth is shaped to receive something. An item with Slytherin significance.",
+    "The Slytherin Ring from the trophy case might fit.",
+    "Use the Slytherin Ring on the serpent door."
+  ]
+}
+
+puzzle real_or_fake {
+  name "The Room of Deception"
+  description "Three chests — silver, gold, and iron — sit in a triangular arrangement. One contains the real key. Two are traps. Salazar valued substance over showiness."
+  in deception_room
+  difficulty 4
+  score 30
+  is_optional false
+  steps [
+    "Examine all three chests carefully for subtle tells",
+    "Note the faint 'S' scratch on the iron chest — Slytherin's mark",
+    "Open the iron_chest to find the serpent_key"
+  ]
+  hint [
+    "Examine each chest. The real one has a subtle mark.",
+    "A note in the Serpent Hall says Salazar despised ostentation. His mark was simple.",
+    "The iron chest — plain, unassuming, marked with a single 'S' — is the correct choice."
+  ]
+}
+
+puzzle ambition_sacrifice {
+  name "The Price of Ambition"
+  description "The staircase spirals upward with no visible top. A voice says: 'To rise, you must leave something behind.' The offering stone awaits a sacrifice."
+  in ambition_stair
+  difficulty 2
+  score 15
+  is_optional false
+  steps [
+    "Place any takeable item on the offering_stone",
+    "The staircase extends and the path forward opens"
+  ]
+  hint [
+    "The voice demands a sacrifice. You must give up something from your inventory.",
+    "Place any item on the offering stone. Choose wisely — you will not get it back.",
+    "Some sacrifices cost more than others. The wand and Founder Tokens cannot be sacrificed."
+  ]
+}
+
+
+# -----------------------------------------------
+#   The Depths Puzzles (2)
+# -----------------------------------------------
+
+puzzle ward_stabilization {
+  name "Stabilizing the Wards"
+  description "Four ward stones pulse in fading house colors. They must be activated in the order the Founders laid them. The murals in Malachar's Gallery reveal the sequence."
+  in ward_chamber
+  difficulty 4
+  score 30
+  is_optional false
+  steps [
+    "Visit Malachar's Gallery and examine the murals to learn the activation order",
+    "Return to the Ward Chamber",
+    "Activate the yellow (Hufflepuff) stone",
+    "Activate the blue (Ravenclaw) stone",
+    "Activate the red (Gryffindor) stone",
+    "Activate the green (Slytherin) stone"
+  ]
+  hint [
+    "The murals in Malachar's Gallery depict the Founders in the order they built the wards.",
+    "The order is: Yellow, Blue, Red, Green — Hufflepuff, Ravenclaw, Gryffindor, Slytherin.",
+    "Activating in the wrong order resets all stones. You must start the sequence again."
+  ]
+}
+
+puzzle token_placement {
+  name "The Four Tokens"
+  description "Four alcoves in the wall of the Convergence Antechamber, each shaped for a specific Founder's artifact. All four tokens must be placed to open the final door."
+  in convergence_antechamber
+  difficulty 3
+  score 25
+  is_optional false
+  steps [
+    "Place the gryffindor_token in the token alcove",
+    "Place the ravenclaw_token in the token alcove",
+    "Place the hufflepuff_token in the token alcove",
+    "Place the slytherin_token in the token alcove"
+  ]
+  hint [
+    "Four alcoves, four tokens. You need all four Founder Tokens from the trial vaults.",
+    "Place each token in the token alcove. The order does not matter.",
+    "If you are missing a token, you have not completed one of the four trials."
+  ]
+}
+
+
+# -----------------------------------------------
+#   Convergence Chamber Puzzle (1)
+# -----------------------------------------------
+
+puzzle convergence_seal {
+  name "Sealing the Stone"
+  description "The Convergence Stone pulses with corrupted energy. Malachar's curse is visible as black veins through the crystal. How Harry acts here determines the ending."
+  in convergence_chamber
+  difficulty 5
+  score 35
+  is_optional false
+  steps [
+    "Choose a sealing method based on accumulated flags and choices",
+    "Unity: cast unity charm (requires ron_rescued + loyalty_proven + stranger_healed + draco_allied)",
+    "Sacrifice: touch the convergence stone (requires sacrifice_made + 2 cooperation flags)",
+    "Rival: cast seal with Draco (requires draco_allied but not all cooperation flags)",
+    "Partial: cast seal (default — any remaining combination)"
+  ]
+  hint [
+    "The method of sealing depends on choices you made throughout the game.",
+    "The best ending requires rescuing Ron, healing the stranger, returning the locket, and allying with Draco.",
+    "If you lack the flags for the Unity seal, other paths exist — sacrifice, cooperation with Draco, or a solo attempt."
+  ]
+}
+
+
+# ===============================================
+#   QUESTS
+# ===============================================
+#
+# Main quest + 5 side quests from GDD Section 9.
+# ===============================================
+
+
+# -----------------------------------------------
+#   Main Quest
+# -----------------------------------------------
+
+quest main:founders_trial {
+  name "The Founders' Trial"
+  description "The Convergence Stone has been corrupted. Complete the four Founders' Trials and re-seal the Stone before Hogwarts' wards fail completely."
+  completion stone_sealed
+  objective "Speak with Dumbledore about the crisis" -> has_main_quest
+  objective "Access the Restricted Section for research" -> restricted_unlocked
+  objective "Complete the Gryffindor Trial" -> trial_gryffindor_complete
+  objective "Complete the Ravenclaw Trial" -> trial_ravenclaw_complete
+  objective "Complete the Hufflepuff Trial" -> trial_hufflepuff_complete
+  objective "Complete the Slytherin Trial" -> trial_slytherin_complete
+  objective "Stabilize the ward stones in the Depths" -> wards_stabilized
+  objective "Place the four Founder Tokens" -> tokens_placed
+  objective "Seal the Convergence Stone" -> stone_sealed
+}
+
+
+# -----------------------------------------------
+#   Side Quest 1: Dobby's Cold Stores
+# -----------------------------------------------
+
+quest side:dobby_cold_stores {
+  name "Dobby's Cold Stores"
+  description "Dobby needs help opening the enchanted cold stores in the kitchens. Strange magic has sealed them shut."
+  discovery dobby_quest_discovered
+  completion dobby_helped
+  objective "Get a Warming Charm Token from Professor Flitwick" -> has_warming_token
+  objective "Use the token on the cold stores in the kitchens" -> cold_stores_opened
+}
+
+
+# -----------------------------------------------
+#   Side Quest 2: The Nargle Hunt
+# -----------------------------------------------
+
+quest side:nargle_hunt {
+  name "The Nargle Hunt"
+  description "Luna believes Wrackspurts are infesting the castle. Help her find evidence of the infestation."
+  discovery nargle_quest_discovered
+  completion nargles_found
+  objective "Examine the strange shimmer in the east corridor" -> shimmer_examined
+  objective "Report findings to Luna in the courtyard" -> nargles_found
+}
+
+
+# -----------------------------------------------
+#   Side Quest 3: Malachar's History
+# -----------------------------------------------
+
+quest side:malachar_history {
+  name "Malachar's History"
+  description "Piece together the history of Malachar the Undying and understand his curse. The truth is scattered across the castle and its depths."
+  discovery malachar_quest_discovered
+  completion malachar_history_complete
+  objective "Read the lore in the Restricted Section" -> restricted_lore_read
+  objective "Find Malachar's Journal in the Depths" -> malachar_journal_read
+  objective "Ask Dumbledore about Malachar" -> dumbledore_malachar_info (optional, bonus: 5)
+}
+
+
+# -----------------------------------------------
+#   Side Quest 4: Fred and George's Trade
+# -----------------------------------------------
+
+quest side:twins_trade {
+  name "Fred and George's Trade"
+  description "Fred and George have useful supplies — magical candy and Peruvian Darkness Powder. Find enough Galleons to trade with them."
+  discovery twins_quest_discovered
+  completion twins_trade_complete
+  objective "Collect at least 5 Galleons" -> has_enough_galleons
+  objective "Trade with Fred and George" -> twins_trade_complete
+}
+
+
+# -----------------------------------------------
+#   Side Quest 5: The Founder's Journal
+# -----------------------------------------------
+
+quest side:founders_journal {
+  name "The Founder's Journal"
+  description "Fragments of a journal written by one of the Founders are scattered through the castle. Collect them all to learn the full history — and a critical hint."
+  discovery journal_quest_discovered
+  completion journal_complete
+  objective "Find Journal Page 1 in the Clock Tower" -> journal_page_1_found
+  objective "Find Journal Page 2 in the Restricted Section" -> journal_page_2_found
+  objective "Find Journal Page 3 in Malachar's Gallery" -> journal_page_3_found (optional, bonus: 5)
+}

@@ -1,0 +1,138 @@
+# ===============================================
+#   FLAG REGISTRY
+# ===============================================
+#
+# Every boolean game-state flag used by the
+# Founders' Convergence. Organized by category
+# to match GDD Section 14.
+#
+# Flags are set by commands, triggers, dialogue
+# nodes, and puzzle completions. They are checked
+# by lock preconditions, quest objectives, trigger
+# guards, and ending resolution.
+# ===============================================
+
+
+# -----------------------------------------------
+#   Core Story Flags
+# -----------------------------------------------
+
+flag has_main_quest              "Dumbledore has briefed Harry on the Convergence Stone crisis and granted the main quest."
+flag knows_gargoyle_password     "McGonagall revealed the gargoyle password (sherbet lemon)."
+flag restricted_unlocked         "Permission slip shown to Hermione; Restricted Section is accessible."
+flag restricted_lore_read        "Read the lore books in the Restricted Section about Malachar and the Stone."
+flag knows_revealer_recipe       "Read the Revealer Potion recipe in the Restricted Section."
+flag ravenclaw_entrance_known    "The Grey Lady revealed the Ravenclaw Trial entrance in the library."
+flag grey_lady_clue              "The Grey Lady shared her clue about Ravenclaw's Trial."
+flag dobby_helped                "Completed Dobby's cold stores quest; Dobby revealed the Hufflepuff Trial entrance."
+
+
+# -----------------------------------------------
+#   Trial Completion Flags
+# -----------------------------------------------
+
+flag trial_gryffindor_complete   "Gryffindor Trial completed — Token of Courage claimed."
+flag trial_ravenclaw_complete    "Ravenclaw Trial completed — Token of Wisdom claimed."
+flag trial_hufflepuff_complete   "Hufflepuff Trial completed — Token of Loyalty claimed."
+flag trial_slytherin_complete    "Slytherin Trial completed — Token of Cunning claimed."
+flag all_trials_complete         "All four Founders' Trials have been completed. The Depths are accessible."
+
+
+# -----------------------------------------------
+#   Moral Choice Flags
+# -----------------------------------------------
+
+flag ron_rescued                 "Harry gave a healing potion to Ron in the Guardian Hall, freeing him."
+flag ron_abandoned               "Harry left Ron trapped in the Guardian Hall and pressed on alone."
+flag stranger_healed             "Harry healed the spectral student in the Hufflepuff Trial."
+flag loyalty_proven              "Harry returned the golden locket to the ghostly student at the Crossroads of Need."
+flag locket_kept                 "Harry kept the golden locket instead of returning it."
+flag draco_allied                "Harry proposed cooperation with Draco in the Slytherin Trial and Draco accepted."
+flag draco_hostile               "Harry confronted Draco in the Slytherin Trial, making an enemy."
+flag draco_neutral               "Harry neither allied with nor confronted Draco — Draco is absent from the endgame."
+flag sacrifice_made              "Harry placed an item on the offering stone in the Stair of Ambition."
+
+
+# -----------------------------------------------
+#   Puzzle-State Flags
+# -----------------------------------------------
+
+flag boggart_defeated             "The Boggart in the Fear Chamber has been dispelled by Riddikulus."
+flag flame_protected              "Harry drank the Flame-Freezing Potion — safe to cross the Bridge of Flames."
+flag pedestals_complete           "All three items placed on the pedestals in the Riddle Hall."
+flag logic_potion_drunk           "Harry drank the correct bottle (fifth) in the Logic Chamber."
+flag charts_combined              "Harry and Hermione combined the northern and southern star charts."
+flag charm_planted                "The Hufflepuff Charm has been planted in the Garden of Patience seedling."
+flag garden_bloomed               "The Garden of Patience seedling has bloomed after the player solved another puzzle."
+flag knows_ward_order             "Harry examined the murals in Malachar's Gallery and learned the ward activation order."
+flag ward_yellow_active           "Yellow (Hufflepuff) ward stone activated — ward sequence step 1."
+flag ward_blue_active             "Blue (Ravenclaw) ward stone activated — ward sequence step 2."
+flag ward_red_active              "Red (Gryffindor) ward stone activated — ward sequence step 3."
+flag ward_green_active            "Green (Slytherin) ward stone activated — ward sequence step 4."
+flag wards_stabilized             "All four ward stones activated in the correct order. Wards temporarily stabilized."
+flag tokens_placed                "All four Founder Tokens placed in the token alcove. The Convergence Chamber door is open."
+
+
+# -----------------------------------------------
+#   Ending Flags
+# -----------------------------------------------
+
+flag stone_sealed                "Meta-flag: the Convergence Stone has been sealed by any method. Win condition."
+flag stone_sealed_unity          "Ending A — Unity: all four virtue flags present, curse fully purged."
+flag stone_sealed_sacrifice      "Ending B — Sacrifice: Harry channeled his own magic, burning out his power."
+flag stone_sealed_rival          "Ending C — Rival's Redemption: Draco and Harry sealed the Stone together."
+flag stone_sealed_partial        "Ending D — Compromise: Harry sealed the Stone alone, imperfectly."
+flag stone_corrupted             "Ending E — The Fall: Malachar's curse overwhelmed the Stone. Lose condition."
+flag player_died                 "Player HP reached 0. Lose condition (engine automatic)."
+
+
+# -----------------------------------------------
+#   Side Quest Flags
+# -----------------------------------------------
+
+# -- Dobby's Cold Stores --
+flag dobby_quest_discovered      "Dobby asked for help opening the enchanted cold stores."
+flag has_warming_token           "Received the Warming Charm Token from Flitwick."
+flag cold_stores_opened          "Used the Warming Charm Token on the cold stores in the kitchens."
+
+# -- The Nargle Hunt --
+flag nargle_quest_discovered     "Luna mentioned the Wrackspurt infestation — side quest discovered."
+flag shimmer_examined            "Examined the strange shimmer in the east corridor."
+flag nargles_found               "Reported findings to Luna — Nargle Hunt quest complete."
+
+# -- Malachar's History --
+flag malachar_quest_discovered   "Read Founder's Journal Page 2 in the Restricted Section — Malachar quest discovered."
+flag malachar_journal_read       "Read Malachar's Journal in the Depths."
+flag malachar_history_complete   "Pieced together Malachar's full history."
+
+# -- Fred and George's Trade --
+flag twins_quest_discovered      "Spoke to Fred and George — trade quest discovered."
+flag has_enough_galleons         "Collected at least 5 Galleons."
+flag twins_trade_complete        "Completed the trade with Fred and George."
+
+# -- The Founder's Journal --
+flag journal_quest_discovered    "Found Founder's Journal Page 1 — journal collection quest discovered."
+flag journal_page_1_found        "Found Founder's Journal Page 1 (Clock Tower)."
+flag journal_page_2_found        "Found Founder's Journal Page 2 (Restricted Section)."
+flag journal_page_3_found        "Found Founder's Journal Page 3 (Malachar's Gallery)."
+flag journal_complete            "All journal pages found — the Founders' story is complete."
+
+
+# -----------------------------------------------
+#   NPC / World State Flags
+# -----------------------------------------------
+
+flag ron_warned                  "Ron told Harry about the castle disturbances."
+flag hermione_lore_1             "Hermione shared her initial research about the Convergence Stone."
+flag snape_warned                "Snape warned Harry about the Convergence Stone."
+flag snape_potion_help           "Snape provided guidance on brewing the Revealer Potion."
+flag hagrid_founder_info         "Hagrid shared what Dumbledore told him about the Founders' Trials."
+flag hagrid_allows_forest        "Hagrid agreed to let Harry enter the Forbidden Forest after seeing the Shield Charm Scroll."
+flag nick_founder_lore           "Nearly Headless Nick shared stories about the Founders."
+flag luna_riddle_hint            "Luna's dialogue hinted at the answer to the Ravenclaw eagle riddle."
+flag baron_name_known            "The Bloody Baron's name can be invoked to scare off Peeves."
+flag knows_stone_lore            "Dumbledore explained the nature and history of the Convergence Stone."
+flag dumbledore_malachar_info    "Dumbledore revealed the full backstory of Malachar the Undying."
+flag twins_hint                  "Fred and George hinted about the seventh floor corridor."
+flag myrtle_depths_hint          "Moaning Myrtle described the ancient tunnels beneath the dungeons."
+flag ravenclaw_lore              "The Grey Lady shared the history of Rowena Ravenclaw."
