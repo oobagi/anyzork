@@ -8,14 +8,14 @@ Stabilize the shipped `generate -> import -> play` pipeline before adding featur
 
 - [x] [#8 Atomic command execution or narrowed docs](https://github.com/oobagi/anyzork/issues/8)
 - [x] [#9 Split importer.py into clearer layers](https://github.com/oobagi/anyzork/issues/9)
-- [ ] [#10 config.toml: support full practical config surface](https://github.com/oobagi/anyzork/issues/10)
-- [ ] [#14 Canonical contract/alignment test suite for presets and authoring](https://github.com/oobagi/anyzork/issues/14)
+- [x] [#10 config.toml: support full practical config surface](https://github.com/oobagi/anyzork/issues/10)
+- [x] [#14 Canonical contract/alignment test suite for presets and authoring](https://github.com/oobagi/anyzork/issues/14)
 
 ## 2. Author Experience
 
 Make it easier to write, fix, and iterate on games.
 
-- [ ] [#13 Author-facing tooling: lint, import --report, diagnostics](https://github.com/oobagi/anyzork/issues/13)
+- [x] [#13 Author-facing tooling: lint, import --report, diagnostics](https://github.com/oobagi/anyzork/issues/13)
 - [ ] [#27 anyzork doctor: generate LLM fix-it prompt from import errors](https://github.com/oobagi/anyzork/issues/27)
 - [ ] [#18 Deterministic author/debug tooling: inspect, doctor, playtest/replay](https://github.com/oobagi/anyzork/issues/18)
 
