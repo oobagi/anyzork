@@ -1021,7 +1021,7 @@ Note: `one_shot` is `false` here. The command repeats — but it requires `has_i
 
 ### Atomicity
 
-All effects in a command execute within a single database transaction. If the engine crashes mid-execution, the entire command is rolled back. The game state never enters an inconsistent state where some effects applied and others didn't.
+All effects in a command execute within a single database transaction. If any effect raises an error, the entire command is rolled back — including the one-shot executed marker. The game state never enters an inconsistent state where some effects applied and others didn't.
 
 ---
 

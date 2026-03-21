@@ -12,9 +12,10 @@ from __future__ import annotations
 
 import json as _json
 import sqlite3
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Generator
 from uuid import uuid4
 
 from anyzork.versioning import (
@@ -446,6 +447,7 @@ class GameDB:
         self._conn.execute("PRAGMA journal_mode=DELETE")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.row_factory = sqlite3.Row
+        self._in_transaction = False
         self._conn.executescript(SCHEMA_SQL)
         self._ensure_metadata_columns()
 
@@ -585,8 +587,31 @@ class GameDB:
 
     def _mutate(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         cur = self._conn.execute(sql, params)
-        self._conn.commit()
+        if not self._in_transaction:
+            self._conn.commit()
         return cur
+
+    @contextmanager
+    def transaction(self) -> Generator[None, None, None]:
+        """Execute a block of mutations atomically.
+
+        While inside this context manager, ``_mutate`` will not auto-commit.
+        On clean exit the transaction is committed; on exception it is rolled
+        back so the database returns to its prior state.
+        """
+        if self._in_transaction:
+            # Already inside a transaction — just yield (re-entrant/nested).
+            yield
+            return
+        self._in_transaction = True
+        try:
+            yield
+            self._conn.commit()
+        except BaseException:
+            self._conn.rollback()
+            raise
+        finally:
+            self._in_transaction = False
 
     # ------------------------------------------------------------- metadata
 
