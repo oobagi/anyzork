@@ -210,10 +210,9 @@ class TestGameDBTransaction:
         )
         db.insert_flag(id="beta", value="false")
 
-        with pytest.raises(RuntimeError):
-            with db.transaction():
-                db.set_flag("beta", "true")
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError), db.transaction():
+            db.set_flag("beta", "true")
+            raise RuntimeError("boom")
 
         assert db.has_flag("beta") is False
         db.close()
@@ -243,9 +242,8 @@ class TestGameDBTransaction:
         )
         db.insert_flag(id="delta", value="false")
 
-        with pytest.raises(RuntimeError):
-            with db.transaction():
-                raise RuntimeError("fail")
+        with pytest.raises(RuntimeError), db.transaction():
+            raise RuntimeError("fail")
 
         # The flag should be reset so subsequent non-transactional writes
         # auto-commit normally.

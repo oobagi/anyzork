@@ -12,10 +12,11 @@ from __future__ import annotations
 
 import json as _json
 import sqlite3
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Generator
+from typing import Any
 from uuid import uuid4
 
 from anyzork.versioning import (
