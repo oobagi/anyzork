@@ -57,9 +57,18 @@ class Narrator:
     The narrator never writes to the database.
     """
 
-    def __init__(self, provider: BaseProvider, db: GameDB) -> None:
+    def __init__(
+        self,
+        provider: BaseProvider,
+        db: GameDB,
+        *,
+        temperature: float = 0.9,
+        max_tokens: int = 4096,
+    ) -> None:
         self._provider = provider
         self._db = db
+        self._temperature = temperature
+        self._max_tokens = max_tokens
         self._room_cache: dict[str, tuple[str, str]] = {}
         self._action_cache: dict[str, str] = {}
         self._failure_count: int = 0
@@ -163,8 +172,8 @@ class Narrator:
             system_prompt=self._system_prompt,
             theme=self._game_ctx.theme,
             tone=self._game_ctx.tone,
-            temperature=0.9,
-            max_tokens=4096,
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
         )
         try:
             result = self._provider.generate_text(

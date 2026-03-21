@@ -23,26 +23,10 @@ from anyzork.importer import current_prompt_system_version
 from anyzork.services import importing as importing_service
 from anyzork.services import library as library_service
 from anyzork.sharing import (
-    OFFICIAL_CATALOG_URL,
-    OFFICIAL_UPLOAD_URL,
     SHARE_PACKAGE_SUFFIX,
     SharePackageError,
 )
 from anyzork.versioning import RUNTIME_COMPAT_VERSION
-
-
-def _upload_url() -> str:
-    """Return the catalog upload URL, allowing env var override."""
-    import os
-
-    return os.environ.get("ANYZORK_UPLOAD_URL", OFFICIAL_UPLOAD_URL)
-
-
-def _catalog_url() -> str:
-    """Return the catalog browse URL, allowing env var override."""
-    import os
-
-    return os.environ.get("ANYZORK_CATALOG_URL", OFFICIAL_CATALOG_URL)
 
 console = Console()
 CLI_VERSION = (
@@ -504,7 +488,7 @@ def publish_game(game_ref: str) -> None:
         try:
             payload = upload_share_package(
                 package_path,
-                _upload_url(),
+                cfg.upload_url,
             )
         except SharePackageError as exc:
             console.print(f"[red]Upload failed:[/red] {exc}")
@@ -530,7 +514,8 @@ def game_status(slug: str) -> None:
     from urllib.error import HTTPError
     from urllib.request import urlopen
 
-    url = _catalog_url().replace("/catalog.json", f"/api/games/{slug}/status")
+    cfg = Config()
+    url = cfg.catalog_url.replace("/catalog.json", f"/api/games/{slug}/status")
     try:
         with urlopen(url, timeout=10) as resp:
             data = _json.loads(resp.read().decode())
@@ -639,7 +624,7 @@ def install_game(source: str, force: bool) -> None:
     if _looks_like_catalog_ref(source):
         try:
             resolved_source, catalog_game = resolve_catalog_game_source(
-                _catalog_url(),
+                cfg.catalog_url,
                 source,
             )
             allow_remote = True
@@ -690,8 +675,9 @@ def browse_games(limit: int) -> None:
 
     from anyzork.sharing import load_public_catalog
 
+    cfg = Config()
     try:
-        catalog = load_public_catalog(_catalog_url())
+        catalog = load_public_catalog(cfg.catalog_url)
     except SharePackageError as exc:
         console.print(f"[red]Browse failed:[/red] {exc}")
         sys.exit(1)

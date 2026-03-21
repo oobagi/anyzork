@@ -57,12 +57,23 @@ def load_config_file() -> dict:
 
     result: dict = {}
 
-    # [anyzork] section
+    # [anyzork] section — all Config fields are supported here.
     anyzork_section = data.get("anyzork", {})
-    if "provider" in anyzork_section:
-        result["provider"] = anyzork_section["provider"]
-    if "model" in anyzork_section:
-        result["model"] = anyzork_section["model"]
+    anyzork_keys = (
+        "provider",
+        "model",
+        "narrator_enabled",
+        "narrator_temperature",
+        "narrator_max_tokens",
+        "games_dir",
+        "saves_dir",
+        "public_catalog_dir",
+        "catalog_url",
+        "upload_url",
+    )
+    for key in anyzork_keys:
+        if key in anyzork_section:
+            result[key] = anyzork_section[key]
 
     # [keys] section — map to the Config field names
     keys_section = data.get("keys", {})
@@ -101,6 +112,12 @@ class Config(BaseSettings):
 
     # --- Runtime settings ---
     narrator_enabled: bool = False
+    narrator_temperature: float = 0.9
+    narrator_max_tokens: int = 4096
+
+    # --- URLs ---
+    catalog_url: str = "https://anyzork.com/catalog.json"
+    upload_url: str = "https://anyzork.com/api/games"
 
     # --- Paths ---
     games_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "games")
