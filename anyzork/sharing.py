@@ -409,12 +409,12 @@ def _resolve_catalog_link(source: str, value: str) -> str:
     if _is_url_source(value):
         return value
 
+    if _is_url_source(source):
+        return urljoin(source, value)
+
     value_path = Path(value).expanduser()
     if value_path.is_absolute():
         return str(value_path)
-
-    if _is_url_source(source):
-        return urljoin(source, value)
 
     source_path = Path(source).expanduser()
     if source_path.exists():
