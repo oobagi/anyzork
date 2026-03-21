@@ -100,32 +100,7 @@ openai = "your_key_here"
 
 ## Roadmap
 
-### Public Game Sharing
-
-- [x] Publish, browse, and install shared games
-- [ ] Upvote, downvote, and sort by popularity
-- [ ] Reporting and moderation for junk uploads
-
-### Narrator Improvements
-
-- [ ] Narrate rooms, actions, dialogue, inventory, quests, and system feedback
-- [ ] Hide standard UI chrome when narrator prose is available
-- [ ] Tighten prompts and context to reduce cost and latency
-- [ ] Aggressive caching for repeated room visits and actions
-- [ ] Graceful fallback when provider calls fail
-- [ ] Read world context from metadata instead of reconstructing each turn
-
-### Engine Depth
-
-- [ ] Quest failure states — quests that can be failed, not just completed
-- [ ] Reactive NPC triggers — NPCs respond to theft, aggression, and world changes with dialogue or actions
-- [ ] Trap system — hazards that fire on room entry, item interaction, or wrong actions
-- [ ] Deterministic turn-based combat
-
-### Future Features
-
-- [ ] Author/debug tools (`anyzork inspect`, `anyzork doctor`, playtest/replay)
-- [ ] Richer systems: move-count/clock triggers, NPC blockers, deterministic hints
+See [GitHub Issues](https://github.com/oobagi/anyzork/issues) for the full roadmap and planned work.
 
 ## Sharing Games
 
