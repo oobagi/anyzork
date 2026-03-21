@@ -281,6 +281,17 @@ class _Parser:
         "make_hidden":             ["item"],
         "make_takeable":           ["item"],
         "move_npc":                ["npc", "room"],
+        # Explicit NPC effects
+        "kill_npc":                ["npc"],
+        "remove_npc":              ["npc"],
+        # Quest effects
+        "fail_quest":              ["quest"],
+        "complete_quest":          ["quest"],
+        # Exit effects
+        "lock_exit":               ["exit"],
+        "hide_exit":               ["exit"],
+        # Entity description
+        "change_description":      ["entity", "text"],
         # Target-aware effects (interaction response context only)
         "kill_target":             [],
         "damage_target":           ["amount"],

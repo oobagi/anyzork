@@ -394,7 +394,9 @@ def apply_effect(
     ``spawn_item``, ``change_health``, ``add_score``, ``reveal_exit``,
     ``solve_puzzle``, ``discover_quest``, ``open_container``,
     ``move_item_to_container``, ``take_item_from_container``, ``print``,
-    ``consume_quantity``, ``restore_quantity``, ``set_toggle_state``.
+    ``consume_quantity``, ``restore_quantity``, ``set_toggle_state``,
+    ``fail_quest``, ``complete_quest``, ``kill_npc``, ``remove_npc``,
+    ``lock_exit``, ``hide_exit``, ``change_description``.
 
     Args:
         effect: The effect dict with a ``type`` field and type-specific params.
@@ -578,6 +580,59 @@ def apply_effect(
         room_ref = _substitute_slots(effect.get("room", ""), slots)
         npc_id = _resolve_name_to_id(npc_ref, db)
         db.move_npc(npc_id, room_ref)
+
+    # -- Quest effects -------------------------------------------------------
+
+    elif effect_type == "fail_quest":
+        quest_ref = _substitute_slots(effect["quest"], slots)
+        db.update_quest_status(quest_ref, "failed")
+
+    elif effect_type == "complete_quest":
+        quest_ref = _substitute_slots(effect["quest"], slots)
+        quest = db.get_quest(quest_ref)
+        if quest:
+            db.update_quest_status(quest_ref, "completed")
+            if quest.get("completion_flag"):
+                db.set_flag(quest["completion_flag"], "true")
+                if emit_event is not None:
+                    emit_event("flag_set", flag=quest["completion_flag"])
+            if quest.get("score_value") and quest["score_value"] > 0:
+                move_number = player.get("moves", 0)
+                db.add_score_entry(
+                    f"quest:{quest_ref}",
+                    quest["score_value"],
+                    move_number,
+                )
+
+    # -- Explicit NPC effects -----------------------------------------------
+
+    elif effect_type == "kill_npc":
+        npc_ref = _substitute_slots(effect["npc"], slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        db.kill_npc(npc_id)
+
+    elif effect_type == "remove_npc":
+        npc_ref = _substitute_slots(effect["npc"], slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        db.remove_npc(npc_id)
+
+    # -- Exit effects -------------------------------------------------------
+
+    elif effect_type == "lock_exit":
+        exit_ref = _substitute_slots(effect["exit"], slots)
+        db.lock_exit(exit_ref)
+
+    elif effect_type == "hide_exit":
+        exit_ref = _substitute_slots(effect["exit"], slots)
+        db.hide_exit(exit_ref)
+
+    # -- Entity description -------------------------------------------------
+
+    elif effect_type == "change_description":
+        entity_ref = _substitute_slots(effect["entity"], slots)
+        entity_id = _resolve_name_to_id(entity_ref, db)
+        new_text = _substitute_slots(effect["text"], slots)
+        db.change_description(entity_id, new_text)
 
     # -- Target-aware effects (interaction response context only) -----------
     # These read _target_id / _target_type from resolved_slots, which are

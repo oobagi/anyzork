@@ -83,6 +83,15 @@ player {
 }
 
 # -- Rooms -- Use dark rooms with light sources, inline exits with (locked)/(hidden)
+#
+# Exit IDs are auto-generated as {from_room}_{direction}. Example:
+#   exit south -> crawlspace (hidden)   --> exit ID is "the_room_south"
+# Use this ID with reveal_exit: effect reveal_exit(the_room_south)
+#
+# Rooms that should become accessible later: add a (hidden) exit, then
+# reveal it with reveal_exit(exit_id) when the path opens. Do NOT use
+# move_player to reach a room with no exit connection -- the validator
+# requires all rooms to be reachable via exits.
 
 room cell {
   name        "Prison Cell"
@@ -421,7 +430,7 @@ quest side:vault_secret {
 #   move_player(room_id)      -- teleport player
 #   change_health(N)          -- heal (+) or damage (-) player
 #   add_score(N)              -- award points
-#   reveal_exit(exit_id)      -- unhide a hidden exit
+#   reveal_exit(exit_id)      -- unhide a hidden exit (ID = {from_room}_{direction})
 #   solve_puzzle(id)          -- mark puzzle solved
 #   discover_quest(id)        -- activate a quest
 #   print("msg")              -- display text
@@ -432,6 +441,13 @@ quest side:vault_secret {
 #   restore_quantity(item, N) -- refill charges
 #   set_toggle_state(item, state)           -- change toggle state
 #   move_npc(npc_id, room_id) -- relocate an NPC
+#   fail_quest(quest_id)      -- mark a quest as failed
+#   complete_quest(quest_id)  -- force-complete a quest
+#   kill_npc(npc_id)          -- kill an NPC by ID (leaves body/loot)
+#   remove_npc(npc_id)        -- remove NPC from world entirely (vanished)
+#   lock_exit(exit_id)        -- re-lock a previously unlocked exit
+#   hide_exit(exit_id)        -- re-hide a previously revealed exit
+#   change_description(entity_id, "new text") -- change item/room description at runtime
 #
 # Items that should appear later: declare the item WITHOUT an initial location
 # and use spawn_item(item_id, room_id) or spawn_item(item_id, _inventory) when
@@ -532,36 +548,96 @@ when room_enter(cellar) {
 # category and fires the first matching interaction response.
 # ONE rule covers ALL items with that tag on ALL targets with that category.
 #
-# Tags and categories are OPEN-ENDED. Invent whatever you want!
-# Items can have multiple tags: tags ["weapon", "metal", "sharp"]
-# NPCs and items must have a category set for interactions to work.
+# IMPORTANT RULES:
+#   - EVERY item MUST have tags: tags ["weapon", "tool", "food", etc.]
+#   - EVERY item and NPC MUST have a category: category "character", "furniture",
+#     "device", "fixture", "container", "consumable", etc.
+#   - Without tags and categories, "use X on Y" silently fails.
+#
+# Tags and categories are OPEN-ENDED. Invent whatever fits your world!
+# Items can have multiple tags: tags ["weapon", "metal", "blunt"]
 #
 # Effects for interactions (target-aware + standard):
-#   kill_target()       -- kill the target NPC, spawn lootable body
-#   damage_target(N)    -- deal N damage to target NPC
-#   destroy_target()    -- break target container, scatter contents
-#   open_target()       -- open target container
-#   Plus all standard effects: add_score(N), set_flag(id), print("msg"), etc.
+#   kill_target()         -- kill the target NPC, spawn lootable body
+#   damage_target(N)      -- deal N damage to target NPC
+#   destroy_target()      -- break target container, scatter contents
+#   open_target()         -- open target container
+#   set_flag(id)          -- set a flag (chain with triggers for consequences)
+#   add_score(N)          -- adjust score
+#   print("msg")          -- display extra text
+#   kill_npc(npc_id)      -- kill a specific NPC by ID (leaves body/loot)
+#   remove_npc(npc_id)    -- remove NPC from world entirely
+#   fail_quest(quest_id)  -- mark a quest as failed
+#   Plus all other standard effects.
 #
-# Be creative -- define fun emergent combos the player can discover:
-#   "weapon" on "character"      -> kill NPCs with kill_target()
-#   "weapon" on "furniture"      -> smash it with destroy_target()
-#   "light_source" on "character" -> blind or distract them
-#   "food" on "character"        -> offer food, they react
+# CHAIN CONSEQUENCES: Use set_flag() in interactions, then when blocks to
+# create ripple effects. Killing a quest-giver should fail their quest.
+# Destroying a locked container should scatter its contents. Think about
+# what SHOULD happen when a player tries something creative.
+#
+# Wildcard: use target "*" as a catch-all default for a tag.
+#
+# Invent creative combos:
+#   "weapon" on "character"      -> kill/damage NPCs
+#   "weapon" on "furniture"      -> smash containers
+#   "food" on "character"        -> offer food, change attitude
 #   "evidence" on "character"    -> confront or accuse
-#   "tool" on "furniture"        -> pry open, disassemble
-#   "disguise" on "character"    -> fool NPCs
-#   "pet_accessory" on "character" -> bewildered reactions
-#   "holy_water" on "undead"     -> destroy undead
-# Invent tags that fit YOUR game's world. The system is completely open.
+#   "tool" on "device"           -> repair or sabotage
+#   "poison" on "consumable"     -> taint food/drink
+#   "fire" on "furniture"        -> burn it
 
 interaction weapon_on_character {
   tag      "weapon"
   target   "character"
-  response "You crack {target} over the head with the {item}. They crumple to the ground."
+  response "You strike {target} with the {item}. They collapse to the ground."
   effect   kill_target()
-  effect   add_score(10)
+  effect   set_flag(npc_killed)
+  effect   add_score(-10)
 }
+
+# Chain consequence: use set_flag() + when blocks for ripple effects.
+# Example: killing an NPC should have consequences elsewhere.
+#
+#   when flag_set(npc_killed) {
+#     effect fail_quest(village_rescue)
+#     effect add_score(-20)
+#     message "With the villager dead, the quest is lost."
+#     once
+#   }
+#
+# More creative trigger examples:
+#
+# Environmental change -- a room floods and its description changes:
+#   when flag_set(dam_broken) {
+#     effect change_description(lower_cavern, "The cavern is knee-deep in rushing water. The old path east is completely submerged.")
+#     effect hide_exit(lower_cavern_east)
+#     effect print("A wall of water crashes through the cavern!")
+#     once
+#   }
+#
+# Cave-in blocks a path:
+#   when flag_set(explosion_triggered) {
+#     effect lock_exit(mine_shaft_north)
+#     effect hide_exit(mine_shaft_north)
+#     effect change_description(mine_shaft, "The north tunnel has collapsed. Rubble blocks the way.")
+#     effect print("The ceiling gives way! Rocks seal the northern passage.")
+#     once
+#   }
+#
+# Bomb goes off, kills a guard:
+#   when flag_set(bomb_detonated) {
+#     effect kill_npc(tower_guard)
+#     effect change_description(tower_base, "Smoke and debris fill the tower entrance. The guard lies motionless.")
+#     effect print("BOOM! The blast echoes through the tower.")
+#     once
+#   }
+#
+# NPC flees the scene:
+#   when flag_set(alarm_raised) {
+#     effect remove_npc(shady_merchant)
+#     effect print("The merchant grabs his satchel and vanishes into the crowd.")
+#     once
+#   }
 
 interaction weapon_on_furniture {
   tag      "weapon"
@@ -570,10 +646,26 @@ interaction weapon_on_furniture {
   effect   destroy_target()
 }
 
-interaction light_source_on_character {
-  tag      "light_source"
+interaction tool_on_device {
+  tag      "tool"
+  target   "device"
+  response "You work the {item} against the {target}. Something clicks."
+  effect   open_target()
+}
+
+interaction food_on_character {
+  tag      "food"
   target   "character"
-  response "You shine the {item} in {target}'s face. They stumble back, blinded."
+  response "You offer the {item} to {target}. They accept it gratefully."
+  consumes 1
+  effect   set_flag(fed_npc)
+}
+
+# Wildcard default: any weapon on anything not specifically handled.
+interaction weapon_on_default {
+  tag      "weapon"
+  target   "*"
+  response "You swing the {item} at the {target}. It doesn't accomplish much."
 }
 
 --- END EXAMPLE ---
@@ -738,23 +830,25 @@ def _build_quality_requirements(realism: str, fields: dict[str, Any]) -> str:
         "MUST have a global fallback on block."
     )
 
-    # Interaction responses — always encouraged, richer at high realism
+    # Interaction responses — always required
     lines.append(
-        "- Set category on EVERY NPC ('character') and interactable item ('furniture', etc.)."
+        "- EVERY item MUST have tags. EVERY item and NPC MUST have a category."
     )
     lines.append(
-        "  Without a category, 'use X on Y' won't fire interaction responses."
+        "  Without tags and categories, 'use X on Y' silently fails."
     )
     lines.append(
-        "- Use interaction responses (tag on category) so 'use X on Y' works dynamically."
+        "- Write interaction responses for EVERY tag×category combo in the game."
     )
     lines.append(
-        "  Invent creative tags: weapon, food, evidence, tool, disguise, poison, rope, etc."
+        "  Include a wildcard (target '*') fallback for each tag."
     )
-    if realism != "low":
-        lines.append(
-            "  Use kill_target(), destroy_target(), damage_target(N) for real consequences."
-        )
+    lines.append(
+        "- Interactions MUST have consequences: use kill_target(), destroy_target(),"
+    )
+    lines.append(
+        "  set_flag(), add_score(), etc. Chain with when blocks for ripple effects."
+    )
 
     # Prose quality — always
     lines.append("- Room descriptions: 2-4 vivid sentences with sensory detail.")

@@ -574,6 +574,13 @@ effect take_item_from_container(gem)
 effect consume_quantity(revolver, 1)
 effect restore_quantity(revolver, 6)
 effect set_toggle_state(oil_lamp, "on")
+effect fail_quest(village_rescue)
+effect complete_quest(the_hermits_bargain)
+effect kill_npc(tower_guard)
+effect remove_npc(shady_merchant)
+effect lock_exit(mine_shaft_north)
+effect hide_exit(lower_cavern_east)
+effect change_description(lower_cavern, "The cavern is knee-deep in rushing water.")
 ```
 
 #### Effect reference
@@ -599,6 +606,13 @@ effect set_toggle_state(oil_lamp, "on")
 | `consume_quantity(I, N)`      | item id, amount            | `{"type": "consume_quantity", "item": I, "amount": N}` |
 | `restore_quantity(I, N)`      | item id, amount            | `{"type": "restore_quantity", "item": I, "amount": N}` |
 | `set_toggle_state(I, S)`      | item id, state string      | `{"type": "set_toggle_state", "item": I, "state": S}` |
+| `fail_quest(Q)`               | quest id                   | `{"type": "fail_quest", "quest": Q}` |
+| `complete_quest(Q)`           | quest id                   | `{"type": "complete_quest", "quest": Q}` |
+| `kill_npc(NPC)`               | npc id                     | `{"type": "kill_npc", "npc": NPC}` |
+| `remove_npc(NPC)`             | npc id                     | `{"type": "remove_npc", "npc": NPC}` |
+| `lock_exit(E)`                | exit id                    | `{"type": "lock_exit", "exit": E}` |
+| `hide_exit(E)`                | exit id                    | `{"type": "hide_exit", "exit": E}` |
+| `change_description(ID, TXT)` | entity id, string literal  | `{"type": "change_description", "entity": ID, "text": TXT}` |
 
 ### Slot references
 
@@ -751,29 +765,49 @@ Compiles to `dialogue_options` table.
 ## 8. Interaction Responses
 
 Interaction responses define generic tag-to-category reaction templates for
-the item dynamics system.
+the item dynamics system. Every item should have `tags` and every item/NPC
+should have a `category` for interactions to fire.
 
 ```zorkscript
-interaction fire_on_character {
-  item_tag         "firearm"
-  target_category  "character"
-  response         "You fire the {item} at {target}. They stagger backward."
-  consumes         1
-  score_change     0
-  flag_to_set      fired_weapon
+interaction weapon_on_character {
+  tag      "weapon"
+  target   "character"
+  response "You strike {target} with the {item}. They collapse."
+  consumes 1
+  effect   kill_target()
+  effect   set_flag(npc_killed)
+  effect   add_score(-10)
 }
 ```
 
+Use `target "*"` for wildcard fallbacks that match any category.
+
 Compiles to the `interaction_responses` table.
 
-| Field             | Type    | Required | Default |
-|-------------------|---------|----------|---------|
-| `item_tag`        | string  | yes      | |
-| `target_category` | string  | yes      | |
-| `response`        | string  | yes      | Template with `{item}` and `{target}` |
-| `consumes`        | integer | no       | 0 |
-| `score_change`    | integer | no       | 0 |
-| `flag_to_set`     | id      | no       | |
+| Field      | Type    | Required | Default |
+|------------|---------|----------|---------|
+| `tag`      | string  | yes      | |
+| `target`   | string  | yes      | Use `"*"` for wildcard |
+| `response` | string  | yes      | Template with `{item}` and `{target}` |
+| `consumes` | integer | no       | 0 |
+| `score`    | integer | no       | 0 |
+| `sets_flag`| id      | no       | |
+| `effect`   | effect  | no       | Repeatable. All standard + target-aware effects |
+
+Target-aware effects (only available in interactions):
+- `kill_target()` — kill the target NPC, spawn lootable body
+- `damage_target(N)` — deal N damage to target NPC
+- `destroy_target()` — break target container, scatter contents
+- `open_target()` — open target container
+
+All standard effects are also available in interactions. Particularly useful:
+- `kill_npc(npc_id)` — kill a specific NPC by ID (not the target; e.g., a bystander)
+- `remove_npc(npc_id)` — remove an NPC from the world entirely
+- `fail_quest(quest_id)` — mark a quest as failed (e.g., killing a quest-giver)
+- `complete_quest(quest_id)` — force-complete a quest
+- `lock_exit(exit_id)` — re-lock a previously unlocked exit
+- `hide_exit(exit_id)` — re-hide a previously revealed exit
+- `change_description(entity_id, "text")` — change an item or room description at runtime
 
 
 ## 9. Worked Example: JSON vs ZorkScript
@@ -1255,13 +1289,15 @@ item_in_container, not_item_in_container, container_has_contents,
 container_empty, has_quantity, toggle_state
 ```
 
-### Effect types (18)
+### Effect types (25)
 
 ```
 move_item, remove_item, set_flag, unlock, move_player, spawn_item,
 change_health, add_score, reveal_exit, solve_puzzle, discover_quest,
 print, open_container, move_item_to_container, take_item_from_container,
-consume_quantity, restore_quantity, set_toggle_state
+consume_quantity, restore_quantity, set_toggle_state, fail_quest,
+complete_quest, kill_npc, remove_npc, lock_exit, hide_exit,
+change_description
 ```
 
 ### Event types (5)

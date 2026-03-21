@@ -73,6 +73,13 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "restore_quantity",
         "set_toggle_state",
         "move_npc",
+        "fail_quest",
+        "complete_quest",
+        "kill_npc",
+        "remove_npc",
+        "lock_exit",
+        "hide_exit",
+        "change_description",
     }
 )
 

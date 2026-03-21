@@ -1588,6 +1588,12 @@ class GameDB:
             "UPDATE exits SET is_hidden = 0 WHERE id = ?", (exit_id,)
         )
 
+    def hide_exit(self, exit_id: str) -> None:
+        """Hide a previously revealed exit (``is_hidden = 1``)."""
+        self._mutate(
+            "UPDATE exits SET is_hidden = 1 WHERE id = ?", (exit_id,)
+        )
+
     def lock_exit(self, exit_id: str) -> None:
         """Lock an exit (``is_locked = 1``)."""
         self._mutate(
@@ -1651,6 +1657,29 @@ class GameDB:
         self._mutate(
             "UPDATE npcs SET room_id = ? WHERE id = ?", (room_id, npc_id)
         )
+
+    def remove_npc(self, npc_id: str) -> None:
+        """Remove an NPC from the world entirely (no body, no loot)."""
+        self._mutate("DELETE FROM npcs WHERE id = ?", (npc_id,))
+
+    def change_description(self, entity_id: str, new_text: str) -> None:
+        """Change the description of an item or room at runtime.
+
+        Tries items first, then rooms.
+        """
+        item = self.get_item(entity_id)
+        if item is not None:
+            self._mutate(
+                "UPDATE items SET description = ? WHERE id = ?",
+                (new_text, entity_id),
+            )
+            return
+        room = self.get_room(entity_id)
+        if room is not None:
+            self._mutate(
+                "UPDATE rooms SET description = ? WHERE id = ?",
+                (new_text, entity_id),
+            )
 
     # ------------------------------------------------------ item dynamics
 
