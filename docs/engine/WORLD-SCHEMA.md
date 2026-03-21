@@ -73,7 +73,7 @@ Key fields:
 - `app_version`, `prompt_system_version`
 - `intro_text`, `win_text`, `lose_text`
 - `win_conditions`, `lose_conditions`
-- `max_score`, `region_count`, `room_count`
+- `max_score`, `room_count`
 - `realism`
 - `game_id`, `source_game_id`, `source_path`, `save_slot`, `last_played_at`, `is_template`
 
@@ -85,7 +85,6 @@ Key fields:
 
 - `id`, `name`
 - `description`, `short_description`, `first_visit_text`
-- `region`
 - `is_dark`, `is_start`, `visited`
 
 ### `exits`
@@ -132,6 +131,13 @@ Key fields:
 - baseline dialogue: `default_dialogue`
 - optional combat stats: `hp`, `damage`
 - `category`
+- Placement and prose: `home_room_id`, `room_description`, `drop_description`
+
+Room prose (identical to items): when the NPC is in its `home_room_id`, the
+engine renders `room_description` as authored prose blended into the room
+body. When the NPC is away from home, `drop_description` is used, or the
+engine falls back to "Nearby, {name} lingers." When `home_room_id` is set,
+`room_description` is required (compile-time validation error).
 
 ### `dialogue_nodes`
 

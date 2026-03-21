@@ -14,7 +14,6 @@ def _make_base_db(tmp_path: Path, name: str = "test_world.zork") -> GameDB:
         author="tests",
         prompt="validator coverage",
         win_conditions='["game_won"]',
-        region_count=1,
         room_count=2,
     )
     db.insert_flag(id="game_won", value="false")
@@ -23,7 +22,6 @@ def _make_base_db(tmp_path: Path, name: str = "test_world.zork") -> GameDB:
         name="Foyer",
         description="A quiet foyer.",
         short_description="A quiet foyer.",
-        region="house",
         is_start=1,
     )
     db.insert_room(
@@ -31,7 +29,6 @@ def _make_base_db(tmp_path: Path, name: str = "test_world.zork") -> GameDB:
         name="Vault",
         description="A dark vault.",
         short_description="A dark vault.",
-        region="house",
     )
     db.insert_exit(
         id="foyer_vault",

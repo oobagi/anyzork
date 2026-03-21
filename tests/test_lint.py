@@ -241,7 +241,7 @@ room foyer {
   name "Foyer"
   description "A quiet foyer."
   short "A quiet foyer."
-  region "house"
+
   start true
 
   exit north -> study
@@ -251,7 +251,7 @@ room study {
   name "Study"
   description "A cramped study."
   short "A cramped study."
-  region "house"
+
 }
 
 flag game_won "Tracks victory."

@@ -172,7 +172,9 @@ item blackmail_letter {
 npc ashworth {
   name "Lady Ashworth"  description "Composed, fifties, by the fireplace."
   examine "Red eyes, steady hands. More angry than grieving."
-  room_id dining_room  dialogue "Ashworth regards you."  category "character"
+  in dining_room  home dining_room
+  room_desc "Lady Ashworth stands by the fireplace, composed but rigid."
+  dialogue "Ashworth regards you."  category "character"
   talk start {
     "'I never left the dining room after Edmund went to the study.'"
     option "Did anyone leave?" -> alibi
@@ -194,7 +196,9 @@ npc ashworth {
 npc crane {
   name "Professor Crane"  description "Thin, grey-haired, tweed."
   examine "Hand trembles. Chemical stains on his fingertips."
-  room_id library  dialogue "Crane peers over his spectacles."  category "character"
+  in library  home library
+  room_desc "Professor Crane sits in a wing chair, turning pages without reading them."
+  dialogue "Crane peers over his spectacles."  category "character"
   talk start {
     "'I was in the lavatory. Stomach trouble. Heard nothing.'"
     option "Stains on your hands." -> stains
@@ -221,7 +225,9 @@ npc crane {
 npc holloway {
   name "Mr. Holloway"  description "Heavyset, restless eyes."
   examine "Reeks of smoke. Jacket pocket bulges."
-  room_id kitchen  dialogue "Holloway eyes you."  category "character"
+  in kitchen  home kitchen
+  room_desc "Mr. Holloway leans against the counter, smoking despite the house rules."
+  dialogue "Holloway eyes you."  category "character"
   talk start {
     "'I was outside smoking. Check the terrace.'"
     option "Cut from the will." -> will_talk { require_flag clue_will }

@@ -241,7 +241,9 @@ npc raven {
   name              "Raven"
   description       "A large black raven perches on the chimney, watching you with one bright eye."
   examine           "Its feathers are glossy and its gaze is unnervingly sharp. This bird is old — very old."
-  room_id           garden
+  in                garden
+  home              garden
+  room_desc         "A large black raven perches on the chimney, watching you with one bright eye."
   dialogue          "The raven tilts its head and croaks."
   category          "character"
 

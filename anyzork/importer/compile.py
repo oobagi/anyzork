@@ -90,7 +90,6 @@ def compile_import_spec(
 def _initialize_metadata(db: GameDB, spec: dict[str, Any]) -> None:
     game = spec["game"]
     rooms = spec.get("rooms", [])
-    regions = {room.get("region", "world") for room in rooms}
     db.initialize(
         game_name=str(game.get("title", "Imported AnyZork Game")),
         author=str(game.get("author", "Imported")),
@@ -107,7 +106,6 @@ def _initialize_metadata(db: GameDB, spec: dict[str, Any]) -> None:
             else None
         ),
         max_score=int(game.get("max_score", 0)),
-        region_count=len(regions),
         room_count=len(rooms),
         is_template=True,
     )
@@ -123,7 +121,6 @@ def _insert_rooms(db: GameDB, spec: dict[str, Any]) -> None:
             description=room["description"],
             short_description=room.get("short_description") or room["description"],
             first_visit_text=optional_str(room.get("first_visit_text")),
-            region=room.get("region", "world"),
             is_dark=bool_to_int(room.get("is_dark", False)),
             is_start=bool_to_int(room.get("is_start", False)),
             visited=bool_to_int(room.get("visited", False)),
@@ -239,6 +236,9 @@ def _insert_npcs(db: GameDB, spec: dict[str, Any]) -> None:
             hp=npc.get("hp"),
             damage=npc.get("damage"),
             category=optional_str(npc.get("category")),
+            home_room_id=optional_str(npc.get("home_room_id")),
+            room_description=optional_str(npc.get("room_description")),
+            drop_description=optional_str(npc.get("drop_description")),
         )
 
 

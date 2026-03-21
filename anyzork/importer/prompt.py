@@ -70,7 +70,6 @@ room cell {
   description "A narrow stone cell with damp walls. An iron door hangs open to the north. A rickety wooden table stands against the far wall, and a straw pallet lies in the corner. Scratches on the wall mark hundreds of days."
   short       "Your former cell."
   first_visit "The silence here is heavier than the stone walls."
-  region      "dungeon"
   start       true
 
   exit north -> corridor
@@ -80,7 +79,6 @@ room corridor {
   name        "Dungeon Corridor"
   description "A long corridor lit by guttering torches. The air smells of damp stone and old smoke. Doors line the east wall. To the north, a heavy portcullis blocks the passage."
   short       "A torch-lit corridor running north-south."
-  region      "dungeon"
 
   exit south -> cell
   exit north -> gate_room
@@ -92,7 +90,6 @@ room supply_closet {
   name        "Supply Closet"
   description "A cramped closet stuffed with crates and mouldering rope. A rusty lever protrudes from the wall, connected to chains that vanish into the ceiling. A wooden shelf holds dusty supplies."
   short       "A cluttered supply closet with a lever on the wall."
-  region      "dungeon"
 
   exit west -> corridor
 }
@@ -102,7 +99,6 @@ room cellar {
   description "Pitch darkness swallows everything. The air is cold and still. You can hear water dripping somewhere ahead."
   short       "A pitch-dark cellar."
   first_visit "The darkness is absolute. You cannot see your hand in front of your face."
-  region      "dungeon"
   dark        true
 
   exit up    -> corridor
@@ -114,7 +110,6 @@ room vault {
   description "A small stone vault, dry and cold. A heavy iron chest sits against the far wall. Cobwebs blanket the ceiling."
   short       "A sealed vault with an iron chest."
   first_visit "Stale air rushes out as the door opens for the first time in years."
-  region      "dungeon"
   dark        true
 
   exit south -> cellar
@@ -124,7 +119,6 @@ room gate_room {
   name        "Portcullis Chamber"
   description "The corridor ends at a massive iron portcullis. Beyond it, a stone staircase climbs toward daylight. A guard slouches on a stool beside the gate, half-asleep."
   short       "The portcullis chamber. A guard watches the gate."
-  region      "dungeon"
 
   exit south -> corridor
   exit north -> courtyard (locked)
@@ -135,7 +129,6 @@ room courtyard {
   description "Warm sunlight floods a flagstone courtyard. An overgrown garden borders the eastern wall. The main road leads west to freedom."
   short       "A bright courtyard outside the dungeon."
   first_visit "The light stings your eyes after so long underground."
-  region      "exterior"
 
   exit south -> gate_room
 }
@@ -144,6 +137,7 @@ room courtyard {
 # take_msg/drop_msg: generic messages that work in ANY room.
 # room_desc: shown when item is in its home room. drop_desc: shown elsewhere.
 # home: the item's native room (for room_desc vs drop_desc selection).
+# REQUIRED: every item with home MUST have room_desc (compile-time error otherwise).
 # Containers (furniture, chests): container/open/locked/key fields.
 # Toggleable (torches, switches): toggle/toggle_state/on_msg/off_msg.
 # requires: item dependency (e.g. flashlight requires batteries).
@@ -303,6 +297,11 @@ item rusty_pipe {
 }
 
 # -- NPCs -- Use category for the interaction matrix. Nest dialogue with talk blocks.
+# NPCs support room_desc, drop_desc, and home — identical to items.
+# home + room_desc is REQUIRED: room_desc is shown when the NPC is in its home room.
+# drop_desc (optional) is shown if the NPC is moved elsewhere (e.g., via move_npc).
+# NPCs without room_desc or home get a generic "Nearby, {name} lingers." fallback.
+#
 # Every NPC talk branch MUST include a dismissive exit option (e.g., "Never mind" or
 # "Goodbye") so the player can leave the conversation. Do not create dialogue paths
 # with no exit option — the player gets trapped in dialogue mode.
@@ -316,6 +315,8 @@ npc guard {
   description "A heavyset man in dented armor."
   examine     "His eyes are bloodshot and his breath smells of cheap ale. He grips a short sword loosely."
   in          gate_room
+  home        gate_room
+  room_desc   "A heavyset guard slouches on a stool beside the gate, half-asleep."
   dialogue    "He barely looks up."
   category    "character"
   blocking    gate_room -> courtyard north
@@ -796,21 +797,21 @@ def build_zorkscript_prompt(
 
 _SCALE_REQUIREMENTS: dict[str, dict[str, str]] = {
     "small": {
-        "rooms": "3-5 rooms in 1 region. Every room dense with interactables.",
+        "rooms": "3-5 rooms. Every room dense with interactables.",
         "items": "At least 6 items. Every room has 2+ examinable objects.",
         "npcs": "1-2 NPCs with dialogue.",
         "puzzles": "1-2 puzzles.",
         "quests": "1 main quest with 2-3 objectives.",
     },
     "medium": {
-        "rooms": "6-12 rooms across 1-2 regions.",
+        "rooms": "6-12 rooms.",
         "items": "At least 10 items. Every major room has 2+ examinable objects.",
         "npcs": "2-4 NPCs with dialogue trees.",
         "puzzles": "2-3 puzzles with multi-step solutions.",
         "quests": "1 main quest with 3+ objectives. Side quests encouraged.",
     },
     "large": {
-        "rooms": "13-25 rooms across 2-4 regions.",
+        "rooms": "13-25 rooms.",
         "items": "At least 20 items. Every room has 2+ examinable objects.",
         "npcs": "4+ NPCs with branching dialogue trees.",
         "puzzles": "3-5 puzzles with multi-step solutions.",
@@ -838,10 +839,12 @@ def _build_quality_requirements(realism: str, fields: dict[str, Any]) -> str:
     if realism != "low":
         lines.append("- Include dark rooms that require a light source.")
 
-    # Rich item feedback
+    # Rich item/NPC feedback
     lines.append("- Use take_msg, drop_msg, room_desc, drop_desc, examine for rich feedback. Never generic.")
     lines.append("- take_msg/drop_msg must work in ANY room (not context-specific).")
     lines.append("  Use home + room_desc for the item's native room, drop_desc for away.")
+    lines.append("- EVERY item and NPC with a home room MUST have room_desc. This is a compile-time error.")
+    lines.append("  NPCs support home, room_desc, and drop_desc identically to items.")
 
     # Consumables
     if realism != "low":

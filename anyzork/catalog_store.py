@@ -35,7 +35,6 @@ class UploadedGame:
     runtime_compat_version: str
     prompt_system_version: str
     room_count: int
-    region_count: int
     homepage_url: str
     cover_image_url: str
     created_at: str
@@ -56,7 +55,6 @@ class UploadedGame:
             "runtime_compat_version": self.runtime_compat_version,
             "prompt_system_version": self.prompt_system_version,
             "room_count": self.room_count,
-            "region_count": self.region_count,
             "homepage_url": self.homepage_url,
             "cover_image_url": self.cover_image_url,
             "created_at": self.created_at,
@@ -143,7 +141,6 @@ class CatalogStore:
             runtime_compat_version=str(game_meta.get("runtime_compat_version") or ""),
             prompt_system_version=str(game_meta.get("prompt_system_version") or ""),
             room_count=int(game_meta.get("room_count") or 0),
-            region_count=int(game_meta.get("region_count") or 0),
             homepage_url=(homepage_url or str(listing_meta.get("homepage_url") or "")).strip(),
             cover_image_url=(
                 cover_image_url or str(listing_meta.get("cover_image_url") or "")
@@ -196,7 +193,6 @@ class CatalogStore:
                     "runtime_compat_version": game.runtime_compat_version,
                     "prompt_system_version": game.prompt_system_version,
                     "room_count": game.room_count,
-                    "region_count": game.region_count,
                 }
             )
 
@@ -235,7 +231,6 @@ class CatalogStore:
                     runtime_compat_version TEXT NOT NULL DEFAULT '',
                     prompt_system_version TEXT NOT NULL DEFAULT '',
                     room_count INTEGER NOT NULL DEFAULT 0,
-                    region_count INTEGER NOT NULL DEFAULT 0,
                     homepage_url TEXT NOT NULL DEFAULT '',
                     cover_image_url TEXT NOT NULL DEFAULT '',
                     created_at TEXT NOT NULL,
@@ -254,10 +249,10 @@ class CatalogStore:
                     slug, title, author, description, tagline, genres_json, package_path,
                     package_url, download_url, checksum_sha256,
                     runtime_compat_version, prompt_system_version,
-                    room_count, region_count, homepage_url, cover_image_url,
+                    room_count, homepage_url, cover_image_url,
                     created_at, updated_at, published
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(slug) DO UPDATE SET
                     title = excluded.title,
                     author = excluded.author,
@@ -271,7 +266,6 @@ class CatalogStore:
                     runtime_compat_version = excluded.runtime_compat_version,
                     prompt_system_version = excluded.prompt_system_version,
                     room_count = excluded.room_count,
-                    region_count = excluded.region_count,
                     homepage_url = excluded.homepage_url,
                     cover_image_url = excluded.cover_image_url,
                     updated_at = excluded.updated_at,
@@ -291,7 +285,6 @@ class CatalogStore:
                     game.runtime_compat_version,
                     game.prompt_system_version,
                     game.room_count,
-                    game.region_count,
                     game.homepage_url,
                     game.cover_image_url,
                     game.created_at,
@@ -316,7 +309,6 @@ class CatalogStore:
             runtime_compat_version=str(row["runtime_compat_version"]),
             prompt_system_version=str(row["prompt_system_version"]),
             room_count=int(row["room_count"]),
-            region_count=int(row["region_count"]),
             homepage_url=str(row["homepage_url"]),
             cover_image_url=str(row["cover_image_url"]),
             created_at=str(row["created_at"]),

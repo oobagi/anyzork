@@ -174,7 +174,9 @@ npc maya {
   name "Maya"
   description "A thin woman behind the reinforced door, kitchen knife in hand."
   examine "Dark circles. Faded paramedic jacket."
-  room_id apartment_2c  dialogue "Maya watches you."  category "character"
+  in apartment_2c  home apartment_2c
+  room_desc "A thin woman peers through the reinforced door, kitchen knife in hand."
+  dialogue "Maya watches you."  category "character"
 
   talk start {
     "'You're alive. Most of them don't knock.'"
