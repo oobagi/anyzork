@@ -5,7 +5,7 @@ Each command is a structured precondition/effect rule stored as JSON in the
 database. This module parses player input, matches it against command patterns,
 checks preconditions against game state, and applies effects atomically.
 
-Implements the full specification from docs/dsl/command-spec.md.
+Implements the full specification from docs/dsl/COMMANDS.md.
 """
 
 from __future__ import annotations

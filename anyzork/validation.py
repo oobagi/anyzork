@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from anyzork.db.schema import GameDB
 
 
-# ── Known DSL types (authoritative source: docs/dsl/command-spec.md) ─────
+# ── Known DSL types (authoritative source: docs/dsl/COMMANDS.md) ─────
 
 VALID_PRECONDITION_TYPES: frozenset[str] = frozenset(
     {

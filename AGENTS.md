@@ -4,7 +4,7 @@ CLI for authoring and playing deterministic Zork-style text adventures.
 
 ## Start Here
 
-Read [docs/guides/design-brief.md](docs/guides/design-brief.md) first. It explains the product shape, the current authoring flow, and the architecture boundaries that matter most.
+Read [docs/engine/GDD.md](docs/engine/GDD.md) first. It explains the product motivation, supported mechanics, and the architecture boundaries that matter most.
 
 ## Core Concept
 
@@ -29,14 +29,16 @@ No LLM is required at runtime unless the player explicitly enables narrator mode
 
 | Doc | Path | Purpose |
 |-----|------|---------|
-| Design Brief | [docs/guides/design-brief.md](docs/guides/design-brief.md) | Product framing and major decisions |
-| System Architecture | [docs/architecture/system-design.md](docs/architecture/system-design.md) | Current component map and command surface |
-| ADR-001: SQLite | [docs/architecture/adrs/adr-001-sqlite-game-storage.md](docs/architecture/adrs/adr-001-sqlite-game-storage.md) | Why `.zork` files are SQLite |
-| Game Design Document | [docs/game-design/gdd.md](docs/game-design/gdd.md) | Supported mechanics and design constraints |
-| World Schema | [docs/game-design/world-schema.md](docs/game-design/world-schema.md) | Human-oriented schema reference |
-| ZorkScript Spec | [docs/dsl/zorkscript-spec.md](docs/dsl/zorkscript-spec.md) | Authoring language reference |
-| Command DSL Spec | [docs/dsl/command-spec.md](docs/dsl/command-spec.md) | Runtime rule vocabulary |
-| Implementation Phases | [docs/guides/implementation-phases.md](docs/guides/implementation-phases.md) | Remaining roadmap / future work |
+| Game Design Document | [docs/engine/GDD.md](docs/engine/GDD.md) | Motivation, mechanics, and design constraints |
+| System Architecture | [docs/engine/SYSTEM-DESIGN.md](docs/engine/SYSTEM-DESIGN.md) | Component map and command surface |
+| World Schema | [docs/engine/WORLD-SCHEMA.md](docs/engine/WORLD-SCHEMA.md) | `.zork` database reference |
+| ZorkScript Spec | [docs/dsl/ZORKSCRIPT.md](docs/dsl/ZORKSCRIPT.md) | Authoring language reference |
+| Command DSL Spec | [docs/dsl/COMMANDS.md](docs/dsl/COMMANDS.md) | Runtime rule vocabulary |
+| CLI Reference | [docs/guides/CLI.md](docs/guides/CLI.md) | All commands, flags, and options |
+| Configuration | [docs/guides/CONFIGURATION.md](docs/guides/CONFIGURATION.md) | Config file, env vars, providers |
+| Narrator Mode | [docs/guides/NARRATOR.md](docs/guides/NARRATOR.md) | Optional LLM prose layer |
+| Sharing Games | [docs/server/SHARING.md](docs/server/SHARING.md) | Publishing, browsing, installing |
+| ADR-001: SQLite | [docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md](docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md) | Why `.zork` files are SQLite |
 
 ## Tech Stack
 

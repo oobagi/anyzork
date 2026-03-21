@@ -5,7 +5,7 @@ provides the GameDB class — the single interface that the engine, generator,
 and CLI use to read and write game state.
 
 Every table, field, type, and constraint is derived from the authoritative
-world-schema reference (docs/game-design/world-schema.md).
+world-schema reference (docs/engine/WORLD-SCHEMA.md).
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from anyzork.versioning import (
 
 SCHEMA_SQL = """\
 -- AnyZork World Schema v1.0
--- Authoritative source: docs/game-design/world-schema.md
+-- Authoritative source: docs/engine/WORLD-SCHEMA.md
 
 -- -------------------------------------------------------
 -- metadata: game-level information (single row, id = 1)

@@ -196,7 +196,7 @@ Key fields:
 - `priority`
 - `is_enabled`, `one_shot`, `executed`
 
-See [docs/dsl/command-spec.md](../dsl/command-spec.md) for the runtime vocabulary.
+See [docs/dsl/COMMANDS.md](../dsl/COMMANDS.md) for the runtime vocabulary.
 
 ### `flags`
 

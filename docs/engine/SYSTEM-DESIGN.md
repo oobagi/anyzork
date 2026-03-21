@@ -141,7 +141,7 @@ Current effect families include:
 - NPC manipulation (moving, killing, removing)
 - description changes
 
-The authoritative effect/precondition contract is documented in [docs/dsl/command-spec.md](../dsl/command-spec.md).
+The authoritative effect/precondition contract is documented in [docs/dsl/COMMANDS.md](../dsl/COMMANDS.md).
 
 ### 2.7 Quest and Trigger Systems
 

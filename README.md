@@ -175,14 +175,16 @@ pytest -q
 
 | Doc | What it covers |
 |---|---|
-| [Design Brief](docs/guides/design-brief.md) | Product framing and the authoring/runtime split |
-| [System Architecture](docs/architecture/system-design.md) | Components, commands, and runtime model |
-| [Game Design Document](docs/game-design/gdd.md) | Mechanics and design constraints |
-| [World Schema](docs/game-design/world-schema.md) | `.zork` database reference |
-| [ZorkScript Spec](docs/dsl/zorkscript-spec.md) | Authoring language reference |
-| [Command DSL Spec](docs/dsl/command-spec.md) | Runtime rule vocabulary |
-| [ADR-001: SQLite Storage](docs/architecture/adrs/adr-001-sqlite-game-storage.md) | Why `.zork` files are SQLite |
-| [Implementation Phases](docs/guides/implementation-phases.md) | Roadmap and future work |
+| [Game Design Document](docs/engine/GDD.md) | Mechanics, design constraints, and motivation |
+| [System Architecture](docs/engine/SYSTEM-DESIGN.md) | Components, commands, and runtime model |
+| [World Schema](docs/engine/WORLD-SCHEMA.md) | `.zork` database reference |
+| [ZorkScript Spec](docs/dsl/ZORKSCRIPT.md) | Authoring language reference |
+| [Command DSL Spec](docs/dsl/COMMANDS.md) | Runtime rule vocabulary |
+| [CLI Reference](docs/guides/CLI.md) | All commands, flags, and options |
+| [Configuration](docs/guides/CONFIGURATION.md) | Config file, env vars, and provider setup |
+| [Narrator Mode](docs/guides/NARRATOR.md) | Optional LLM prose layer |
+| [Sharing Games](docs/server/SHARING.md) | Publishing, browsing, and installing |
+| [ADR-001: SQLite Storage](docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md) | Why `.zork` files are SQLite |
 
 ## License
 
