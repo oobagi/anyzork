@@ -1,0 +1,401 @@
+game {
+  title "Death at Blackwood Manor"  author "A bundled AnyZork example."
+  intro_text "The storm knocked out the phones an hour ago. You found Lord Blackwood slumped at his desk, a shattered wine glass at his feet and the sharp smell of almonds in the air. The front door is bolted. Three guests remain: Lady Ashworth, Professor Crane, and Mr. Holloway. One of them is a killer."
+  win_text "The constable arrives at dawn. Your accusation holds. Justice is served."
+  lose_text "Dawn breaks. The killer walks free."
+  max_score 100  realism "high"
+  win_conditions [killer_accused]  lose_conditions [wrong_accusation]
+}
+player { start_room study hp 100 max_hp 100 }
+
+# ── ROOMS ──
+room study {
+  name "Lord Blackwood's Study"
+  description "Dark-panelled. Blackwood slumped at his desk. Shattered wine glass on the rug. Doors north and east."
+  short_description "The study where Blackwood died."
+  region "manor"  is_start true
+  exit north -> hallway "The hallway."
+  exit east -> library "The library."
+}
+room hallway {
+  name "Grand Hallway"
+  description "Oil portraits. Front door bolted. Doors south, east, west; stairs up."
+  short_description "The hallway."
+  region "manor"
+  exit south -> study "The study."
+  exit east -> dining_room "The dining room."
+  exit west -> kitchen "The kitchen."
+  exit up -> upper_hall "Upstairs."
+}
+room dining_room {
+  name "Dining Room"
+  description "Table set for five. Half-eaten pheasant, four wine glasses. Lady Ashworth by the fireplace."
+  short_description "The dining room."
+  region "manor"
+  exit west -> hallway "The hallway."
+}
+room kitchen {
+  name "Kitchen"
+  description "Copper pots. Mr. Holloway against the counter. Pantry door ajar south."
+  short_description "The kitchen."
+  region "manor"
+  exit east -> hallway "The hallway."
+  exit south -> pantry "The pantry."
+}
+room pantry {
+  name "Pantry"
+  description "Shelves of preserves. A heavy trapdoor in the floor."
+  short_description "The pantry."
+  region "manor"
+  exit north -> kitchen "The kitchen."
+  exit down -> wine_cellar "Through the trapdoor."
+}
+room library {
+  name "Library"
+  description "Bookshelves everywhere. Professor Crane in a leather armchair. A display case near the window."
+  short_description "The library."
+  region "manor"
+  exit west -> study "The study."
+}
+room upper_hall {
+  name "Upper Hall"
+  description "Dim landing with guest-room doors. A servants' passage ends at a locked door east."
+  short_description "The upper hall."
+  region "manor"
+  exit down -> hallway "Stairs down."
+  exit east -> secret_study "Through the passage door."
+}
+room wine_cellar {
+  name "Wine Cellar"
+  description "Cool, stone-walled. Wine racks. Fresh footprints in the dust."
+  short_description "The wine cellar."
+  region "manor"
+  exit up -> pantry "Ladder up."
+}
+room secret_study {
+  name "Hidden Study"
+  description "Small room with a writing desk and a wall safe in the brickwork."
+  short_description "A hidden study."
+  region "manor"
+  exit west -> upper_hall "Back to the upper hall."
+}
+
+# ── ITEMS ──
+item shattered_glass {
+  name "Shattered Wine Glass"  description "Broken stem, bitter-smelling dregs."
+  examine "White crystalline residue inside. Cyanide."
+  room_id study  room_description "A shattered wine glass on the rug."
+  is_takeable true  is_visible true
+}
+item desk_drawer {
+  name "Desk Drawer"  description "A locked drawer in Blackwood's desk."
+  room_id study  room_description "The desk has a locked drawer."
+  is_takeable false  is_visible true
+  container true  has_lid true  locked true
+  key desk_key  consume_key false
+  unlock_msg "The key turns. The drawer slides open."
+  open_msg "Inside: a will and a photograph."
+}
+item will_document {
+  name "Blackwood's Will"  description "Legal document, dated last week."
+  examine "Everything to Ashworth. Holloway cut out. Witnessed by Crane."
+  in desk_drawer  room_description "A document in the drawer."
+  is_takeable true  is_visible true
+}
+item old_photograph {
+  name "Old Photograph"  description "Sepia, two young men."
+  examine "'Blackwood and Crane, Cambridge 1962 — Room 813.'"
+  in desk_drawer  room_description "A photograph beneath the will."
+  is_takeable true  is_visible true
+}
+item desk_key {
+  name "Small Brass Key"  description "Stamped 'EB.'"
+  examine "Fits a desk drawer."
+  room_id kitchen  room_description "A brass key behind the spice rack."
+  is_takeable true  is_visible true
+}
+item rat_poison {
+  name "Rat Poison Tin"  description "Half-empty, fresh scratches on the lid."
+  examine "Potassium cyanide compound. This killed Blackwood."
+  room_id pantry  room_description "Rat poison on the bottom shelf."
+  is_takeable true  is_visible true
+}
+item display_case {
+  name "Glass Display Case"  description "Locked glass case."
+  examine "Through the glass: a key labelled 'Servants' Passage.'"
+  room_id library  room_description "A display case near the window."
+  is_takeable false  is_visible true
+  container true  has_lid true  locked true
+  key letter_opener  consume_key false
+  unlock_msg "You pry the case open with the letter opener."
+  open_msg "Inside: a key labelled 'Servants' Passage.'"
+}
+item letter_opener {
+  name "Letter Opener"  description "Jewelled, sharp."
+  examine "Could force a display case latch."
+  room_id library  room_description "A letter opener behind the books."
+  is_takeable true  is_visible true
+}
+item passage_key {
+  name "Passage Key"  description "Tarnished iron key."
+  examine "Tag: 'Servants' Passage.'"
+  in display_case  room_description "A key in the display case."
+  is_takeable true  is_visible true
+}
+item poison_notebook {
+  name "Stained Notebook"  description "Water-stained, cramped handwriting."
+  examine "Cyanide dosages circled. Handwriting matches Crane's."
+  room_id wine_cellar  room_description "A notebook near the wine rack."
+  is_takeable true  is_visible true
+}
+item secret_letters {
+  name "Bundle of Letters"  description "Tied with a ribbon."
+  examine "Love letters. The last: 'Changed the will. Everything to you. Holloway will be furious.'"
+  room_id secret_study  room_description "Letters on the desk."
+  is_takeable true  is_visible true
+}
+item safe {
+  name "Wall Safe"  description "Three-digit combination lock."
+  examine "Three digits. Dial 0-9."
+  room_id secret_study  room_description "A wall safe in the brickwork."
+  is_takeable false  is_visible true
+  container true  has_lid true  locked true
+}
+item blackmail_letter {
+  name "Blackmail Letter"  description "Typed on plain paper."
+  examine "'Crane — I know what you did at university. Pay or I tell everyone. —H.'"
+  in safe  room_description "A letter inside the safe."
+  is_takeable true  is_visible true
+}
+
+# ── NPCs ──
+npc ashworth {
+  name "Lady Ashworth"  description "Composed, fifties, by the fireplace."
+  examine "Red eyes, steady hands. More angry than grieving."
+  room_id dining_room  dialogue "Ashworth regards you."  category "character"
+  talk start {
+    "'I never left the dining room after Edmund went to the study.'"
+    option "Did anyone leave?" -> alibi
+    option "The will names you." -> will_info { require_flag clue_will }
+    option "That's all." -> end
+  }
+  talk alibi {
+    "'Holloway went for a cigarette. Crane used the lavatory — gone fifteen minutes.'"
+    option "The will names you." -> will_info { require_flag clue_will }
+    option "That's all." -> end
+    sets [clue_ashworth_alibi]
+  }
+  talk will_info {
+    "'Holloway has gambling debts — dangerous ones. Cutting him out was reckless.'"
+    option "That's all." -> end
+    sets [clue_holloway_motive]
+  }
+}
+npc crane {
+  name "Professor Crane"  description "Thin, grey-haired, tweed."
+  examine "Hand trembles. Chemical stains on his fingertips."
+  room_id library  dialogue "Crane peers over his spectacles."  category "character"
+  talk start {
+    "'I was in the lavatory. Stomach trouble. Heard nothing.'"
+    option "Stains on your hands." -> stains
+    option "Your poison notebook." -> notebook { require_flag clue_notebook }
+    option "Holloway's blackmail." -> blackmail { require_flag clue_blackmail }
+    option "That's all." -> end
+  }
+  talk stains {
+    "'I'm a chemistry professor. Stains mean nothing.'"
+    option "That's all." -> end
+    sets [clue_crane_knowledge]
+  }
+  talk notebook {
+    "White-faced. 'Academic notes. I must have dropped it fetching wine.'"
+    option "That's all." -> end
+    sets [clue_crane_nervous]
+  }
+  talk blackmail {
+    "He sags. 'Holloway found an old fraud. He wanted money. But I did not kill Edmund.'"
+    option "That's all." -> end
+    sets [clue_crane_blackmailed]
+  }
+}
+npc holloway {
+  name "Mr. Holloway"  description "Heavyset, restless eyes."
+  examine "Reeks of smoke. Jacket pocket bulges."
+  room_id kitchen  dialogue "Holloway eyes you."  category "character"
+  talk start {
+    "'I was outside smoking. Check the terrace.'"
+    option "Cut from the will." -> will_talk { require_flag clue_will }
+    option "Blackmailing Crane." -> blackmail { require_flag clue_blackmail }
+    option "Gambling debts." -> debts { require_flag clue_holloway_motive }
+    option "That's all." -> end
+  }
+  talk will_talk {
+    "'He cut me out. But what good is an inheritance if you hang for murder?'"
+    option "That's all." -> end
+  }
+  talk debts {
+    "'I owe money. But killing him doesn't help if the will cuts me out. Who benefits? Ashworth.'"
+    option "That's all." -> end
+  }
+  talk blackmail {
+    "'Crane cheated his career. I found proof. But it has nothing to do with Edmund.'"
+    option "That's all." -> end
+    sets [clue_holloway_admits]
+  }
+}
+
+# ── FLAGS ──
+flag clue_glass "Cyanide in the glass."
+flag clue_poison "Found rat poison."
+flag clue_will "Read the will."
+flag clue_photograph "Saw Cambridge photo."
+flag clue_notebook "Found Crane's notebook."
+flag clue_blackmail "Found blackmail letter."
+flag clue_letters "Read love letters."
+flag clue_ashworth_alibi "Ashworth's account."
+flag clue_crane_knowledge "Crane knows poisons."
+flag clue_crane_nervous "Crane nervous about notebook."
+flag clue_crane_blackmailed "Crane admits blackmail."
+flag clue_holloway_motive "Holloway has debts."
+flag clue_holloway_admits "Holloway admits blackmail."
+flag safe_cracked "Safe opened."
+flag hidden_study_found "Found hidden study."
+flag cellar_open "Trapdoor opened."
+flag evidence_assembled "Evidence reviewed."
+flag killer_accused "Accused Crane correctly."
+flag wrong_accusation "Wrong accusation."
+
+# ── LOCKS ──
+lock cellar_trapdoor {
+  exit pantry -> wine_cellar down  type "flag"  flags [cellar_open]
+  locked "The trapdoor is bolted shut."  unlocked "The trapdoor stands open."
+}
+lock passage_door {
+  exit upper_hall -> secret_study east  type "key"  key passage_key  consume true
+  locked "The passage door is locked."  unlocked "The door is unlocked."
+}
+
+# ── PUZZLES ──
+puzzle safe_combination {
+  name "The Wall Safe"  description "Three-digit combination safe."
+  in secret_study  difficulty 2  score 15
+  steps ["Find the combination hint", "Enter 8-1-3"]
+  hint ["The photograph has a room number.", "Cambridge 1962 — Room 813."]
+}
+
+# ── QUESTS ──
+quest main:solve_murder {
+  name "Death at Blackwood Manor"
+  description "Gather evidence and identify the killer."
+  completion killer_accused
+  objective "Examine the crime scene" -> clue_glass
+  objective "Find the poison source" -> clue_poison
+  objective "Assemble the evidence" -> evidence_assembled
+  objective "Accuse the killer" -> killer_accused
+}
+quest side:hidden_room {
+  name "The Secret Correspondence"
+  description "Discover what Blackwood hid behind the servants' passage."
+  discovery hidden_study_found  completion clue_blackmail
+  objective "Find the hidden study" -> hidden_study_found
+  objective "Crack the safe" -> safe_cracked
+  objective "Read the blackmail letter" -> clue_blackmail
+}
+
+# ── COMMANDS ──
+on "examine glass" in [study] {
+  effect set_flag(clue_glass)  effect add_score(5)
+  success "White residue inside. Bitter almonds — cyanide."
+  done "You know it's cyanide."  once
+}
+on "examine poison" {
+  require has_item(rat_poison)
+  effect set_flag(clue_poison)  effect add_score(5)
+  success "Potassium cyanide. Fresh scratches. This killed Blackwood."
+  fail "You don't have the poison."  done "Already identified."  once
+}
+on "read will" {
+  require has_item(will_document)
+  effect set_flag(clue_will)  effect add_score(10)
+  success "Everything to Ashworth. Holloway cut out. Crane witnessed."
+  fail "You don't have the will."  done "You know what it says."  once
+}
+on "examine photograph" {
+  require has_item(old_photograph)
+  effect set_flag(clue_photograph)  effect add_score(5)
+  success "'Blackwood and Crane, Cambridge 1962 — Room 813.' The number: 8-1-3."
+  fail "No photograph."  done "Already examined."  once
+}
+on "read letters" {
+  require has_item(secret_letters)
+  effect set_flag(clue_letters)  effect add_score(5)
+  success "Love letters. The last: 'Changed the will. Everything to you. Holloway will be furious.'"
+  fail "No letters."  done "Already read."  once
+}
+on "read notebook" {
+  require has_item(poison_notebook)
+  effect set_flag(clue_notebook)  effect add_score(10)
+  success "Cyanide dosages circled in Crane's handwriting."
+  fail "No notebook."  done "Already studied."  once
+}
+on "read blackmail" {
+  require has_item(blackmail_letter)
+  effect set_flag(clue_blackmail)  effect add_score(10)
+  success "'Crane — I know what you did. Pay or I tell everyone. —H.'"
+  fail "No letter."  done "Already read."  once
+}
+on "open trapdoor" in [pantry] {
+  effect set_flag(cellar_open)  effect add_score(5)
+  success "The trapdoor heaves open. A ladder into darkness."
+  done "Already open."  once
+}
+on "enter combination" in [secret_study] {
+  require has_flag(clue_photograph)
+  effect set_flag(safe_cracked)  effect add_score(15)
+  success "8-1-3. Click. The safe opens — a letter inside."
+  fail "You don't know the combination."  done "Already open."  once
+}
+on "review evidence" {
+  require has_flag(clue_poison)
+  require has_flag(clue_notebook)
+  require has_flag(clue_will)
+  effect set_flag(evidence_assembled)  effect add_score(10)
+  success "Cyanide. Rat poison. Crane's notebook. His absence. Blackmail driving him to desperation. The case is clear."
+  fail "You need more evidence."  done "Already assembled."  once
+}
+on "accuse crane" in [library] {
+  require has_flag(evidence_assembled)
+  effect set_flag(killer_accused)  effect add_score(25)
+  success "You present the evidence. Crane sags. 'Holloway was going to expose me. I had no choice. I put it in his glass before dinner.'"
+  fail "Gather and review evidence first."  done "Crane confessed."  once
+}
+on "accuse ashworth" in [dining_room] {
+  require has_flag(evidence_assembled)
+  effect set_flag(wrong_accusation)
+  success "'How dare you. I loved Edmund.' No proof. The real killer walks free."
+  fail "Gather and review evidence first."  once
+}
+on "accuse holloway" in [kitchen] {
+  require has_flag(evidence_assembled)
+  effect set_flag(wrong_accusation)
+  success "'I'm a gambler, not a murderer!' Nothing points to him. The real killer walks free."
+  fail "Gather and review evidence first."  once
+}
+
+# ── TRIGGERS ──
+when room_enter(study) {
+  message "Bitter almonds in the still air. Blackwood is not getting up."  once
+}
+when room_enter(wine_cellar) {
+  message "Cool air. Fresh footprints in the dust."  once
+}
+when room_enter(secret_study) {
+  message "Stale air. Blackwood's private refuge."
+  effect set_flag(hidden_study_found)  effect discover_quest(hidden_room)  once
+}
+when flag_set(evidence_assembled) {
+  message "The pieces fit. You know who did it. Confront them."
+}
+when flag_set(killer_accused) {
+  message "The storm breaks. Blue lights through rain-streaked windows. Justice at last."
+}

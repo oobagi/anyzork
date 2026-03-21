@@ -1,11 +1,11 @@
 <div align="center">
   <img src="assets/anyzork-header.png" alt="AnyZork" width="520">
   <h1>AnyZork</h1>
-  <p><strong>Use an LLM once to author a world, then play it on a deterministic engine.</strong></p>
+  <p><strong>A Zork-style text adventure generator. Describe a world to any LLM, get back a complete game, and play it on a fully deterministic engine — no AI needed at runtime.</strong></p>
   <p>
     <a href="#quickstart"><strong>Quickstart</strong></a>
     ·
-    <a href="#features"><strong>Features</strong></a>
+    <a href="#make-your-own-game"><strong>Make Your Own</strong></a>
     ·
     <a href="#docs"><strong>Docs</strong></a>
     ·
@@ -25,18 +25,35 @@ cd anyzork && python3.11 -m venv .venv && source .venv/bin/activate
 pip install -e .
 ```
 
-Try the bundled example:
+Browse and play a community game:
 
 ```bash
-anyzork import examples/alchemist_tower.zorkscript -o tower.zork
-anyzork play tower.zork
+anyzork browse                        # see what's available
+anyzork install haunted-lighthouse    # add it to your library
+anyzork play haunted-lighthouse       # start playing
 ```
+
+## Make Your Own Game
+
+Generate a prompt, send it to any LLM (Claude, GPT, Gemini, etc.), then compile the response into a playable game:
+
+```bash
+# one-liner — generates a prompt you paste into your LLM
+anyzork generate "haunted lighthouse on a cliff" -o prompt.txt
+
+# or use the interactive wizard
+anyzork generate --guided
+
+# compile the LLM's ZorkScript response into a .zork game
+anyzork import lighthouse.zorkscript -o lighthouse.zork
+anyzork play lighthouse.zork
+```
+
+See the [CLI reference](docs/guides/CLI.md) for all commands and flags, including genre presets, lint, and `--report`.
 
 ## Features
 
-**[Make Your Own Game](docs/guides/CLI.md)** — Generate a prompt, paste it into any LLM to get ZorkScript, then import and play. A guided wizard or a one-liner gets you started.
-
-**[Playing Games](docs/guides/CLI.md)** — Play local files or library games, manage named save slots, and list your collection. See the [CLI reference](docs/guides/CLI.md) for every command and flag.
+**[Playing Games](docs/guides/CLI.md)** — Play local files or library games, manage named save slots, and list your collection.
 
 **[Narrator Mode](docs/guides/NARRATOR.md)** — An optional live-LLM layer that rewrites room descriptions and event text without touching game state. Supports Claude, OpenAI, and Gemini.
 
