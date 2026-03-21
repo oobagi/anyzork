@@ -18,7 +18,7 @@ def command_db(tmp_path: Path) -> GameDB:
         author="tests",
         prompt="command coverage",
         win_conditions='["game_won"]',
-        region_count=1,
+
         room_count=2,
     )
     db.insert_flag(id="game_won", value="false")
@@ -28,7 +28,7 @@ def command_db(tmp_path: Path) -> GameDB:
         name="Foyer",
         description="A quiet foyer.",
         short_description="A quiet foyer.",
-        region="house",
+
         is_start=1,
     )
     db.insert_room(
@@ -36,7 +36,7 @@ def command_db(tmp_path: Path) -> GameDB:
         name="Study",
         description="A cramped study.",
         short_description="A cramped study.",
-        region="house",
+
     )
     db.insert_exit(
         id="foyer_study",
@@ -192,7 +192,7 @@ class TestGameDBTransaction:
         db = GameDB(tmp_path / "tx.zork")
         db.initialize(
             game_name="TX Test", author="tests", prompt="tx",
-            win_conditions='["done"]', region_count=1, room_count=1,
+            win_conditions='["done"]', room_count=1,
         )
         db.insert_flag(id="alpha", value="false")
 
@@ -206,7 +206,7 @@ class TestGameDBTransaction:
         db = GameDB(tmp_path / "tx.zork")
         db.initialize(
             game_name="TX Test", author="tests", prompt="tx",
-            win_conditions='["done"]', region_count=1, room_count=1,
+            win_conditions='["done"]', room_count=1,
         )
         db.insert_flag(id="beta", value="false")
 
@@ -221,7 +221,7 @@ class TestGameDBTransaction:
         db = GameDB(tmp_path / "tx.zork")
         db.initialize(
             game_name="TX Test", author="tests", prompt="tx",
-            win_conditions='["done"]', region_count=1, room_count=1,
+            win_conditions='["done"]', room_count=1,
         )
         db.insert_flag(id="gamma", value="false")
 
@@ -238,7 +238,7 @@ class TestGameDBTransaction:
         db = GameDB(tmp_path / "tx.zork")
         db.initialize(
             game_name="TX Test", author="tests", prompt="tx",
-            win_conditions='["done"]', region_count=1, room_count=1,
+            win_conditions='["done"]', room_count=1,
         )
         db.insert_flag(id="delta", value="false")
 
@@ -267,7 +267,7 @@ def atomic_db(tmp_path: Path) -> GameDB:
         author="tests",
         prompt="atomic",
         win_conditions='["game_won"]',
-        region_count=1,
+
         room_count=1,
     )
     db.insert_flag(id="game_won", value="false")
@@ -277,7 +277,7 @@ def atomic_db(tmp_path: Path) -> GameDB:
         name="Foyer",
         description="A quiet foyer.",
         short_description="A quiet foyer.",
-        region="house",
+
         is_start=1,
     )
     db.insert_item(

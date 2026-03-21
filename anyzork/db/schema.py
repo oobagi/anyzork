@@ -51,7 +51,6 @@ CREATE TABLE IF NOT EXISTS metadata (
     intro_text      TEXT    NOT NULL DEFAULT '',
     win_text        TEXT    NOT NULL DEFAULT '',
     lose_text       TEXT,
-    region_count    INTEGER NOT NULL DEFAULT 0,
     room_count      INTEGER NOT NULL DEFAULT 0,
     realism         TEXT NOT NULL DEFAULT 'medium',  -- "low", "medium", "high"
     game_id         TEXT,
@@ -71,13 +70,11 @@ CREATE TABLE IF NOT EXISTS rooms (
     description       TEXT    NOT NULL,
     short_description TEXT    NOT NULL,
     first_visit_text  TEXT,
-    region            TEXT    NOT NULL,
     is_dark           INTEGER NOT NULL DEFAULT 0,
     is_start          INTEGER NOT NULL DEFAULT 0,
     visited           INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_rooms_region   ON rooms(region);
 CREATE INDEX IF NOT EXISTS idx_rooms_is_start ON rooms(is_start);
 
 -- -------------------------------------------------------
@@ -396,7 +393,6 @@ _METADATA_FIELDS: frozenset[str] = frozenset(
         "intro_text",
         "win_text",
         "lose_text",
-        "region_count",
         "room_count",
         "realism",
         "game_id",
@@ -510,7 +506,6 @@ class GameDB:
         win_conditions: str = "[]",
         lose_conditions: str | None = None,
         max_score: int = 0,
-        region_count: int = 0,
         room_count: int = 0,
         game_id: str | None = None,
         prompt_system_version: str | None = None,
@@ -530,10 +525,10 @@ class GameDB:
                  created_at,
                  max_score, win_conditions, lose_conditions,
                  intro_text, win_text, lose_text,
-                 region_count, room_count, game_id, source_game_id,
+                 room_count, game_id, source_game_id,
                  source_path, save_slot, last_played_at, is_template)
             VALUES (
-                1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
             )
             """,
             (
@@ -550,7 +545,6 @@ class GameDB:
                 intro_text,
                 win_text,
                 lose_text,
-                region_count,
                 room_count,
                 game_id or str(uuid4()),
                 source_game_id,
