@@ -30,6 +30,7 @@ Current commands:
 
 - `anyzork generate [prompt]` — build a ZorkScript authoring prompt (freeform, guided wizard, or preset)
 - `anyzork import <file|->` — compile ZorkScript into a `.zork` game file
+- `anyzork lint <file|->` — lint a ZorkScript source file without compiling
 - `anyzork publish <game>` — package a library game and upload it to the catalog
 - `anyzork status <slug>` — check the publish status of a submitted game
 - `anyzork install <source>` — install a game from the catalog, a URL, or a local `.anyzorkpkg`
@@ -168,11 +169,24 @@ The narrator may restyle text, but it may not:
 
 If narrator mode fails, the engine falls back to plain deterministic output.
 
-### 2.10 ZorkScript Parser
+### 2.10 Diagnostic System
+
+Diagnostics are produced by [anyzork/diagnostics.py](../../anyzork/diagnostics.py) and [anyzork/lint.py](../../anyzork/lint.py).
+
+`diagnostics.py` defines a unified `Diagnostic` dataclass with fields for severity (error, warning, info), message, and optional source location. All lint and import validation findings are expressed as `Diagnostic` instances, giving consumers a single type to work with.
+
+`lint.py` exposes `lint_spec()`, which takes a parsed ZorkScript spec and returns a list of `Diagnostic` objects. It checks for common authoring mistakes -- dangling references, unused flags, unreachable rooms, and similar structural issues -- without compiling to a `.zork` database.
+
+The two main consumers are:
+
+- `anyzork lint` — runs `lint_spec()` and prints results grouped by severity with a summary count. Exits 0 if no errors (warnings are OK), 1 if errors are found.
+- `anyzork import --report` — runs `lint_spec()` alongside the full compile pipeline and prints a structured report of entity counts, lint findings, and the compile result.
+
+### 2.11 ZorkScript Parser
 
 The parser lives in [anyzork/zorkscript.py](../../anyzork/zorkscript.py). It is a hand-written recursive descent tokenizer and block parser that converts ZorkScript source text into the normalized import-spec dict consumed by `compile_import_spec`. Parse errors include line numbers via `ZorkScriptError`.
 
-### 2.11 Services Layer
+### 2.12 Services Layer
 
 Reusable service helpers in [anyzork/services/](../../anyzork/services/) decouple business logic from the CLI so that other entrypoints (e.g., a TUI) can share the same operations:
 
@@ -181,7 +195,7 @@ Reusable service helpers in [anyzork/services/](../../anyzork/services/) decoupl
 - `library` — game resolution, managed save preparation, and `LibraryOverview` queries
 - `play` — `PlaySession` wrapping the deterministic engine for programmatic turn-by-turn interaction
 
-### 2.12 Versioning
+### 2.13 Versioning
 
 Central version metadata lives in [anyzork/versioning.py](../../anyzork/versioning.py). Two version axes are tracked:
 

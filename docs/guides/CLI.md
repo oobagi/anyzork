@@ -59,6 +59,7 @@ anyzork import [SPEC_SOURCE] [OPTIONS]
 | `SPEC_SOURCE` | Path to a ZorkScript file, or `-` (default) to read from stdin. |
 | `-o, --output PATH` | Output path for the `.zork` file. |
 | `--print-template` | Print the ZorkScript authoring template and exit. |
+| `--report` | Print structured import diagnostics (entity counts, lint findings, compile result). |
 
 ```bash
 # Paste ZorkScript from clipboard
@@ -69,6 +70,28 @@ anyzork import game.zorkscript -o mygame.zork
 
 # Print the authoring template
 anyzork import --print-template
+```
+
+### `lint`
+
+Lint a ZorkScript source file without compiling it.
+
+```
+anyzork lint [SPEC_SOURCE]
+```
+
+| Option | Description |
+|--------|-------------|
+| `SPEC_SOURCE` | Path to a ZorkScript file, or `-` (default) to read from stdin. |
+
+Output is lint results grouped by severity with a summary count. Exit code is `0` if no errors are found (warnings are OK), `1` if any errors are present.
+
+```bash
+# Lint a file
+anyzork lint game.zorkscript
+
+# Lint from stdin
+cat game.zorkscript | anyzork lint -
 ```
 
 ---
