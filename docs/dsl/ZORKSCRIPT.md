@@ -146,7 +146,6 @@ room cellar {
                holds forgotten jars. Water drips from somewhere above."
   short       "A damp cellar beneath the house."
   first_visit "The smell hits you first -- mildew and something sharper."
-  region      "house"
   dark        false
   start       false
 
@@ -163,7 +162,6 @@ Compiles to the `rooms` table.
 | `description`       | string  | yes      | |
 | `short_description` | string  | yes      | Shorthand: `short` |
 | `first_visit`       | string  | no       | Maps to `first_visit_text` |
-| `region`            | string  | yes      | |
 | `is_dark`           | boolean | no       | false. Shorthand: `dark` |
 | `is_start`          | boolean | no       | false. Shorthand: `start` |
 
@@ -1070,7 +1068,6 @@ A small but complete game: two rooms, a locked door, a key, and a puzzle.
       "description": "Damp stone walls sweat in the lamplight. A shelf holds forgotten jars. A heavy iron door blocks the north wall.",
       "short_description": "A damp cellar.",
       "first_visit_text": "The smell hits you first.",
-      "region": "underground",
       "is_dark": false,
       "is_start": true
     },
@@ -1080,7 +1077,6 @@ A small but complete game: two rooms, a locked door, a key, and a puzzle.
       "description": "Open sky above crumbling walls. Weeds push through cracked flagstones.",
       "short_description": "A crumbling courtyard.",
       "first_visit_text": "Fresh air. Finally.",
-      "region": "surface",
       "is_dark": false,
       "is_start": false
     }
@@ -1220,7 +1216,6 @@ room cellar {
                forgotten jars. A heavy iron door blocks the north wall."
   short       "A damp cellar."
   first_visit "The smell hits you first."
-  region      "underground"
   start       true
 
   exit north -> courtyard (locked) "A heavy iron door."
@@ -1232,7 +1227,6 @@ room courtyard {
                cracked flagstones."
   short       "A crumbling courtyard."
   first_visit "Fresh air. Finally."
-  region      "surface"
 
   exit south -> cellar
 }

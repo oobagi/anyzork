@@ -14,7 +14,7 @@ def test_validate_game_reports_command_reference_to_missing_item(tmp_path: Path)
             author="tests",
             prompt="validator coverage",
             win_conditions='["game_won"]',
-            region_count=1,
+
             room_count=1,
         )
         db.insert_flag(id="game_won", value="false")
@@ -23,7 +23,7 @@ def test_validate_game_reports_command_reference_to_missing_item(tmp_path: Path)
             name="Foyer",
             description="A quiet foyer.",
             short_description="A quiet foyer.",
-            region="house",
+
             is_start=1,
         )
         db.init_player("foyer")

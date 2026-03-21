@@ -24,14 +24,14 @@ def minimal_import_spec() -> dict:
                 "id": "foyer",
                 "name": "Foyer",
                 "description": "A quiet foyer.",
-                "region": "house",
+
                 "is_start": True,
             },
             {
                 "id": "study",
                 "name": "Study",
                 "description": "A cramped study.",
-                "region": "house",
+
             },
         ],
         "exits": [
@@ -91,7 +91,7 @@ room foyer {
   name "Foyer"
   description "A quiet foyer."
   short "A quiet foyer."
-  region "house"
+
   start true
 
   exit north -> study
@@ -101,7 +101,7 @@ room study {
   name "Study"
   description "A cramped study."
   short "A cramped study."
-  region "house"
+
 
   exit south -> foyer
 }
