@@ -248,6 +248,7 @@ def _insert_dialogue(db: GameDB, spec: dict[str, Any]) -> None:
             npc_id=node["npc_id"],
             content=node["content"],
             set_flags=json_or_none(node.get("set_flags")),
+            effects=json_or_none(node.get("effects")),
             is_root=bool_to_int(node.get("is_root", False)),
         )
 
