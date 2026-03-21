@@ -24,7 +24,7 @@ Current authoring flow:
 
 ### 2.1 CLI
 
-The entry point is [anyzork/cli.py](/Users/jaden/Developer/anyzork/anyzork/cli.py).
+The entry point is [anyzork/cli.py](../../anyzork/cli.py).
 
 Current commands:
 
@@ -40,7 +40,7 @@ The CLI handles argument parsing, import/export UX, and launching the runtime en
 
 ### 2.2 Config
 
-Configuration lives in [anyzork/config.py](/Users/jaden/Developer/anyzork/anyzork/config.py) and uses `pydantic-settings`.
+Configuration lives in [anyzork/config.py](../../anyzork/config.py) and uses `pydantic-settings`.
 
 Sources, from lowest to highest priority:
 
@@ -54,7 +54,7 @@ Supported providers for narrator mode today are `claude`, `openai`, and `gemini`
 
 ### 2.3 Database Layer
 
-The database wrapper lives in [anyzork/db/schema.py](/Users/jaden/Developer/anyzork/anyzork/db/schema.py). SQLite is both the world format and the save format.
+The database wrapper lives in [anyzork/db/schema.py](../../anyzork/db/schema.py). SQLite is both the world format and the save format.
 
 Important tables:
 
@@ -76,7 +76,7 @@ Important tables:
 
 ### 2.4 Runtime Engine
 
-The runtime entry point is [anyzork/engine/game.py](/Users/jaden/Developer/anyzork/anyzork/engine/game.py).
+The runtime entry point is [anyzork/engine/game.py](../../anyzork/engine/game.py).
 
 The engine loop is deterministic:
 
@@ -93,7 +93,7 @@ Built-in commands include `look`, `inventory`, `quests`, `help`, `save`, `quit`,
 
 ### 2.5 Command DSL
 
-The command interpreter lives in [anyzork/engine/commands.py](/Users/jaden/Developer/anyzork/anyzork/engine/commands.py). It evaluates structured rules stored in `commands`.
+The command interpreter lives in [anyzork/engine/commands.py](../../anyzork/engine/commands.py). It evaluates structured rules stored in `commands`.
 
 Current precondition families include:
 
@@ -116,7 +116,7 @@ Current effect families include:
 - container and quantity operations
 - item toggle-state updates
 
-The authoritative effect/precondition contract is documented in [docs/dsl/command-spec.md](/Users/jaden/Developer/anyzork/docs/dsl/command-spec.md).
+The authoritative effect/precondition contract is documented in [docs/dsl/command-spec.md](../dsl/command-spec.md).
 
 ### 2.6 Quest and Trigger Systems
 
@@ -129,11 +129,11 @@ Quests do not gate actions directly. They observe state and present progress. Tr
 
 ### 2.7 Provider Abstraction
 
-Providers implement a shared interface in [anyzork/generator/providers/base.py](/Users/jaden/Developer/anyzork/anyzork/generator/providers/base.py). Narrator mode still relies on that abstraction, so the rest of the system does not care whether the backend is Claude, OpenAI, or Gemini.
+Providers implement a shared interface in [anyzork/generator/providers/base.py](../../anyzork/generator/providers/base.py). Narrator mode still relies on that abstraction, so the rest of the system does not care whether the backend is Claude, OpenAI, or Gemini.
 
 ### 2.8 Narrator
 
-Narrator mode lives in [anyzork/engine/narrator.py](/Users/jaden/Developer/anyzork/anyzork/engine/narrator.py). It is read-only presentation polish layered on top of deterministic output.
+Narrator mode lives in [anyzork/engine/narrator.py](../../anyzork/engine/narrator.py). It is read-only presentation polish layered on top of deterministic output.
 
 The narrator may restyle text, but it may not:
 

@@ -15,6 +15,10 @@ env/
 .env
 .env.*
 
+# Local AI / editor settings
+.claude/settings.local.json
+.claude/*.local.json
+
 # SQLite / game files
 *.db
 *.sqlite
