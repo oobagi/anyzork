@@ -5,8 +5,6 @@
   <p>
     <a href="#quickstart"><strong>Quickstart</strong></a>
     ·
-    <a href="#make-your-own-game"><strong>Make Your Own</strong></a>
-    ·
     <a href="examples/"><strong>Examples</strong></a>
     ·
     <a href="#docs"><strong>Docs</strong></a>
@@ -35,25 +33,18 @@ anyzork install haunted-lighthouse    # add it to your library
 anyzork play haunted-lighthouse       # start playing
 ```
 
-## Make Your Own Game
-
-Generate a prompt, send it to any LLM (Claude, GPT, Gemini, etc.), then compile the response into a playable game:
+Make your own:
 
 ```bash
-# one-liner — generates a prompt you paste into your LLM
 anyzork generate "haunted lighthouse on a cliff" -o prompt.txt
-
-# or use the interactive wizard
-anyzork generate --guided
-
-# compile the LLM's ZorkScript response into a .zork game
+# paste prompt.txt into any LLM, save the response as lighthouse.zorkscript
 anyzork import lighthouse.zorkscript -o lighthouse.zork
 anyzork play lighthouse.zork
 ```
 
-See the [CLI reference](docs/guides/CLI.md) for all commands and flags, including genre presets, lint, and `--report`.
-
 ## Features
+
+**[Make Your Own Game](docs/guides/CLI.md)** — Generate a prompt, paste it into any LLM to get [ZorkScript](docs/dsl/ZORKSCRIPT.md), then compile and play. A guided wizard or a one-liner gets you started.
 
 **[Playing Games](docs/guides/CLI.md)** — Play local files or library games, manage named save slots, and list your collection.
 
