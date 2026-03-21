@@ -555,9 +555,13 @@ def game_status(slug: str) -> None:
     is_flag=True,
     help="Print the public AnyZork ZorkScript authoring template and exit.",
 )
-def import_game(spec_source: str, output: Path | None, print_template: bool) -> None:
+@click.option("--report", is_flag=True, help="Print detailed import diagnostics.")
+def import_game(
+    spec_source: str, output: Path | None, print_template: bool, report: bool
+) -> None:
     """Compile ZorkScript into a .zork game."""
     from anyzork.importer import ZORKSCRIPT_AUTHORING_TEMPLATE, ImportSpecError, load_import_source
+    from anyzork.zorkscript import ZorkScriptError
 
     if print_template:
         console.print(ZORKSCRIPT_AUTHORING_TEMPLATE)
@@ -566,12 +570,140 @@ def import_game(spec_source: str, output: Path | None, print_template: bool) -> 
     cfg = Config()
     resolved_source = _resolve_import_source(spec_source)
 
+    # -- Parse spec ----------------------------------------------------------
     try:
         spec = load_import_source(resolved_source)
-    except ImportSpecError as exc:
-        console.print(f"[red]Import failed:[/red] {exc}")
-        sys.exit(1)
+    except ZorkScriptError as exc:
+        from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
 
+        diag = from_zorkscript_error(exc)
+        if report:
+            _print_early_failure_report(diag, exc)
+        else:
+            render_diagnostic(diag, console)
+        sys.exit(1)
+    except ImportSpecError as exc:
+        if report:
+            from anyzork.diagnostics import from_import_spec_error
+
+            diag = from_import_spec_error(exc)
+            _print_early_failure_report(diag, exc)
+            sys.exit(1)
+        else:
+            console.print(f"[red]Import failed:[/red] {exc}")
+            sys.exit(1)
+
+    # -- Report mode ---------------------------------------------------------
+    if report:
+        from anyzork.diagnostics import (
+            Diagnostic,
+            from_import_spec_error,
+            from_validation_error,
+            render_diagnostic,
+        )
+        from anyzork.lint import lint_spec
+
+        title = spec.get("game", {}).get("title", "Untitled")
+        lint_diagnostics = lint_spec(spec)
+
+        n_rooms = len(spec.get("rooms", []))
+        n_exits = len(spec.get("exits", []))
+        n_items = len(spec.get("items", []))
+        n_npcs = len(spec.get("npcs", []))
+        n_commands = len(spec.get("commands", []))
+        n_quests = len(spec.get("quests", []))
+
+        compile_ok = False
+        compile_error_msg: str | None = None
+        compile_diag: Diagnostic | None = None
+        result_path: Path | None = None
+        validation_diagnostics: list[Diagnostic] = []
+
+        try:
+            result = importing_service.import_zorkscript_spec(
+                spec=spec,
+                output_path=output,
+                cfg=cfg,
+            )
+            compile_ok = True
+            result_path = result.output_path
+            if result.warnings:
+                from anyzork.validation import ValidationError
+
+                for warning_str in result.warnings:
+                    ve = ValidationError(
+                        severity="warning", category="compile", message=warning_str,
+                    )
+                    validation_diagnostics.append(from_validation_error(ve))
+        except ImportSpecError as exc:
+            compile_error_msg = str(exc)
+            compile_diag = from_import_spec_error(exc)
+        except Exception as exc:
+            compile_error_msg = str(exc)
+            compile_diag = Diagnostic(
+                severity="error",
+                category="compile",
+                message=str(exc),
+                line=None,
+                hint=None,
+            )
+
+        # -- Print report ----------------------------------------------------
+        console.print()
+        console.print(f"=== Import Report: {title} ===")
+        console.print()
+        console.print(
+            f"Entities: {n_rooms} rooms, {n_exits} exits, {n_items} items, "
+            f"{n_npcs} NPCs, {n_commands} commands, {n_quests} quests"
+        )
+        console.print()
+
+        console.print("--- Lint (spec-level) ---")
+        if lint_diagnostics:
+            for diag in lint_diagnostics:
+                render_diagnostic(diag, console)
+        else:
+            console.print("No issues found.")
+        console.print()
+
+        console.print("--- Compile ---")
+        if compile_ok:
+            console.print(f"OK -> {result_path}")
+        else:
+            console.print(f"FAILED: {compile_error_msg}")
+        console.print()
+
+        console.print("--- Validation (post-import) ---")
+        if compile_diag:
+            render_diagnostic(compile_diag, console)
+        elif validation_diagnostics:
+            for diag in validation_diagnostics:
+                render_diagnostic(diag, console)
+        else:
+            console.print("No issues found.")
+        console.print()
+
+        all_diagnostics = lint_diagnostics + validation_diagnostics
+        if compile_diag:
+            all_diagnostics.append(compile_diag)
+        n_errors = sum(1 for d in all_diagnostics if d.severity == "error")
+        n_warnings = sum(1 for d in all_diagnostics if d.severity == "warning")
+
+        console.print("--- Totals ---")
+        console.print(f"{n_errors} errors, {n_warnings} warnings")
+
+        if compile_ok and result_path is not None:
+            play_ref: Path | str = result_path
+            if result_path.parent.resolve() == cfg.games_dir.resolve():
+                play_ref = result_path.stem
+            console.print()
+            console.print(f"Play it with:  anyzork play {play_ref}")
+
+        if n_errors > 0:
+            sys.exit(1)
+        return
+
+    # -- Normal (non-report) mode --------------------------------------------
     try:
         result = importing_service.import_zorkscript_spec(
             spec=spec,
@@ -603,6 +735,48 @@ def import_game(spec_source: str, output: Path | None, print_template: bool) -> 
     if result_path.parent.resolve() == cfg.games_dir.resolve():
         play_ref = result_path.stem
     console.print(f"[dim]Play it with:[/dim]  anyzork play {play_ref}")
+
+
+@cli.command()
+@click.argument("source", required=False, default="-")
+def lint(source: str) -> None:
+    """Check ZorkScript for errors without importing."""
+    from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
+    from anyzork.lint import lint_spec
+    from anyzork.zorkscript import ZorkScriptError, parse_zorkscript
+
+    resolved_source = _resolve_import_source(source)
+
+    # Read the raw text
+    if resolved_source == "-":
+        raw_text = sys.stdin.read()
+    else:
+        raw_text = Path(resolved_source).read_text(encoding="utf-8")
+
+    # Parse
+    try:
+        spec = parse_zorkscript(raw_text)
+    except ZorkScriptError as exc:
+        diag = from_zorkscript_error(exc)
+        render_diagnostic(diag, console)
+        console.print()
+        console.print("1 error, 0 warnings")
+        sys.exit(1)
+
+    # Lint
+    diagnostics = lint_spec(spec)
+
+    if diagnostics:
+        for diag in diagnostics:
+            render_diagnostic(diag, console)
+        console.print()
+        n_errors = sum(1 for d in diagnostics if d.severity == "error")
+        n_warnings = sum(1 for d in diagnostics if d.severity == "warning")
+        console.print(f"{n_errors} errors, {n_warnings} warnings")
+        if n_errors > 0:
+            sys.exit(1)
+    else:
+        console.print("No issues found.")
 
 
 @cli.command("install")
@@ -752,6 +926,34 @@ def _looks_like_catalog_ref(value: str) -> bool:
         return False
 
     return not ("/" in value or "\\" in value)
+
+
+def _print_early_failure_report(
+    diag: object,
+    exc: Exception,
+    *,
+    _console: Console | None = None,
+) -> None:
+    """Print the --report skeleton when parsing/compilation fails before lint runs.
+
+    Both the ZorkScriptError and ImportSpecError handlers in ``import_game``
+    share the same report structure; this helper deduplicates them.
+    """
+    from anyzork.diagnostics import Diagnostic, render_diagnostic
+
+    assert isinstance(diag, Diagnostic)
+    c = _console or console
+    c.print()
+    c.print("=== Import Report ===")
+    c.print()
+    c.print("--- Lint (spec-level) ---")
+    render_diagnostic(diag, c)
+    c.print()
+    c.print("--- Compile ---")
+    c.print(f"FAILED: {exc}")
+    c.print()
+    c.print("--- Totals ---")
+    c.print("1 error, 0 warnings")
 
 
 def _resolve_import_source(spec_source: str) -> str:
