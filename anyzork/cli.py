@@ -28,6 +28,20 @@ from anyzork.sharing import (
     SHARE_PACKAGE_SUFFIX,
     SharePackageError,
 )
+
+
+def _upload_url() -> str:
+    """Return the catalog upload URL, allowing env var override."""
+    import os
+
+    return os.environ.get("ANYZORK_UPLOAD_URL", OFFICIAL_UPLOAD_URL)
+
+
+def _catalog_url() -> str:
+    """Return the catalog browse URL, allowing env var override."""
+    import os
+
+    return os.environ.get("ANYZORK_CATALOG_URL", OFFICIAL_CATALOG_URL)
 from anyzork.versioning import RUNTIME_COMPAT_VERSION
 
 console = Console()
@@ -39,29 +53,6 @@ T = TypeVar("T")
 
 if TYPE_CHECKING:
     from anyzork.db.schema import GameDB
-
-
-def _share_metadata_options(func: Callable[..., object]) -> Callable[..., object]:
-    """Add public share-metadata options to a CLI command."""
-    options = [
-        click.option("--title", type=str, default=None, help="Public title override."),
-        click.option("--author", type=str, default=None, help="Public author name."),
-        click.option("--description", type=str, default=None, help="Public description."),
-        click.option("--tagline", type=str, default=None, help="Short public tagline."),
-        click.option(
-            "--genre",
-            "genres",
-            multiple=True,
-            help="Public genre tag. Repeat for multiple values.",
-        ),
-        click.option("--slug", type=str, default=None, help="Public catalog slug override."),
-        click.option("--homepage-url", type=str, default=None, help="Public homepage URL."),
-        click.option("--cover-image-url", type=str, default=None, help="Public cover image URL."),
-    ]
-    wrapped = func
-    for option in reversed(options):
-        wrapped = option(wrapped)
-    return wrapped
 
 
 @click.group()
@@ -385,12 +376,6 @@ def _library_game_id(path: Path) -> str | None:
     return str(game_id) if game_id else None
 
 
-def _normalize_genres(genres: tuple[str, ...]) -> list[str] | None:
-    """Return clean genre values or None when no overrides were supplied."""
-    cleaned = [genre.strip() for genre in genres if genre.strip()]
-    return cleaned or None
-
-
 def _normalize_optional_text(value: str | None) -> str | None:
     """Return stripped text or None when empty."""
     if value is None:
@@ -421,16 +406,6 @@ def _prompt_optional_genres(default: list[str] | None = None) -> list[str] | Non
 
 def _resolve_publish_listing_metadata(
     source_path: Path,
-    *,
-    guided: bool,
-    title: str | None,
-    author: str | None,
-    description: str | None,
-    tagline: str | None,
-    genres: tuple[str, ...],
-    slug: str | None,
-    homepage_url: str | None,
-    cover_image_url: str | None,
 ) -> tuple[
     str | None,
     str | None,
@@ -441,44 +416,24 @@ def _resolve_publish_listing_metadata(
     str | None,
     str | None,
 ]:
-    """Return resolved public listing metadata for ``publish``."""
+    """Walk the user through the publish listing wizard."""
     from anyzork.sharing import build_share_manifest
-
-    normalized_title = _normalize_optional_text(title)
-    normalized_author = _normalize_optional_text(author)
-    normalized_description = _normalize_optional_text(description)
-    normalized_tagline = _normalize_optional_text(tagline)
-    normalized_genres = _normalize_genres(genres)
-    normalized_slug = _normalize_optional_text(slug)
-    normalized_homepage_url = _normalize_optional_text(homepage_url)
-    normalized_cover_image_url = _normalize_optional_text(cover_image_url)
-
-    if not guided:
-        return (
-            normalized_title,
-            normalized_author,
-            normalized_description,
-            normalized_tagline,
-            normalized_genres,
-            normalized_slug,
-            normalized_homepage_url,
-            normalized_cover_image_url,
-        )
 
     manifest = build_share_manifest(source_path)
     listing = dict(manifest.get("listing", {}))
-    title_default = normalized_title or str(listing.get("title") or source_path.stem)
-    author_default = normalized_author or str(listing.get("author") or "")
-    description_default = normalized_description or str(listing.get("description") or "")
-    tagline_default = normalized_tagline or str(listing.get("tagline") or "")
-    genres_default = normalized_genres or [
+    title_default = str(listing.get("title") or source_path.stem)
+    author_default = str(listing.get("author") or "")
+    description_default = str(listing.get("description") or "")
+    tagline_default = str(listing.get("tagline") or "")
+    genres_default = [
         str(genre).strip() for genre in listing.get("genres", []) if str(genre).strip()
     ]
-    homepage_default = normalized_homepage_url or str(listing.get("homepage_url") or "")
-    cover_default = normalized_cover_image_url or str(listing.get("cover_image_url") or "")
+    homepage_default = str(listing.get("homepage_url") or "")
+    cover_default = str(listing.get("cover_image_url") or "")
 
     console.print("[bold]Publish Listing[/bold]")
     console.print("[dim]Press enter to keep a suggested value, or type your own.[/dim]")
+    console.print()
 
     resolved_title = _prompt_optional_text("Public title", title_default) or title_default
     resolved_author = _prompt_optional_text("Author", author_default)
@@ -487,7 +442,7 @@ def _resolve_publish_listing_metadata(
     resolved_genres = _prompt_optional_genres(genres_default)
     resolved_slug = _prompt_optional_text(
         "Slug",
-        normalized_slug or _slugify_name(resolved_title or source_path.stem),
+        _slugify_name(resolved_title or source_path.stem),
     )
     resolved_homepage = _prompt_optional_text("Homepage URL", homepage_default)
     resolved_cover = _prompt_optional_text("Cover image URL", cover_default)
@@ -506,30 +461,11 @@ def _resolve_publish_listing_metadata(
 
 @cli.command("publish")
 @click.argument("game_ref", type=str)
-@click.option(
-    "--output",
-    "-o",
-    type=click.Path(path_type=Path),
-    default=None,
-    help="Output path for the share package.",
-)
-@click.option("--guided", is_flag=True, help="Launch an interactive listing wizard.")
-@_share_metadata_options
-def publish_game(
-    game_ref: str,
-    output: Path | None,
-    guided: bool,
-    title: str | None,
-    author: str | None,
-    description: str | None,
-    tagline: str | None,
-    genres: tuple[str, ...],
-    slug: str | None,
-    homepage_url: str | None,
-    cover_image_url: str | None,
-) -> None:
-    """Package a library game into a shareable archive."""
-    from anyzork.sharing import create_share_package
+def publish_game(game_ref: str) -> None:
+    """Package and upload a library game to the catalog."""
+    import tempfile
+
+    from anyzork.sharing import create_share_package, upload_share_package
 
     cfg = Config()
     source_path = _resolve_game_reference(game_ref, cfg)
@@ -538,9 +474,6 @@ def publish_game(
             "Publish a library game or original .zork file, not a managed save slot.",
             param_hint="game_ref",
         )
-
-    if output is None:
-        output = Path.cwd() / f"{source_path.stem}{SHARE_PACKAGE_SUFFIX}"
 
     (
         title,
@@ -551,101 +484,56 @@ def publish_game(
         slug,
         homepage_url,
         cover_image_url,
-    ) = _resolve_publish_listing_metadata(
-        source_path,
-        guided=guided,
-        title=title,
-        author=author,
-        description=description,
-        tagline=tagline,
-        genres=genres,
-        slug=slug,
-        homepage_url=homepage_url,
-        cover_image_url=cover_image_url,
-    )
+    ) = _resolve_publish_listing_metadata(source_path)
 
-    try:
-        package_path, manifest = create_share_package(
-            source_path,
-            output,
-            title=title,
-            author=author,
-            description=description,
-            tagline=tagline,
-            genres=genre_values,
-            slug=slug,
-            homepage_url=homepage_url,
-            cover_image_url=cover_image_url,
+    console.print()
+    if not click.confirm("Ready to publish?", default=True):
+        console.print("[dim]Canceled.[/dim]")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="anyzork-publish-") as tmp:
+        output = Path(tmp) / f"{source_path.stem}{SHARE_PACKAGE_SUFFIX}"
+
+        try:
+            package_path, manifest = create_share_package(
+                source_path,
+                output,
+                title=title,
+                author=author,
+                description=description,
+                tagline=tagline,
+                genres=genre_values,
+                slug=slug,
+                homepage_url=homepage_url,
+                cover_image_url=cover_image_url,
+            )
+        except SharePackageError as exc:
+            console.print(f"[red]Publish failed:[/red] {exc}")
+            sys.exit(1)
+
+        listing_title = str(
+            manifest.get("listing", {}).get("title")
+            or manifest.get("game", {}).get("title")
+            or source_path.stem
         )
-    except SharePackageError as exc:
-        console.print(f"[red]Publish failed:[/red] {exc}")
-        sys.exit(1)
+        console.print(f"[dim]Uploading[/dim] [cyan]{listing_title}[/cyan][dim]...[/dim]")
 
-    listing_title = str(
-        manifest.get("listing", {}).get("title")
-        or manifest.get("game", {}).get("title")
-        or source_path.stem
-    )
-    console.print(
-        f"[bold green]Packaged[/bold green] [cyan]{listing_title}[/cyan] "
-        f"[dim]to[/dim] [cyan]{package_path}[/cyan]"
-    )
-    console.print(f"[dim]Upload it with:[/dim]  anyzork upload {package_path}")
-    console.print(f"[dim]Install-test it with:[/dim]  anyzork install {package_path}")
-
-
-@cli.command("upload")
-@click.argument("source", type=str)
-@_share_metadata_options
-def upload_game(
-    source: str,
-    title: str | None,
-    author: str | None,
-    description: str | None,
-    tagline: str | None,
-    genres: tuple[str, ...],
-    slug: str | None,
-    homepage_url: str | None,
-    cover_image_url: str | None,
-) -> None:
-    """Upload a shared game package to the public catalog service."""
-    from anyzork.sharing import upload_share_package
-
-    genre_values = _normalize_genres(genres)
-    package_path = Path(source).expanduser()
-    if not package_path.exists() or package_path.suffix != SHARE_PACKAGE_SUFFIX:
-        raise click.BadParameter(
-            "Upload expects a .anyzorkpkg package. Run 'anyzork publish <game>' first.",
-            param_hint="source",
-        )
-
-    package_path = package_path.resolve()
-
-    try:
-        payload = upload_share_package(
-            package_path,
-            OFFICIAL_UPLOAD_URL,
-            title=title,
-            author=author,
-            description=description,
-            tagline=tagline,
-            genres=genre_values,
-            slug=slug,
-            homepage_url=homepage_url,
-            cover_image_url=cover_image_url,
-        )
-    except SharePackageError as exc:
-        console.print(f"[red]Upload failed:[/red] {exc}")
-        sys.exit(1)
+        try:
+            payload = upload_share_package(
+                package_path,
+                _upload_url(),
+            )
+        except SharePackageError as exc:
+            console.print(f"[red]Upload failed:[/red] {exc}")
+            sys.exit(1)
 
     game = dict(payload.get("game") or {})
-    uploaded_title = str(game.get("title") or title or source)
-    uploaded_slug = str(game.get("slug") or "")
+    uploaded_slug = str(game.get("slug") or slug or "")
     console.print(
-        f"[bold green]Uploaded[/bold green] [cyan]{uploaded_title}[/cyan]"
+        f"[bold green]Published![/bold green] [cyan]{listing_title}[/cyan]"
         + (f" [dim]as[/dim] [cyan]{uploaded_slug}[/cyan]" if uploaded_slug else "")
     )
-    console.print(f"[dim]Install it with:[/dim]  anyzork install {uploaded_slug or '<slug>'}")
+    console.print("[dim]It's pending review. Approve it from the admin dashboard.[/dim]")
 
 
 @cli.command("import")
@@ -731,7 +619,7 @@ def install_game(source: str, force: bool) -> None:
     if _looks_like_catalog_ref(source):
         try:
             resolved_source, catalog_game = resolve_catalog_game_source(
-                OFFICIAL_CATALOG_URL,
+                _catalog_url(),
                 source,
             )
             allow_remote = True
@@ -783,7 +671,7 @@ def browse_games(limit: int) -> None:
     from anyzork.sharing import load_public_catalog
 
     try:
-        catalog = load_public_catalog(OFFICIAL_CATALOG_URL)
+        catalog = load_public_catalog(_catalog_url())
     except SharePackageError as exc:
         console.print(f"[red]Browse failed:[/red] {exc}")
         sys.exit(1)
