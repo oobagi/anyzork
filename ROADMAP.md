@@ -24,7 +24,6 @@ Make it easier to write, fix, and iterate on games.
 Improve the optional LLM layer and provider onboarding.
 
 - [#11 Improve narrator/provider UX for bring-your-own-key users](https://github.com/oobagi/anyzork/issues/11)
-- [#12 Reduce install weight with optional narrator extras](https://github.com/oobagi/anyzork/issues/12)
 - [#22 Narrator immersive mode](https://github.com/oobagi/anyzork/issues/22)
 
 ## 4. Packaging and Distribution
@@ -62,6 +61,7 @@ Optional turn-based combat — depends on quest failure (#23), reactive NPCs (#2
 
 Mature the public catalog once the authoring and engine layers are solid.
 
+- [#34 Admin UI: delete games, view/edit ZorkScript and manifest](https://github.com/oobagi/anyzork/issues/34)
 - [#20 Catalog moderation and curation workflow](https://github.com/oobagi/anyzork/issues/20)
 
 ## 9. Architecture Cleanup
