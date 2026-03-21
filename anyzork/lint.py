@@ -52,11 +52,7 @@ def lint_spec(spec: dict[str, Any]) -> list[Diagnostic]:
     npc_ids = _collect_ids(spec, "npcs")
     exit_ids = _collect_ids(spec, "exits")
     flag_ids = _collect_ids(spec, "flags")
-    _lock_ids = _collect_ids(spec, "locks")
     puzzle_ids = _collect_ids(spec, "puzzles")
-    _quest_ids = _collect_ids(spec, "quests")
-    _command_ids = _collect_ids(spec, "commands")
-    _trigger_ids = _collect_ids(spec, "triggers")
     dialogue_node_ids = _collect_ids(spec, "dialogue_nodes")
 
     # -- Structure checks ----------------------------------------------------
@@ -92,6 +88,7 @@ def lint_spec(spec: dict[str, Any]) -> list[Diagnostic]:
     all_entity_lists = [
         "rooms", "items", "npcs", "exits", "flags", "locks",
         "puzzles", "quests", "commands", "triggers",
+        "dialogue_nodes", "dialogue_options",
     ]
     seen_ids: dict[str, str] = {}
     for entity_key in all_entity_lists:

@@ -19,7 +19,6 @@ from anyzork.lint import lint_spec
 from anyzork.validation import ValidationError
 from anyzork.zorkscript import ZorkScriptError
 
-
 # ── diagnostics.py ───────────────────────────────────────────────────────
 
 
@@ -221,3 +220,85 @@ class TestLintCli:
         runner = CliRunner()
         result = runner.invoke(cli, ["lint", str(src)])
         assert result.exit_code == 1
+
+
+# ── --report CLI tests ───────────────────────────────────────────────────
+
+
+_ZORKSCRIPT_ONE_WAY_EXIT = """\
+game {
+  title "One-Way Game"
+  author "Test author."
+  max_score 0
+  win [game_won]
+}
+
+player {
+  start foyer
+}
+
+room foyer {
+  name "Foyer"
+  description "A quiet foyer."
+  short "A quiet foyer."
+  region "house"
+  start true
+
+  exit north -> study
+}
+
+room study {
+  name "Study"
+  description "A cramped study."
+  short "A cramped study."
+  region "house"
+}
+
+flag game_won "Tracks victory."
+
+on "win game" in [foyer, study] {
+  effect set_flag(game_won)
+  success "You win."
+}
+"""
+
+
+class TestImportReportCli:
+    def test_report_valid_file(
+        self, tmp_path: Path, minimal_zorkscript: str
+    ) -> None:
+        """--report on a valid file shows entity counts and no errors."""
+        src = tmp_path / "game.zork"
+        src.write_text(minimal_zorkscript, encoding="utf-8")
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["import", str(src), "-o", str(tmp_path / "out.zork"), "--report"]
+        )
+        assert result.exit_code == 0
+        assert "Entities:" in result.output
+        assert "rooms" in result.output
+        assert "No issues found" in result.output or "0 errors" in result.output
+
+    def test_report_file_with_lint_warnings(self, tmp_path: Path) -> None:
+        """--report on a file with one-way exits shows warnings."""
+        src = tmp_path / "oneway.zork"
+        src.write_text(_ZORKSCRIPT_ONE_WAY_EXIT, encoding="utf-8")
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["import", str(src), "-o", str(tmp_path / "out.zork"), "--report"]
+        )
+        # Warnings don't cause a non-zero exit code
+        assert result.exit_code == 0
+        assert "one-way" in result.output.lower() or "WARNING" in result.output
+
+    def test_report_file_fails_compilation(self, tmp_path: Path) -> None:
+        """--report on an unparseable file shows failure indicator."""
+        src = tmp_path / "broken.zork"
+        src.write_text("this is not valid zorkscript", encoding="utf-8")
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["import", str(src), "--report"]
+        )
+        assert result.exit_code == 1
+        assert "FAILED" in result.output
+        assert "1 error" in result.output

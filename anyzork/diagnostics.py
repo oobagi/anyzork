@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from rich.console import Console
+from rich.markup import escape
 
 if TYPE_CHECKING:
     from anyzork.importer._constants import ImportSpecError
@@ -78,8 +79,10 @@ def render_diagnostic(diag: Diagnostic, console: Console) -> None:
     color = {"error": "red", "warning": "yellow"}.get(diag.severity, "white")
     tag = diag.severity.upper()
     loc = f"line {diag.line}: " if diag.line else ""
+    safe_msg = escape(diag.message)
     console.print(
-        f"[{color}]\\[{tag}][{diag.category}][/{color}] {loc}{diag.message}"
+        f"[{color}]\\[{tag}][{diag.category}][/{color}] {loc}{safe_msg}"
     )
     if diag.hint:
-        console.print(f"  [dim]hint: {diag.hint}[/dim]")
+        safe_hint = escape(diag.hint)
+        console.print(f"  [dim]hint: {safe_hint}[/dim]")

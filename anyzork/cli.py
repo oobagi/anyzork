@@ -578,36 +578,16 @@ def import_game(
 
         diag = from_zorkscript_error(exc)
         if report:
-            console.print()
-            console.print("=== Import Report ===")
-            console.print()
-            console.print("--- Lint (spec-level) ---")
-            render_diagnostic(diag, console)
-            console.print()
-            console.print("--- Compile ---")
-            console.print(f"FAILED: {exc}")
-            console.print()
-            console.print("--- Totals ---")
-            console.print("1 error, 0 warnings")
+            _print_early_failure_report(diag, exc)
         else:
             render_diagnostic(diag, console)
         sys.exit(1)
     except ImportSpecError as exc:
         if report:
-            from anyzork.diagnostics import from_import_spec_error, render_diagnostic
+            from anyzork.diagnostics import from_import_spec_error
 
             diag = from_import_spec_error(exc)
-            console.print()
-            console.print("=== Import Report ===")
-            console.print()
-            console.print("--- Lint (spec-level) ---")
-            render_diagnostic(diag, console)
-            console.print()
-            console.print("--- Compile ---")
-            console.print(f"FAILED: {exc}")
-            console.print()
-            console.print("--- Totals ---")
-            console.print("1 error, 0 warnings")
+            _print_early_failure_report(diag, exc)
             sys.exit(1)
         else:
             console.print(f"[red]Import failed:[/red] {exc}")
@@ -946,6 +926,34 @@ def _looks_like_catalog_ref(value: str) -> bool:
         return False
 
     return not ("/" in value or "\\" in value)
+
+
+def _print_early_failure_report(
+    diag: object,
+    exc: Exception,
+    *,
+    _console: Console | None = None,
+) -> None:
+    """Print the --report skeleton when parsing/compilation fails before lint runs.
+
+    Both the ZorkScriptError and ImportSpecError handlers in ``import_game``
+    share the same report structure; this helper deduplicates them.
+    """
+    from anyzork.diagnostics import Diagnostic, render_diagnostic
+
+    assert isinstance(diag, Diagnostic)
+    c = _console or console
+    c.print()
+    c.print("=== Import Report ===")
+    c.print()
+    c.print("--- Lint (spec-level) ---")
+    render_diagnostic(diag, c)
+    c.print()
+    c.print("--- Compile ---")
+    c.print(f"FAILED: {exc}")
+    c.print()
+    c.print("--- Totals ---")
+    c.print("1 error, 0 warnings")
 
 
 def _resolve_import_source(spec_source: str) -> str:
