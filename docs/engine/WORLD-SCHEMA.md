@@ -73,7 +73,7 @@ Key fields:
 - `app_version`, `prompt_system_version`
 - `intro_text`, `win_text`, `lose_text`
 - `win_conditions`, `lose_conditions`
-- `max_score`, `region_count`, `room_count`
+- `max_score`, `room_count`
 - `realism`
 - `game_id`, `source_game_id`, `source_path`, `save_slot`, `last_played_at`, `is_template`
 
@@ -85,7 +85,6 @@ Key fields:
 
 - `id`, `name`
 - `description`, `short_description`, `first_visit_text`
-- `region`
 - `is_dark`, `is_start`, `visited`
 
 ### `exits`

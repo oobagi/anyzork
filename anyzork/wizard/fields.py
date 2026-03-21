@@ -82,17 +82,17 @@ class FieldDef:
 # ---------------------------------------------------------------------------
 
 SCALE_OPTIONS = [
-    ("Small", "3-5 rooms, 1 region. Tight and focused."),
-    ("Medium", "6-12 rooms, 1-2 regions. A solid adventure."),
-    ("Large", "13-25 rooms, 2-4 regions. A sprawling world."),
+    ("Small", "3-5 rooms. Tight and focused."),
+    ("Medium", "6-12 rooms. A solid adventure."),
+    ("Large", "13-25 rooms. A sprawling world."),
 ]
 
 SCALE_VALUES = ["small", "medium", "large"]
 
 SCALE_DETAIL = {
-    "small": "small (3-5 rooms, 1 region)",
-    "medium": "medium (6-12 rooms, 1-2 regions)",
-    "large": "large (13-25 rooms, 2-4 regions)",
+    "small": "small (3-5 rooms)",
+    "medium": "medium (6-12 rooms)",
+    "large": "large (13-25 rooms)",
 }
 
 REALISM_OPTIONS = [

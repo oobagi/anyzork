@@ -224,7 +224,6 @@ Rooms are the atomic unit of space in AnyZork. Every location the player can vis
 | `description` | Full prose description shown on first visit or when the player types `look`. Should establish atmosphere, mention visible items and exits, and embed clues for nearby puzzles. |
 | `short_description` | Abbreviated description shown on subsequent visits. Should orient the player without repeating prose. |
 | `first_visit_text` | Optional one-time text shown only the very first time the player enters. Used for cutscene-like moments, triggered events, or atmosphere-setting. |
-| `region` | Groups rooms into logical areas (e.g., "Forest", "Castle", "Caves"). Used for theming and progression tracking. |
 | `is_dark` | Whether the room requires a light source to see. If dark and no light source, the player gets a darkness message and most interactions are blocked. |
 
 ### Room Rendering
@@ -243,14 +242,6 @@ Good room descriptions follow a layered structure:
 2. **Landmarks** (next 1-2 sentences): notable features of the room that establish it as a distinct place.
 3. **Interactive elements** (embedded naturally): items and exits are woven into the prose, not listed mechanically. "A rusty key hangs from a hook by the door" is better than "Items: rusty key."
 4. **Clue embedding** (subtle): details that become significant later. A scratched symbol on the wall, a faint smell of sulfur, an out-of-place book. These don't announce themselves as clues.
-
-### Regions
-
-Regions group rooms into thematic and mechanical areas:
-
-- **Thematic cohesion**: rooms in a region share tone, vocabulary, and atmosphere.
-- **Progression gating**: regions are often separated by locks/gates. Unlocking access to a new region is a major progression milestone.
-- **Pacing**: early regions are simpler (fewer puzzles, more guidance). Later regions increase complexity.
 
 ---
 

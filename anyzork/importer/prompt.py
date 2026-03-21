@@ -70,7 +70,6 @@ room cell {
   description "A narrow stone cell with damp walls. An iron door hangs open to the north. A rickety wooden table stands against the far wall, and a straw pallet lies in the corner. Scratches on the wall mark hundreds of days."
   short       "Your former cell."
   first_visit "The silence here is heavier than the stone walls."
-  region      "dungeon"
   start       true
 
   exit north -> corridor
@@ -80,7 +79,6 @@ room corridor {
   name        "Dungeon Corridor"
   description "A long corridor lit by guttering torches. The air smells of damp stone and old smoke. Doors line the east wall. To the north, a heavy portcullis blocks the passage."
   short       "A torch-lit corridor running north-south."
-  region      "dungeon"
 
   exit south -> cell
   exit north -> gate_room
@@ -92,7 +90,6 @@ room supply_closet {
   name        "Supply Closet"
   description "A cramped closet stuffed with crates and mouldering rope. A rusty lever protrudes from the wall, connected to chains that vanish into the ceiling. A wooden shelf holds dusty supplies."
   short       "A cluttered supply closet with a lever on the wall."
-  region      "dungeon"
 
   exit west -> corridor
 }
@@ -102,7 +99,6 @@ room cellar {
   description "Pitch darkness swallows everything. The air is cold and still. You can hear water dripping somewhere ahead."
   short       "A pitch-dark cellar."
   first_visit "The darkness is absolute. You cannot see your hand in front of your face."
-  region      "dungeon"
   dark        true
 
   exit up    -> corridor
@@ -114,7 +110,6 @@ room vault {
   description "A small stone vault, dry and cold. A heavy iron chest sits against the far wall. Cobwebs blanket the ceiling."
   short       "A sealed vault with an iron chest."
   first_visit "Stale air rushes out as the door opens for the first time in years."
-  region      "dungeon"
   dark        true
 
   exit south -> cellar
@@ -124,7 +119,6 @@ room gate_room {
   name        "Portcullis Chamber"
   description "The corridor ends at a massive iron portcullis. Beyond it, a stone staircase climbs toward daylight. A guard slouches on a stool beside the gate, half-asleep."
   short       "The portcullis chamber. A guard watches the gate."
-  region      "dungeon"
 
   exit south -> corridor
   exit north -> courtyard (locked)
@@ -135,7 +129,6 @@ room courtyard {
   description "Warm sunlight floods a flagstone courtyard. An overgrown garden borders the eastern wall. The main road leads west to freedom."
   short       "A bright courtyard outside the dungeon."
   first_visit "The light stings your eyes after so long underground."
-  region      "exterior"
 
   exit south -> gate_room
 }
@@ -739,21 +732,21 @@ def build_zorkscript_prompt(
 
 _SCALE_REQUIREMENTS: dict[str, dict[str, str]] = {
     "small": {
-        "rooms": "3-5 rooms in 1 region. Every room dense with interactables.",
+        "rooms": "3-5 rooms. Every room dense with interactables.",
         "items": "At least 6 items. Every room has 2+ examinable objects.",
         "npcs": "1-2 NPCs with dialogue.",
         "puzzles": "1-2 puzzles.",
         "quests": "1 main quest with 2-3 objectives.",
     },
     "medium": {
-        "rooms": "6-12 rooms across 1-2 regions.",
+        "rooms": "6-12 rooms.",
         "items": "At least 10 items. Every major room has 2+ examinable objects.",
         "npcs": "2-4 NPCs with dialogue trees.",
         "puzzles": "2-3 puzzles with multi-step solutions.",
         "quests": "1 main quest with 3+ objectives. Side quests encouraged.",
     },
     "large": {
-        "rooms": "13-25 rooms across 2-4 regions.",
+        "rooms": "13-25 rooms.",
         "items": "At least 20 items. Every room has 2+ examinable objects.",
         "npcs": "4+ NPCs with branching dialogue trees.",
         "puzzles": "3-5 puzzles with multi-step solutions.",
