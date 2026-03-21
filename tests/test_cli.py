@@ -8,6 +8,7 @@ from click.testing import CliRunner
 
 from anyzork import cli as cli_module
 from anyzork.cli import cli
+from anyzork.config import DEFAULT_CATALOG_URL, DEFAULT_UPLOAD_URL
 from anyzork.importer import compile_import_spec
 from anyzork.services import library as library_service
 from anyzork.sharing import PUBLIC_CATALOG_FORMAT, create_share_package
@@ -53,8 +54,8 @@ def test_play_creates_and_restarts_managed_save_slot(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     def fake_start(self) -> None:
         started_paths.append(self.db.path)
@@ -89,8 +90,8 @@ def test_playing_a_zork_file_path_creates_a_managed_save(
             self.narrator_enabled = False
             self.games_dir = tmp_path / "library"
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     def fake_start(self) -> None:
         started_paths.append(self.db.path)
@@ -123,8 +124,8 @@ def test_play_without_game_ref_shows_games_even_when_saves_exist(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     library_service.prepare_managed_save(
         target_game,
@@ -166,8 +167,8 @@ def test_play_without_game_ref_can_select_library_game(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     def fake_start(self) -> None:
         started_paths.append(self.db.path)
@@ -204,8 +205,8 @@ def test_list_shows_library_table_with_active_save_count_only(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     _alpha_path, _ = library_service.prepare_managed_save(target_game, "alpha", False, FakeConfig())
     beta_path, _ = library_service.prepare_managed_save(target_game, "beta", False, FakeConfig())
@@ -253,8 +254,8 @@ def test_saves_lists_all_saves_and_can_filter_by_game(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     library_service.prepare_managed_save(target_game, "alpha", False, FakeConfig())
     library_service.prepare_managed_save(second_game, "omega", False, FakeConfig())
@@ -298,8 +299,8 @@ def test_publish_creates_share_package(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     def fake_upload_share_package(
         package_path: Path,
@@ -350,8 +351,8 @@ def test_publish_accepts_public_listing_metadata(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     def fake_upload_share_package(
         package_path: Path,
@@ -409,8 +410,8 @@ def test_publish_wizard_prompts_for_listing_metadata(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     def fake_upload_share_package(
         package_path: Path,
@@ -466,8 +467,8 @@ def test_install_adds_shared_package_to_library(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     monkeypatch.setattr(cli_module, "Config", FakeConfig)
 
@@ -497,8 +498,8 @@ def test_install_uses_catalog_ref_and_relative_package_path(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     monkeypatch.setattr(cli_module, "Config", FakeConfig)
     monkeypatch.setattr(
@@ -534,8 +535,8 @@ def test_install_rejects_local_raw_zork_files(
             self.narrator_enabled = False
             self.games_dir = library_dir
             self.saves_dir = saves_dir
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     monkeypatch.setattr(cli_module, "Config", FakeConfig)
 
@@ -555,8 +556,8 @@ def test_install_rejects_remote_urls(
             self.narrator_enabled = False
             self.games_dir = tmp_path / "library"
             self.saves_dir = tmp_path / "saves"
-            self.catalog_url = "https://anyzork.com/catalog.json"
-            self.upload_url = "https://anyzork.com/api/games"
+            self.catalog_url = DEFAULT_CATALOG_URL
+            self.upload_url = DEFAULT_UPLOAD_URL
 
     monkeypatch.setattr(cli_module, "Config", FakeConfig)
 

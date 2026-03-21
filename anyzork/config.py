@@ -30,6 +30,10 @@ _DEFAULT_MODELS: dict[LLMProvider, str] = {
 CONFIG_DIR: Path = Path.home() / ".anyzork"
 CONFIG_FILE: Path = CONFIG_DIR / "config.toml"
 
+# Default URLs (single source of truth).
+DEFAULT_CATALOG_URL: str = "https://anyzork.com/catalog.json"
+DEFAULT_UPLOAD_URL: str = "https://anyzork.com/api/games"
+
 _PROVIDER_TO_KEY_TYPE: dict[LLMProvider, str] = {
     LLMProvider.CLAUDE: "anthropic",
     LLMProvider.OPENAI: "openai",
@@ -112,12 +116,12 @@ class Config(BaseSettings):
 
     # --- Runtime settings ---
     narrator_enabled: bool = False
-    narrator_temperature: float = 0.9
-    narrator_max_tokens: int = 4096
+    narrator_temperature: float = Field(default=0.9, ge=0.0, le=2.0)
+    narrator_max_tokens: int = Field(default=4096, ge=1)
 
     # --- URLs ---
-    catalog_url: str = "https://anyzork.com/catalog.json"
-    upload_url: str = "https://anyzork.com/api/games"
+    catalog_url: str = DEFAULT_CATALOG_URL
+    upload_url: str = DEFAULT_UPLOAD_URL
 
     # --- Paths ---
     games_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "games")

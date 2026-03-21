@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import anyzork.config as config_module
 from anyzork.cli import CLI_VERSION
-from anyzork.config import Config, LLMProvider
+from anyzork.config import DEFAULT_CATALOG_URL, DEFAULT_UPLOAD_URL, Config, LLMProvider
 from anyzork.versioning import RUNTIME_COMPAT_VERSION, is_runtime_compat_version
 
 
@@ -53,8 +53,8 @@ def test_config_defaults_for_new_fields(monkeypatch) -> None:
     assert cfg.narrator_enabled is False
     assert cfg.narrator_temperature == 0.9
     assert cfg.narrator_max_tokens == 4096
-    assert cfg.catalog_url == "https://anyzork.com/catalog.json"
-    assert cfg.upload_url == "https://anyzork.com/api/games"
+    assert cfg.catalog_url == DEFAULT_CATALOG_URL
+    assert cfg.upload_url == DEFAULT_UPLOAD_URL
 
 
 def test_config_reads_narrator_settings_from_toml(monkeypatch) -> None:
