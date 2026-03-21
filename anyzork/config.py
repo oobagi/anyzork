@@ -77,9 +77,10 @@ class Config(BaseSettings):
     """Central configuration for AnyZork.
 
     Values are read from environment variables prefixed with ``ANYZORK_``.
-    Narrator provider settings and API keys also fall back to provider-standard
-    env vars (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``, ``GOOGLE_API_KEY``),
-    and finally to ``~/.anyzork/config.toml``.
+    Narrator provider settings fall back to ``~/.anyzork/config.toml``.
+    Narrator API keys come from provider-standard env vars
+    (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``, ``GOOGLE_API_KEY``),
+    or from the optional ``[keys]`` section in ``~/.anyzork/config.toml``.
     """
 
     model_config = SettingsConfigDict(
@@ -93,8 +94,7 @@ class Config(BaseSettings):
     provider: LLMProvider = LLMProvider.CLAUDE
     model: str | None = None
 
-    # --- Narrator API keys (ANYZORK_ANTHROPIC_API_KEY, etc.) ---
-    # These are secondary — we also check the standard env vars in get_api_key().
+    # --- Narrator API keys from config file defaults ---
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     google_api_key: str | None = None
@@ -150,9 +150,8 @@ class Config(BaseSettings):
         """Return the API key for the active provider.
 
         Checks (in order):
-          1. ANYZORK_-prefixed field (env var or .env)
-          2. Provider SDK's standard env var
-          3. ``~/.anyzork/config.toml`` ``[keys]`` section
+          1. Provider SDK's standard env var
+          2. ``~/.anyzork/config.toml`` ``[keys]`` section
         """
         key_map: dict[LLMProvider, tuple[str | None, str]] = {
             LLMProvider.CLAUDE: (self.anthropic_api_key, "ANTHROPIC_API_KEY"),
@@ -161,7 +160,7 @@ class Config(BaseSettings):
         }
 
         field_value, env_name = key_map.get(self.provider, (None, ""))
-        result = field_value or os.environ.get(env_name)
+        result = os.environ.get(env_name) or field_value
         if result:
             return result
 

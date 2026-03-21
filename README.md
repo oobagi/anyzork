@@ -1,14 +1,19 @@
 <div align="center">
   <img src="assets/anyzork-header.png" alt="AnyZork" width="520">
   <h1>AnyZork</h1>
-  <p><strong>Build deterministic <a href="https://en.wikipedia.org/wiki/Zork">Zork</a>-style text adventures with AI-assisted authoring.</strong></p>
-  <p>Generate a ZorkScript authoring prompt, have an LLM write the world, compile it into a portable SQLite <code>.zork</code> file, and play it with a deterministic engine.</p>
+  <p><strong>Use an LLM once to author a world, then play it on a deterministic engine.</strong></p>
   <p>
     <a href="#quickstart"><strong>Quickstart</strong></a>
     ·
-    <a href="#core-concepts"><strong>Core Concepts</strong></a>
+    <a href="#make-your-own-game"><strong>Make Your Own Game</strong></a>
     ·
-    <a href="#how-it-works"><strong>How It Works</strong></a>
+    <a href="#playing-games"><strong>Playing Games</strong></a>
+    ·
+    <a href="#narrator-mode"><strong>Narrator Mode</strong></a>
+    ·
+    <a href="#roadmap"><strong>Roadmap</strong></a>
+    ·
+    <a href="#contributing"><strong>Contributing</strong></a>
     ·
     <a href="#sharing-games"><strong>Sharing Games</strong></a>
     ·
@@ -20,81 +25,67 @@
 
 ## Quickstart
 
-Install from a fresh clone:
+> Requires Python 3.11+
 
 ```bash
 git clone https://github.com/oobagi/anyzork.git
-cd anyzork
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e .
+cd anyzork && python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e .
 ```
 
-Requires Python 3.11+.
-
-Try the included example without using an LLM:
+Try the bundled example:
 
 ```bash
-anyzork import examples/minimal_game.zorkscript -o starter.zork
-anyzork play starter.zork
+anyzork import examples/alchemist_tower.zorkscript -o tower.zork
+anyzork play tower.zork
 ```
 
-If you want optional narrator mode, install the narrator extra:
+## Make Your Own Game
+
+```bash
+# 1. Generate an authoring prompt (guided wizard or one-liner)
+anyzork generate --guided
+anyzork generate "A haunted lighthouse on a foggy coast"
+
+# 2. Paste the prompt into any LLM — it returns ZorkScript
+
+# 3. Import and play
+anyzork import game.zorkscript
+anyzork play game
+```
+
+## Playing Games
+
+```bash
+anyzork play game.zork               # play a local file
+anyzork play game                    # play a library game by name
+anyzork play game --slot beta        # named save slot
+anyzork play game --slot beta --new  # restart a slot
+anyzork list                         # list library games
+anyzork saves game                   # list save slots
+```
+
+Games imported without `-o` go into `~/.anyzork/games/`. Save slots live in `~/.anyzork/saves/`.
+
+## Narrator Mode
+
+An optional live-LLM layer that rewrites presentation without touching game state.
 
 ```bash
 pip install -e ".[narrator]"
+anyzork play game --narrator
 ```
 
-Create your own game:
+Set a provider via env vars or `~/.anyzork/config.toml`:
 
-```bash
-anyzork generate --guided
-# paste the generated authoring prompt into your LLM
-# save the response as game.zorkscript
-anyzork import game.zorkscript -o game.zork
-anyzork play game.zork
-```
+| Provider | Env Var |
+|---|---|
+| `claude` | `ANTHROPIC_API_KEY` |
+| `openai` | `OPENAI_API_KEY` |
+| `gemini` | `GOOGLE_API_KEY` |
 
-Prefer a one-line prompt? Use:
-
-```bash
-anyzork generate "A haunted lighthouse on a foggy coast"
-```
-
-Optional narrator mode:
-
-```bash
-anyzork play game.zork --narrator
-```
-
-> AnyZork uses an LLM during authoring, not during normal play. Runtime stays deterministic unless you explicitly enable narrator mode.
-
-## Project Status
-
-AnyZork is open source and MIT-licensed, but it is currently maintained as a solo project.
-
-External pull requests and general code contributions are not being accepted right now.
-
-If you run into a reproducible bug, feel free to open an issue. For security-sensitive problems, use the guidance in [SECURITY.md](SECURITY.md).
-
-## Narrator Setup
-
-Narrator mode is optional and only affects presentation during play. Configure a provider with either standard provider env vars or `ANYZORK_` overrides:
-
-```bash
-export ANYZORK_PROVIDER=openai
-export OPENAI_API_KEY=your_key_here
-anyzork play game.zork --narrator
-```
-
-Supported providers:
-
-- `claude` with `ANTHROPIC_API_KEY` or `ANYZORK_ANTHROPIC_API_KEY`
-- `openai` with `OPENAI_API_KEY` or `ANYZORK_OPENAI_API_KEY`
-- `gemini` with `GOOGLE_API_KEY` or `ANYZORK_GOOGLE_API_KEY`
-
-You can also store defaults in `~/.anyzork/config.toml`:
+<details>
+<summary>Config file example</summary>
 
 ```toml
 [anyzork]
@@ -105,35 +96,36 @@ model = "gpt-4o"
 openai = "your_key_here"
 ```
 
-If narrator mode fails, AnyZork falls back to deterministic engine output.
+</details>
 
-## Core Concepts
+## Roadmap
 
-| Term | What it is | Read more |
-|---|---|---|
-| **AnyZork** | A CLI for authoring and playing deterministic text adventures inspired by [Zork](https://en.wikipedia.org/wiki/Zork). | [Design Brief](docs/guides/design-brief.md) |
-| **ZorkScript** | AnyZork's human-readable authoring DSL. An external LLM writes this text format. | [ZorkScript Spec](docs/dsl/zorkscript-spec.md) |
-| **`.zork` file** | A portable SQLite database containing the compiled game world and runtime state. | [World Schema](docs/game-design/world-schema.md) and [ADR-001](docs/architecture/adrs/adr-001-sqlite-game-storage.md) |
-| **Narrator mode** | An optional read-only LLM layer during play. | [System Architecture](docs/architecture/system-design.md) |
+### Public Game Sharing
 
-## How It Works
+- [ ] Public game finder — upload and share games
+- [ ] Browse, upvote, and downvote shared games
+- [ ] Reporting and moderation for junk uploads
 
-```text
-idea -> anyzork generate -> external LLM -> ZorkScript -> anyzork import -> .zork -> anyzork play
-```
+### Narrator Improvements
 
-1. `anyzork generate` builds the authoring prompt.
-2. Your external LLM writes the world in ZorkScript.
-3. `anyzork import` validates and compiles that into a `.zork` file.
-4. `anyzork play` runs the resulting game deterministically.
+- [ ] Narrate rooms, actions, dialogue, inventory, quests, and system feedback
+- [ ] Hide standard UI chrome when narrator prose is available
+- [ ] Tighten prompts and context to reduce cost and latency
+- [ ] Aggressive caching for repeated room visits and actions
+- [ ] Graceful fallback when provider calls fail
+- [ ] Read world context from metadata instead of reconstructing each turn
 
-Import from stdin if you prefer:
+### Engine Depth
 
-```bash
-cat game.zorkscript | anyzork import -
-```
+- [ ] Quest failure states — quests that can be failed, not just completed
+- [ ] Reactive NPC triggers — NPCs respond to theft, aggression, and world changes with dialogue or actions
+- [ ] Trap system — hazards that fire on room entry, item interaction, or wrong actions
+- [ ] Deterministic turn-based combat
 
-For the full architecture and rationale, see the [Design Brief](docs/guides/design-brief.md) and [System Architecture](docs/architecture/system-design.md).
+### Future Features
+
+- [ ] Author/debug tools (`anyzork inspect`, `anyzork doctor`, playtest/replay)
+- [ ] Richer systems: move-count/clock triggers, NPC blockers, deterministic hints
 
 ## Sharing Games
 
@@ -173,34 +165,30 @@ anyzork install lighthouse.anyzorkpkg
 `.anyzorkpkg` file. It does not install arbitrary remote URLs or raw `.zork`
 files.
 
+## Contributing
+
+MIT-licensed, solo-maintained. Issues and PRs welcome — small focused changes and clear bug reports are easiest to review.
+
 ## Development
 
-Set up a local development environment with:
-
 ```bash
-python -m pip install -e '.[dev]'
-```
-
-Common checks:
-
-```bash
+pip install -e ".[dev]"
 ruff check .
 pytest -q
-python -m build
 ```
 
 ## Docs
 
 | Doc | What it covers |
 |---|---|
-| [Design Brief](docs/guides/design-brief.md) | Product framing and the core authoring/runtime split |
-| [System Architecture](docs/architecture/system-design.md) | Current components, command surface, and runtime model |
-| [Game Design Document](docs/game-design/gdd.md) | Supported mechanics and design constraints |
-| [World Schema](docs/game-design/world-schema.md) | Human-oriented reference for the `.zork` database |
-| [ZorkScript Spec](docs/dsl/zorkscript-spec.md) | The authoring language reference |
-| [Command DSL Spec](docs/dsl/command-spec.md) | The runtime rule vocabulary |
-| [ADR-001: SQLite Game Storage](docs/architecture/adrs/adr-001-sqlite-game-storage.md) | Why `.zork` files are SQLite |
-| [Implementation Phases](docs/guides/implementation-phases.md) | Remaining roadmap and future work |
+| [Design Brief](docs/guides/design-brief.md) | Product framing and the authoring/runtime split |
+| [System Architecture](docs/architecture/system-design.md) | Components, commands, and runtime model |
+| [Game Design Document](docs/game-design/gdd.md) | Mechanics and design constraints |
+| [World Schema](docs/game-design/world-schema.md) | `.zork` database reference |
+| [ZorkScript Spec](docs/dsl/zorkscript-spec.md) | Authoring language reference |
+| [Command DSL Spec](docs/dsl/command-spec.md) | Runtime rule vocabulary |
+| [ADR-001: SQLite Storage](docs/architecture/adrs/adr-001-sqlite-game-storage.md) | Why `.zork` files are SQLite |
+| [Implementation Phases](docs/guides/implementation-phases.md) | Roadmap and future work |
 
 ## License
 

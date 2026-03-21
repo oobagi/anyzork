@@ -82,11 +82,6 @@ def cli() -> None:
     is_flag=True,
     hidden=True,
 )
-@click.option(
-    "--direct",
-    is_flag=True,
-    help="Play the given .zork file directly instead of using a managed save slot.",
-)
 @click.option("--narrator", is_flag=True, help="Enable narrator mode (requires API key).")
 @click.option(
     "--provider",
@@ -99,7 +94,6 @@ def play(
     game_ref: str | None,
     slot: str,
     restart: bool,
-    direct: bool,
     narrator: bool,
     provider: str | None,
     model: str | None,
@@ -107,11 +101,6 @@ def play(
     """Play a library game or existing .zork file."""
     from anyzork.db.schema import GameDB
     from anyzork.engine.game import GameEngine
-
-    if direct and restart:
-        raise click.UsageError("--restart cannot be used with --direct.")
-    if direct and not game_ref:
-        raise click.UsageError("--direct requires GAME_REF.")
 
     # Also check the ANYZORK_NARRATOR env var / config.
     cfg: Config | None = None
@@ -140,8 +129,6 @@ def play(
             )
         play_path = source_path
         console.print(f"[dim]Resuming save:[/dim] [cyan]{play_path}[/cyan]")
-    elif direct:
-        play_path = source_path
     else:
         play_path, action = library_service.prepare_managed_save(source_path, slot, restart, cfg)
         action_label = {

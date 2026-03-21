@@ -33,7 +33,7 @@ class OpenAIProvider(BaseProvider):
         api_key = config.get_api_key()
         if not api_key:
             raise ProviderError(
-                "No API key for OpenAI. Set OPENAI_API_KEY or ANYZORK_OPENAI_API_KEY."
+                "No API key for OpenAI. Set OPENAI_API_KEY."
             )
         self._client = openai.OpenAI(api_key=api_key)
         self._model = config.active_model or "gpt-4o"
@@ -64,7 +64,7 @@ class OpenAIProvider(BaseProvider):
             expected_provider=LLMProvider.OPENAI,
             provider_name="OpenAI",
             missing_key_message=(
-                "No API key for OpenAI. Set OPENAI_API_KEY or ANYZORK_OPENAI_API_KEY."
+                "No API key for OpenAI. Set OPENAI_API_KEY."
             ),
         )
 

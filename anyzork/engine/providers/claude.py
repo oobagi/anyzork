@@ -33,7 +33,7 @@ class ClaudeProvider(BaseProvider):
         api_key = config.get_api_key()
         if not api_key:
             raise ProviderError(
-                "No API key for Claude. Set ANTHROPIC_API_KEY or ANYZORK_ANTHROPIC_API_KEY."
+                "No API key for Claude. Set ANTHROPIC_API_KEY."
             )
         self._client = anthropic.Anthropic(api_key=api_key)
         self._model = config.active_model or "claude-sonnet-4-6"
@@ -60,7 +60,7 @@ class ClaudeProvider(BaseProvider):
             expected_provider=LLMProvider.CLAUDE,
             provider_name="Claude",
             missing_key_message=(
-                "No API key for Claude. Set ANTHROPIC_API_KEY or ANYZORK_ANTHROPIC_API_KEY."
+                "No API key for Claude. Set ANTHROPIC_API_KEY."
             ),
         )
 

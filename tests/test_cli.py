@@ -73,6 +73,36 @@ def test_play_creates_and_restarts_managed_save_slot(
     assert started_paths[-1] == save_path
 
 
+def test_playing_a_zork_file_path_creates_a_managed_save(
+    monkeypatch, tmp_path: Path, compiled_game_path: Path
+) -> None:
+    runner = CliRunner()
+    saves_dir = tmp_path / "saves"
+    source_game = tmp_path / "local_game.zork"
+    source_game.write_bytes(compiled_game_path.read_bytes())
+    started_paths: list[Path] = []
+
+    class FakeConfig:
+        def __init__(self, **_kwargs) -> None:
+            self.narrator_enabled = False
+            self.games_dir = tmp_path / "library"
+            self.saves_dir = saves_dir
+
+    def fake_start(self) -> None:
+        started_paths.append(self.db.path)
+
+    monkeypatch.setattr(cli_module, "Config", FakeConfig)
+    monkeypatch.setattr("anyzork.engine.game.GameEngine.start", fake_start)
+
+    result = runner.invoke(cli, ["play", str(source_game)])
+
+    assert result.exit_code == 0, result.output
+    assert len(started_paths) == 1
+    assert started_paths[0] != source_game
+    assert started_paths[0].exists()
+    assert saves_dir in started_paths[0].parents
+
+
 def test_play_without_game_ref_shows_games_even_when_saves_exist(
     monkeypatch, tmp_path: Path, compiled_game_path: Path
 ) -> None:
