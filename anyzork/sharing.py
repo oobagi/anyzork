@@ -78,7 +78,6 @@ def build_share_manifest(game_path: Path) -> dict[str, object]:
             "app_version": str(metadata.get("app_version") or ""),
             "prompt_system_version": str(metadata.get("prompt_system_version") or ""),
             "room_count": int(metadata.get("room_count") or 0),
-            "region_count": int(metadata.get("region_count") or 0),
             "intro_text": str(metadata.get("intro_text") or ""),
         },
         "listing": {
@@ -309,9 +308,6 @@ def load_public_catalog(source: str) -> dict[str, object]:
                 "runtime_compat_version": str(raw_entry.get("runtime_compat_version") or ""),
                 "prompt_system_version": str(raw_entry.get("prompt_system_version") or ""),
                 "room_count": _coerce_catalog_int(raw_entry.get("room_count"), "room_count", index),
-                "region_count": _coerce_catalog_int(
-                    raw_entry.get("region_count"), "region_count", index
-                ),
             }
         )
 

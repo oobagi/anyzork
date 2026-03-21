@@ -11,7 +11,7 @@ A `.anyzorkpkg` file is a ZIP archive containing two entries:
 | `manifest.json` | Listing metadata, game metadata, and an integrity checksum. |
 | `game.zork` | The compiled game database. |
 
-The manifest uses the `anyzork-share-package/v1` format and includes the game title, room/region counts, runtime compatibility version, prompt system version, and a SHA-256 checksum of the payload. On install, AnyZork verifies the checksum before writing the game to your library.
+The manifest uses the `anyzork-share-package/v1` format and includes the game title, room count, runtime compatibility version, prompt system version, and a SHA-256 checksum of the payload. On install, AnyZork verifies the checksum before writing the game to your library.
 
 Packages have a 50 MB upload limit on the official catalog.
 
