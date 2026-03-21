@@ -100,7 +100,7 @@ openai = "your_key_here"
 
 ## Roadmap
 
-See [GitHub Issues](https://github.com/oobagi/anyzork/issues) for the full roadmap and planned work.
+See [ROADMAP.md](ROADMAP.md) for the ordered plan and [GitHub Issues](https://github.com/oobagi/anyzork/issues) for individual items.
 
 ## Sharing Games
 
