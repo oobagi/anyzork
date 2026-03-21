@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 @click.group()
 @click.version_option(version=CLI_VERSION, prog_name="anyzork")
 def cli() -> None:
-    """AnyZork -- AI-powered text adventure generator."""
+    """AnyZork -- deterministic Zork-style adventure authoring and play."""
 
 
 @cli.command()

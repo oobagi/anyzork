@@ -41,7 +41,7 @@ def load_config_file() -> dict:
     """Load ``~/.anyzork/config.toml`` if it exists.
 
     Returns a flat dict with keys that map to Config fields:
-      - ``provider``, ``model`` from ``[anyzork]``
+      - ``provider``, ``model`` from ``[anyzork]`` for narrator mode
       - ``anthropic_api_key``, ``openai_api_key``, ``google_api_key`` from ``[keys]``
 
     Returns an empty dict if the file does not exist or cannot be parsed.
@@ -77,9 +77,9 @@ class Config(BaseSettings):
     """Central configuration for AnyZork.
 
     Values are read from environment variables prefixed with ``ANYZORK_``.
-    Provider-specific API keys also fall back to their SDK's standard env var
-    (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``, ``GOOGLE_API_KEY``), and
-    finally to ``~/.anyzork/config.toml``.
+    Narrator provider settings and API keys also fall back to provider-standard
+    env vars (``ANTHROPIC_API_KEY``, ``OPENAI_API_KEY``, ``GOOGLE_API_KEY``),
+    and finally to ``~/.anyzork/config.toml``.
     """
 
     model_config = SettingsConfigDict(
@@ -89,11 +89,11 @@ class Config(BaseSettings):
         extra="ignore",
     )
 
-    # --- Provider selection ---
+    # --- Narrator provider selection ---
     provider: LLMProvider = LLMProvider.CLAUDE
     model: str | None = None
 
-    # --- API keys (ANYZORK_ANTHROPIC_API_KEY, etc.) ---
+    # --- Narrator API keys (ANYZORK_ANTHROPIC_API_KEY, etc.) ---
     # These are secondary — we also check the standard env vars in get_api_key().
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None

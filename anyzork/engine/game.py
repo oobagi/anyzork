@@ -1781,6 +1781,61 @@ class GameEngine:
     # Toggle / reload / interaction matrix
     # ------------------------------------------------------------------
 
+    def _check_toggle_dependency(self, item: dict, *, target_state: str) -> bool:
+        """Return True when a toggle action has its required dependency."""
+        if target_state == "off" or not item.get("requires_item_id"):
+            return True
+
+        req_item = self.db.get_item(item["requires_item_id"])
+        if req_item is None or (
+            req_item.get("quantity") is not None and req_item["quantity"] <= 0
+        ):
+            msg = item.get("requires_message") or "It doesn't seem to work."
+            self.console.print(msg, style=STYLE_SYSTEM)
+            return False
+        return True
+
+    def _get_toggle_message(self, item: dict, state: str) -> str:
+        """Return the best transition message for an item's toggle state."""
+        raw_messages = item.get("toggle_messages")
+        if raw_messages:
+            try:
+                messages_map = json.loads(raw_messages)
+            except (json.JSONDecodeError, TypeError):
+                messages_map = {}
+            if state in messages_map:
+                return messages_map[state]
+
+        if state == "on":
+            return item.get("toggle_on_message") or f"You turn on the {item['name']}."
+        if state == "off":
+            return item.get("toggle_off_message") or f"You turn off the {item['name']}."
+        return f"The {item['name']} is now {state}."
+
+    def _render_toggle_lighting_change(
+        self,
+        item: dict,
+        *,
+        room_id: str,
+        target_state: str,
+    ) -> None:
+        """Refresh dark-room output when a light source changes state."""
+        room = self.db.get_room(room_id)
+        if not room or not room.get("is_dark"):
+            return
+
+        tags: list[str] = []
+        if item.get("item_tags"):
+            with suppress(json.JSONDecodeError, TypeError):
+                tags = json.loads(item["item_tags"])
+
+        if "light_source" not in tags:
+            return
+        if target_state == "on":
+            self.display_room(room_id, force_full=True)
+        else:
+            self.console.print("Darkness swallows the room.", style=STYLE_SYSTEM)
+
     def _handle_use_bare(self, item_name: str, current_room_id: str) -> None:
         """Handle ``use {item}`` without a target -- toggle if toggleable."""
         db = self.db
@@ -1798,16 +1853,6 @@ class GameEngine:
             )
             return
 
-        # Check requires_item_id.
-        if item.get("requires_item_id"):
-            req_item = db.get_item(item["requires_item_id"])
-            if req_item is None or (
-                req_item.get("quantity") is not None and req_item["quantity"] <= 0
-            ):
-                msg = item.get("requires_message") or "It doesn't seem to work."
-                self.console.print(msg, style=STYLE_SYSTEM)
-                return
-
         # Determine the new state by cycling.
         current_state = item.get("toggle_state") or "off"
         states = ["off", "on"]
@@ -1822,39 +1867,16 @@ class GameEngine:
         else:
             new_state = states[0]
 
+        if not self._check_toggle_dependency(item, target_state=new_state):
+            return
+
         db.toggle_item_state(item["id"], new_state)
-
-        # Determine the transition message.
-        msg = None
-        raw_messages = item.get("toggle_messages")
-        if raw_messages:
-            try:
-                messages_map = json.loads(raw_messages)
-                msg = messages_map.get(new_state)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        if msg is None:
-            if new_state == "on":
-                msg = item.get("toggle_on_message") or f"You turn on the {item['name']}."
-            elif new_state == "off":
-                msg = item.get("toggle_off_message") or f"You turn off the {item['name']}."
-            else:
-                msg = f"The {item['name']} is now {new_state}."
-
-        self.console.print(msg)
-
-        # If toggling a light source in a dark room, re-display the room.
-        room = db.get_room(current_room_id)
-        if room and room.get("is_dark"):
-            tags: list[str] = []
-            if item.get("item_tags"):
-                with suppress(json.JSONDecodeError, TypeError):
-                    tags = json.loads(item["item_tags"])
-            if "light_source" in tags:
-                if new_state == "on":
-                    self.display_room(current_room_id, force_full=True)
-                else:
-                    self.console.print("Darkness swallows the room.", style=STYLE_SYSTEM)
+        self.console.print(self._get_toggle_message(item, new_state))
+        self._render_toggle_lighting_change(
+            item,
+            room_id=current_room_id,
+            target_state=new_state,
+        )
 
     def _handle_turn(
         self, item_name: str, target_state: str, current_room_id: str
@@ -1878,49 +1900,16 @@ class GameEngine:
             )
             return
 
-        # Check requires_item_id (only when turning on).
-        if target_state != "off" and item.get("requires_item_id"):
-            req_item = db.get_item(item["requires_item_id"])
-            if req_item is None or (
-                req_item.get("quantity") is not None and req_item["quantity"] <= 0
-            ):
-                msg = item.get("requires_message") or "It doesn't seem to work."
-                self.console.print(msg, style=STYLE_SYSTEM)
-                return
+        if not self._check_toggle_dependency(item, target_state=target_state):
+            return
 
         db.toggle_item_state(item["id"], target_state)
-
-        # Determine the transition message.
-        msg = None
-        raw_messages = item.get("toggle_messages")
-        if raw_messages:
-            try:
-                messages_map = json.loads(raw_messages)
-                msg = messages_map.get(target_state)
-            except (json.JSONDecodeError, TypeError):
-                pass
-        if msg is None:
-            if target_state == "on":
-                msg = item.get("toggle_on_message") or f"You turn on the {item['name']}."
-            elif target_state == "off":
-                msg = item.get("toggle_off_message") or f"You turn off the {item['name']}."
-            else:
-                msg = f"The {item['name']} is now {target_state}."
-
-        self.console.print(msg)
-
-        # If toggling a light source in a dark room, re-display the room.
-        room = db.get_room(current_room_id)
-        if room and room.get("is_dark"):
-            tags: list[str] = []
-            if item.get("item_tags"):
-                with suppress(json.JSONDecodeError, TypeError):
-                    tags = json.loads(item["item_tags"])
-            if "light_source" in tags:
-                if target_state == "on":
-                    self.display_room(current_room_id, force_full=True)
-                else:
-                    self.console.print("Darkness swallows the room.", style=STYLE_SYSTEM)
+        self.console.print(self._get_toggle_message(item, target_state))
+        self._render_toggle_lighting_change(
+            item,
+            room_id=current_room_id,
+            target_state=target_state,
+        )
 
     def _handle_interaction(
         self, item_name: str, target_name: str, current_room_id: str
@@ -2229,9 +2218,9 @@ class GameEngine:
             )
         )
 
-    def _apply_node_flags(self, node: dict) -> None:
-        """Set any flags defined in a dialogue node's set_flags field."""
-        set_raw = node.get("set_flags")
+    def _apply_set_flags(self, source: dict) -> None:
+        """Set any flags defined in a dialogue node or option."""
+        set_raw = source.get("set_flags")
         if not set_raw:
             return
         try:
@@ -2244,20 +2233,13 @@ class GameEngine:
             if not was_set:
                 self._emit_event("flag_set", flag=flag)
 
+    def _apply_node_flags(self, node: dict) -> None:
+        """Set any flags defined in a dialogue node's set_flags field."""
+        self._apply_set_flags(node)
+
     def _apply_option_flags(self, option: dict) -> None:
         """Set any flags defined in a dialogue option's set_flags field."""
-        set_raw = option.get("set_flags")
-        if not set_raw:
-            return
-        try:
-            flags = json.loads(set_raw)
-        except (json.JSONDecodeError, TypeError):
-            return
-        for flag in flags:
-            was_set = self.db.has_flag(flag)
-            self.db.set_flag(flag, "true")
-            if not was_set:
-                self._emit_event("flag_set", flag=flag)
+        self._apply_set_flags(option)
 
     # ------------------------------------------------------------------
     # End conditions
@@ -2605,7 +2587,7 @@ class GameEngine:
         try:
             from anyzork.config import Config, LLMProvider
             from anyzork.engine.narrator import Narrator
-            from anyzork.generator.providers import create_provider
+            from anyzork.engine.providers import create_provider
 
             config = Config()
 

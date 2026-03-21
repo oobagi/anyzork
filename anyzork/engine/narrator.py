@@ -12,11 +12,11 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from anyzork.generator.providers.base import NarratorContext, ProviderError
+from anyzork.engine.providers.base import NarratorContext, ProviderError
 
 if TYPE_CHECKING:
     from anyzork.db.schema import GameDB
-    from anyzork.generator.providers.base import BaseProvider
+    from anyzork.engine.providers.base import BaseProvider
 
 logger = logging.getLogger(__name__)
 

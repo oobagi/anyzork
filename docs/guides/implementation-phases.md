@@ -36,7 +36,7 @@ What is already in place:
 
 - `anyzork/engine/game.py`
 - `anyzork/engine/narrator.py`
-- `anyzork/generator/providers/`
+- `anyzork/engine/providers/`
 - `anyzork/cli.py`
 
 **Done when:** narrator mode feels intentionally immersive, remains read-only, and never blocks a playable session when an API call fails.
@@ -62,7 +62,7 @@ What is already in place:
 - `anyzork/engine/game.py`
 - `anyzork/engine/commands.py`
 - `anyzork/importer.py`
-- `anyzork/generator/validator.py`
+- `anyzork/validation.py`
 
 **Done when:** combat-enabled games are deterministic, fair, optional at the product level, and mechanically coherent with the rest of the engine.
 

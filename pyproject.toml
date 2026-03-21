@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "anyzork"
 version = "0.1.0"
-description = "AI-assisted text adventure generator - turn a prompt into a playable Zork-style game"
+description = "Deterministic Zork-style text adventure authoring and runtime CLI"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -36,18 +36,19 @@ classifiers = [
 dependencies = [
     "click>=8.1",
     "rich>=13.0",
-    "anthropic>=0.39",
-    "openai>=1.0",
-    "google-genai>=1.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
 ]
 
 [project.optional-dependencies]
+narrator = [
+    "anthropic>=0.39",
+    "openai>=1.0",
+    "google-genai>=1.0",
+]
 dev = [
     "build>=1.2",
     "pytest>=8.0",
-    "pytest-asyncio>=0.24",
     "ruff>=0.8",
 ]
 
@@ -90,4 +91,3 @@ known-first-party = ["anyzork"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-asyncio_mode = "auto"

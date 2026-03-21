@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from anyzork.db.schema import GameDB
-from anyzork.generator.validator import validate_game
+from anyzork.validation import validate_game
 
 
 class ImportSpecError(ValueError):

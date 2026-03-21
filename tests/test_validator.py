@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from anyzork.db.schema import GameDB
-from anyzork.generator.validator import validate_game
+from anyzork.validation import validate_game
 
 
 def test_validate_game_reports_command_reference_to_missing_item(tmp_path: Path) -> None:

@@ -8,7 +8,7 @@ the SQLite data.
 
 Usage::
 
-    from anyzork.generator.validator import validate_game
+    from anyzork.validation import validate_game
 
     errors = validate_game(db)
     critical = [e for e in errors if e.severity == "error"]

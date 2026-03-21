@@ -129,7 +129,7 @@ Quests do not gate actions directly. They observe state and present progress. Tr
 
 ### 2.7 Provider Abstraction
 
-Providers implement a shared interface in [anyzork/generator/providers/base.py](../../anyzork/generator/providers/base.py). Narrator mode still relies on that abstraction, so the rest of the system does not care whether the backend is Claude, OpenAI, or Gemini.
+Providers implement a shared interface in [anyzork/engine/providers/base.py](../../anyzork/engine/providers/base.py). Narrator mode still relies on that abstraction, so the rest of the system does not care whether the backend is Claude, OpenAI, or Gemini.
 
 ### 2.8 Narrator
 

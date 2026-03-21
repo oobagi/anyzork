@@ -5,10 +5,8 @@ from __future__ import annotations
 import logging
 import time
 
-import openai
-
 from anyzork.config import Config, LLMProvider
-from anyzork.generator.providers.base import (
+from anyzork.engine.providers.base import (
     RETRY_DELAYS,
     BaseProvider,
     NarratorContext,
@@ -23,7 +21,15 @@ class OpenAIProvider(BaseProvider):
     """LLM provider backed by OpenAI's Chat Completions API."""
 
     def __init__(self, config: Config) -> None:
+        try:
+            import openai
+        except ImportError as exc:  # pragma: no cover - exercised without narrator extra
+            raise ProviderError(
+                "OpenAI narrator support is not installed. Install the 'narrator' extra."
+            ) from exc
+
         self._config = config
+        self._openai = openai
         api_key = config.get_api_key()
         if not api_key:
             raise ProviderError(
@@ -91,16 +97,16 @@ class OpenAIProvider(BaseProvider):
 
                 return text
 
-            except openai.RateLimitError as exc:
+            except self._openai.RateLimitError as exc:
                 logger.warning("OpenAI rate-limited (attempt %d): %s", attempt + 1, exc)
                 last_exc = exc
-            except openai.APIStatusError as exc:
+            except self._openai.APIStatusError as exc:
                 if exc.status_code >= 500:
                     logger.warning("OpenAI server error (attempt %d): %s", attempt + 1, exc)
                     last_exc = exc
                 else:
                     raise ProviderError(f"OpenAI API error: {exc}") from exc
-            except openai.APIConnectionError as exc:
+            except self._openai.APIConnectionError as exc:
                 logger.warning("OpenAI connection error (attempt %d): %s", attempt + 1, exc)
                 last_exc = exc
 

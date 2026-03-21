@@ -5,10 +5,8 @@ from __future__ import annotations
 import logging
 import time
 
-import anthropic
-
 from anyzork.config import Config, LLMProvider
-from anyzork.generator.providers.base import (
+from anyzork.engine.providers.base import (
     RETRY_DELAYS,
     BaseProvider,
     NarratorContext,
@@ -23,7 +21,15 @@ class ClaudeProvider(BaseProvider):
     """LLM provider backed by the Anthropic Messages API."""
 
     def __init__(self, config: Config) -> None:
+        try:
+            import anthropic
+        except ImportError as exc:  # pragma: no cover - exercised without narrator extra
+            raise ProviderError(
+                "Claude narrator support is not installed. Install the 'narrator' extra."
+            ) from exc
+
         self._config = config
+        self._anthropic = anthropic
         api_key = config.get_api_key()
         if not api_key:
             raise ProviderError(
@@ -88,16 +94,16 @@ class ClaudeProvider(BaseProvider):
 
                 return text
 
-            except anthropic.RateLimitError as exc:
+            except self._anthropic.RateLimitError as exc:
                 logger.warning("Claude rate-limited (attempt %d): %s", attempt + 1, exc)
                 last_exc = exc
-            except anthropic.APIStatusError as exc:
+            except self._anthropic.APIStatusError as exc:
                 if exc.status_code >= 500:
                     logger.warning("Claude server error (attempt %d): %s", attempt + 1, exc)
                     last_exc = exc
                 else:
                     raise ProviderError(f"Claude API error: {exc}") from exc
-            except anthropic.APIConnectionError as exc:
+            except self._anthropic.APIConnectionError as exc:
                 logger.warning("Claude connection error (attempt %d): %s", attempt + 1, exc)
                 last_exc = exc
 

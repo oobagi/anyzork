@@ -1,4 +1,4 @@
-"""AnyZork — AI-powered text adventure generator."""
+"""AnyZork — deterministic Zork-style adventure authoring and play."""
 
 from anyzork.versioning import APP_VERSION
 

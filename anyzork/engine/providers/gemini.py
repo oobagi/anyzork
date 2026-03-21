@@ -5,12 +5,8 @@ from __future__ import annotations
 import logging
 import time
 
-from google import genai
-from google.genai import errors as genai_errors
-from google.genai import types as genai_types
-
 from anyzork.config import Config, LLMProvider
-from anyzork.generator.providers.base import (
+from anyzork.engine.providers.base import (
     RETRY_DELAYS,
     BaseProvider,
     NarratorContext,
@@ -48,7 +44,19 @@ class GeminiProvider(BaseProvider):
     """LLM provider backed by Google's GenAI API."""
 
     def __init__(self, config: Config) -> None:
+        try:
+            from google import genai
+            from google.genai import errors as genai_errors
+            from google.genai import types as genai_types
+        except ImportError as exc:  # pragma: no cover - exercised without narrator extra
+            raise ProviderError(
+                "Gemini narrator support is not installed. Install the 'narrator' extra."
+            ) from exc
+
         self._config = config
+        self._genai = genai
+        self._genai_errors = genai_errors
+        self._genai_types = genai_types
         api_key = config.get_api_key()
         if not api_key:
             raise ProviderError(
@@ -64,7 +72,7 @@ class GeminiProvider(BaseProvider):
     ) -> str:
         ctx = context or NarratorContext()
 
-        config = genai_types.GenerateContentConfig(
+        config = self._genai_types.GenerateContentConfig(
             system_instruction=ctx.system_prompt or None,
             temperature=ctx.temperature,
             max_output_tokens=ctx.max_tokens,
@@ -91,7 +99,7 @@ class GeminiProvider(BaseProvider):
         self,
         *,
         contents: str,
-        config: genai_types.GenerateContentConfig,
+        config: object,
     ) -> str:
         """Call the Gemini API with retries on transient errors."""
         last_exc: Exception | None = None
@@ -144,7 +152,7 @@ class GeminiProvider(BaseProvider):
 
                 return text
 
-            except genai_errors.ClientError as exc:
+            except self._genai_errors.ClientError as exc:
                 # Rate limit or quota errors are retryable.
                 exc_str = str(exc).lower()
                 if "rate" in exc_str or "quota" in exc_str or "429" in exc_str:
@@ -152,7 +160,7 @@ class GeminiProvider(BaseProvider):
                     last_exc = exc
                 else:
                     raise ProviderError(f"Gemini API error: {exc}") from exc
-            except genai_errors.ServerError as exc:
+            except self._genai_errors.ServerError as exc:
                 logger.warning("Gemini server error (attempt %d): %s", attempt + 1, exc)
                 last_exc = exc
             except Exception as exc:

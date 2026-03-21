@@ -38,6 +38,12 @@ anyzork import examples/minimal_game.zorkscript -o starter.zork
 anyzork play starter.zork
 ```
 
+If you want optional narrator mode, install the narrator extra:
+
+```bash
+pip install -e ".[narrator]"
+```
+
 Create your own game:
 
 ```bash
