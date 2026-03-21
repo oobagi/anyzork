@@ -1,0 +1,15 @@
+services:
+  catalog:
+    build:
+      context: .
+      dockerfile: Dockerfile.catalog
+    ports:
+      - "8000:8000"
+    environment:
+      - ANYZORK_ADMIN_TOKEN=${ANYZORK_ADMIN_TOKEN}
+    volumes:
+      - catalog-data:/root/.anyzork/public_catalog
+    restart: unless-stopped
+
+volumes:
+  catalog-data:
