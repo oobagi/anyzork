@@ -1,0 +1,37 @@
+name: Sync Roadmap Checkboxes
+
+on:
+  issues:
+    types: [closed, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  update-roadmap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Update ROADMAP.md checkbox
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_STATE: ${{ github.event.action }}
+        run: |
+          if [ "$ISSUE_STATE" = "closed" ]; then
+            # Check the box: - [ ] [#N ...] -> - [x] [#N ...]
+            sed -i "s/^- \[ \] \[#${ISSUE_NUMBER} /- [x] [#${ISSUE_NUMBER} /" ROADMAP.md
+          else
+            # Uncheck the box: - [x] [#N ...] -> - [ ] [#N ...]
+            sed -i "s/^- \[x\] \[#${ISSUE_NUMBER} /- [ ] [#${ISSUE_NUMBER} /" ROADMAP.md
+          fi
+
+      - name: Commit and push if changed
+        run: |
+          git diff --quiet ROADMAP.md && exit 0
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ROADMAP.md
+          git commit -m "roadmap: mark #${ISSUE_NUMBER} as ${ISSUE_STATE}"
+          git push
