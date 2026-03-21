@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   update-roadmap:
@@ -20,18 +21,26 @@ jobs:
       - name: Update ROADMAP.md checkbox
         run: |
           if [ "$ISSUE_STATE" = "closed" ]; then
-            # Check the box: - [ ] [#N ...] -> - [x] [#N ...]
             sed -i "s/^- \[ \] \[#${ISSUE_NUMBER} /- [x] [#${ISSUE_NUMBER} /" ROADMAP.md
           else
-            # Uncheck the box: - [x] [#N ...] -> - [ ] [#N ...]
             sed -i "s/^- \[x\] \[#${ISSUE_NUMBER} /- [ ] [#${ISSUE_NUMBER} /" ROADMAP.md
           fi
 
-      - name: Commit and push if changed
+      - name: Create PR if changed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git diff --quiet ROADMAP.md && exit 0
+          BRANCH="roadmap/mark-${ISSUE_NUMBER}-${ISSUE_STATE}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
           git add ROADMAP.md
           git commit -m "roadmap: mark #${ISSUE_NUMBER} as ${ISSUE_STATE}"
-          git push
+          git push origin "$BRANCH"
+          PR_URL=$(gh pr create \
+            --title "roadmap: mark #${ISSUE_NUMBER} as ${ISSUE_STATE}" \
+            --body "Auto-generated: update ROADMAP.md checkbox for #${ISSUE_NUMBER}." \
+            --head "$BRANCH" \
+            --base main)
+          gh pr merge "$PR_URL" --auto --merge --delete-branch
