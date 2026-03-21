@@ -10,14 +10,14 @@ permissions:
 jobs:
   update-roadmap:
     runs-on: ubuntu-latest
+    env:
+      ISSUE_NUMBER: ${{ github.event.issue.number }}
+      ISSUE_STATE: ${{ github.event.action }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Update ROADMAP.md checkbox
-        env:
-          ISSUE_NUMBER: ${{ github.event.issue.number }}
-          ISSUE_STATE: ${{ github.event.action }}
         run: |
           if [ "$ISSUE_STATE" = "closed" ]; then
             # Check the box: - [ ] [#N ...] -> - [x] [#N ...]
