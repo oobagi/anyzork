@@ -11,18 +11,14 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import pytest
-
 from anyzork.db.schema import GameDB
 from anyzork.importer import ZORKSCRIPT_AUTHORING_TEMPLATE, compile_import_spec
 from anyzork.validation import (
     VALID_EFFECT_TYPES,
-    VALID_PRECONDITION_TYPES,
     VALID_TRIGGER_EVENT_TYPES,
     validate_game,
 )
 from anyzork.zorkscript import parse_zorkscript
-
 
 # ---------------------------------------------------------------------------
 # Helpers

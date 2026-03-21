@@ -85,7 +85,7 @@ Specifically:
 - **One file = one game.** The `.zork` extension is just convention; the file is a standard SQLite database that any SQLite client can open.
 - **Schema enforced by SQLite.** Tables, column types, NOT NULL constraints, and FOREIGN KEY constraints are declared in SQL and enforced by the database engine. An exit cannot reference a nonexistent room.
 - **Transactions for import.** Compilation and validation can run inside transactions. If import fails, `ROLLBACK` restores the database to a clean state. No custom crash-recovery logic needed.
-- **WAL mode for narrator.** During play with narrator mode enabled, the engine writes player state while the narrator reads world data. SQLite's WAL (Write-Ahead Logging) mode allows concurrent readers and a single writer without blocking.
+- **Journal mode for narrator.** During play with narrator mode enabled, the engine writes player state while the narrator reads world data. The database uses DELETE journal mode (not WAL) to keep `.zork` files self-contained without sidecar files. SQLite's locking still allows safe concurrent access for the single-player, single-writer workload.
 - **Indexed access.** We create indexes on the columns we query most: items by room, commands by verb, exits by source room. Lookups are O(log n) via B-tree, not O(n) via scan.
 - **Player state in the same file.** The runtime tables (`player`, `score_entries`, `visited_rooms`, and execution flags on commands/triggers) live alongside the world data. "Saving" is free -- state is persisted after every command. "Loading a save" is copying a file.
 - **Inspectable.** Developers and curious players can open a `.zork` file with `sqlite3` or any database browser and see the entire game world. This is valuable for debugging generation issues and for community modding.
@@ -99,7 +99,7 @@ Specifically:
 - **Import reliability.** Transaction rollback means we never keep a half-written, inconsistent game file.
 - **Referential integrity is enforced, not hoped for.** Foreign keys mean validation is catching logical errors (unsolvable puzzles), not structural ones (dangling references). SQLite handles the structural correctness.
 - **Querying during validation.** The importer and validator can use SQL to check invariants: "SELECT exits WHERE target_room NOT IN (SELECT id FROM rooms)" instantly finds broken exits. This is far more reliable than scanning nested text structures in Python.
-- **Future schema evolution.** SQLite supports `ALTER TABLE` for additive changes. The `meta` table stores a schema version. Migration logic can upgrade older `.zork` files to newer schemas.
+- **Future schema evolution.** SQLite supports `ALTER TABLE` for additive changes. The `metadata` table stores a schema version. Migration logic can upgrade older `.zork` files to newer schemas.
 
 ### What becomes harder
 

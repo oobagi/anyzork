@@ -28,20 +28,19 @@ The entry point is [anyzork/cli.py](../../anyzork/cli.py).
 
 Current commands:
 
-- `anyzork generate [prompt]`
-- `anyzork import <file|->`
-- `anyzork publish <game>`
-- `anyzork upload <package>`
-- `anyzork install <package|ref>`
-- `anyzork install <ref>`
-- `anyzork browse`
-- `anyzork play <file.zork>`
-- `anyzork list`
-- `anyzork saves <game>`
-- `anyzork delete-save <game>`
-- `anyzork delete <game>`
+- `anyzork generate [prompt]` — build a ZorkScript authoring prompt (freeform, guided wizard, or preset)
+- `anyzork import <file|->` — compile ZorkScript into a `.zork` game file
+- `anyzork publish <game>` — package a library game and upload it to the catalog
+- `anyzork status <slug>` — check the publish status of a submitted game
+- `anyzork install <source>` — install a game from the catalog, a URL, or a local `.anyzorkpkg`
+- `anyzork browse` — browse the public catalog
+- `anyzork play [game]` — play a library game or `.zork` file
+- `anyzork list` — list library games and their active saves
+- `anyzork saves [game]` — list managed save slots
+- `anyzork delete-save <game>` — delete a managed save slot
+- `anyzork delete <game>` — delete a library game and all its saves
 
-The CLI handles argument parsing, import/export UX, package creation, upload/install flows, official catalog browsing, and launching the runtime engine.
+The CLI handles argument parsing, import/export UX, package creation, catalog publishing and status tracking, install flows, catalog browsing, and launching the runtime engine.
 
 ### 2.2 Config
 
@@ -56,19 +55,22 @@ Sources, from lowest to highest priority:
 5. CLI overrides
 
 Supported providers for narrator mode today are `claude`, `openai`, and `gemini`.
-Browse/install talk to the official AnyZork catalog, upload talks to the official AnyZork upload API, and public installs are intentionally limited to official refs plus local `.anyzorkpkg` artifacts.
+Browse/install talk to the official AnyZork catalog, publish talks to the official AnyZork upload API, and public installs are intentionally limited to official refs plus local `.anyzorkpkg` artifacts.
 
 ### 2.3 Public Catalog Service
 
-Public sharing for uploaded games lives in a small FastAPI app at [anyzork/catalog_api.py](../../anyzork/catalog_api.py), backed by SQLite + package-file storage in [anyzork/catalog_store.py](../../anyzork/catalog_store.py).
+Client-side packaging, installation, and upload logic lives in [anyzork/sharing.py](../../anyzork/sharing.py). The server-side catalog is a small FastAPI app at [anyzork/catalog_api.py](../../anyzork/catalog_api.py), backed by SQLite + package-file storage in [anyzork/catalog_store.py](../../anyzork/catalog_store.py).
 
 The service exposes:
 
 - `POST /api/games` for uploaded `.anyzorkpkg` files and metadata
 - `GET /api/games` for public game listings
 - `GET /api/games/{slug}` for one public entry
+- `GET /api/games/{slug}/status` for publish status checks
 - `GET /api/games/{slug}/package` for package downloads
 - `GET /catalog.json` for the CLI catalog contract
+- `GET /admin` for the admin dashboard
+- `GET /healthz` for health checks
 
 This is deployment infrastructure for the official AnyZork hosted catalog. The end-user CLI is intentionally aligned to that single service instead of supporting arbitrary user-hosted catalogs.
 
@@ -80,7 +82,7 @@ Important tables:
 
 | Table | Purpose |
 |---|---|
-| `metadata` | Title, prompt, seed, intro/win text, score caps, win/lose conditions |
+| `metadata` | Title, prompt, seed, intro/win text, score caps, win/lose conditions, version tracking, realism level |
 | `rooms`, `exits`, `locks` | Spatial graph and gating |
 | `items` | World objects, containers, item states, quantities |
 | `npcs`, `dialogue_nodes`, `dialogue_options` | NPC placement and branching dialogue |
@@ -120,21 +122,24 @@ Current precondition families include:
 - room and inventory checks
 - flag checks
 - lock and puzzle checks
-- NPC and item presence checks
+- NPC and item presence/accessibility checks
 - container and quantity checks
+- item toggle-state checks
 
 Current effect families include:
 
 - moving or removing items
 - setting flags
-- unlocking locks and revealing exits
+- unlocking locks, revealing exits, locking exits, hiding exits
 - moving the player
 - spawning items
 - health and score changes
 - solving puzzles
-- discovering quests
+- discovering, completing, or failing quests
 - container and quantity operations
 - item toggle-state updates
+- NPC manipulation (moving, killing, removing)
+- description changes
 
 The authoritative effect/precondition contract is documented in [docs/dsl/command-spec.md](../dsl/command-spec.md).
 
@@ -163,14 +168,45 @@ The narrator may restyle text, but it may not:
 
 If narrator mode fails, the engine falls back to plain deterministic output.
 
+### 2.10 ZorkScript Parser
+
+The parser lives in [anyzork/zorkscript.py](../../anyzork/zorkscript.py). It is a hand-written recursive descent tokenizer and block parser that converts ZorkScript source text into the normalized import-spec dict consumed by `compile_import_spec`. Parse errors include line numbers via `ZorkScriptError`.
+
+### 2.11 Services Layer
+
+Reusable service helpers in [anyzork/services/](../../anyzork/services/) decouple business logic from the CLI so that other entrypoints (e.g., a TUI) can share the same operations:
+
+- `authoring` — field normalization, validation, and `AuthoringBundle` construction for the prompt builder
+- `importing` — `import_zorkscript` and `import_zorkscript_spec` wrappers around the compiler
+- `library` — game resolution, managed save preparation, and `LibraryOverview` queries
+- `play` — `PlaySession` wrapping the deterministic engine for programmatic turn-by-turn interaction
+
+### 2.12 Versioning
+
+Central version metadata lives in [anyzork/versioning.py](../../anyzork/versioning.py). Two version axes are tracked:
+
+- `APP_VERSION` — the installed package version (from `importlib.metadata`).
+- `RUNTIME_COMPAT_VERSION` — a short tag (currently `r1`) embedded in every `.zork` file so the engine can reject incompatible databases.
+
+The prompt-generation system also has its own fingerprint (`prompt_system_version`), derived from the SHA-256 of all files involved in prompt assembly. This lets the catalog and CLI detect when a game was authored with a different prompt system.
+
 ## 3. Authoring Architecture
 
-The current authoring path is intentionally simple:
+The authoring path has three input modes, all producing the same output:
 
-1. `anyzork generate` creates a strong ZorkScript authoring prompt.
-2. An external LLM writes ZorkScript.
-3. `anyzork import` parses and validates that ZorkScript.
-4. Deterministic validation runs against the compiled `.zork` database.
+1. **Freeform**: `anyzork generate "a haunted lighthouse"` wraps the user's idea into a ZorkScript authoring prompt.
+2. **Guided wizard**: `anyzork generate --guided` walks the user through structured world-building fields (setting, characters, items, tone, scale, realism) and assembles a richer prompt.
+3. **Presets**: `anyzork generate --preset fantasy-dungeon` loads a TOML preset from `anyzork/presets/` or `~/.anyzork/presets/`. With `--no-edit` the prompt is emitted immediately; without it the wizard opens with preset values pre-filled.
+
+The wizard lives in [anyzork/wizard/](../../anyzork/wizard/): `fields.py` defines the field schema, `wizard.py` drives the interactive CLI flow, `assembler.py` renders fields into prompt text, and `presets.py` discovers and loads TOML presets.
+
+After a prompt is resolved, `build_zorkscript_prompt()` in [anyzork/importer.py](../../anyzork/importer.py) wraps it with the full ZorkScript authoring template — a grammar reference, a complete example game, and realism-level guidance. The user sends that template to an external LLM, which returns ZorkScript source.
+
+The import pipeline then:
+
+1. Parses ZorkScript via the hand-written recursive descent parser in [anyzork/zorkscript.py](../../anyzork/zorkscript.py).
+2. Compiles the parsed spec into a `.zork` SQLite database.
+3. Runs deterministic validation against the compiled database.
 
 ## 4. Runtime State Model
 

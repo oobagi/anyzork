@@ -23,20 +23,28 @@ The LLM generates commands during world-building. The deterministic engine evalu
   "pattern": "use {item} on {target}",
   "preconditions": [ ... ],
   "effects": [ ... ],
-  "fail_message": "That doesn't seem to work.",
+  "success_message": "The key turns with a grinding screech.",
+  "failure_message": "That doesn't seem to work.",
+  "done_message": "You already did that.",
+  "priority": 0,
+  "context_room_ids": ["dungeon_entrance"],
   "one_shot": false
 }
 ```
 
-| Field          | Type     | Required | Description |
-|----------------|----------|----------|-------------|
-| `id`           | string   | yes      | Unique identifier for this command. Snake_case. Must be unique across the entire game. |
-| `verb`         | string   | yes      | The first word of the player's input that triggers pattern matching. Lowercased. |
-| `pattern`      | string   | yes      | The full input pattern including `{slot}` placeholders. Must start with the verb. |
-| `preconditions`| array    | yes      | Array of precondition objects. ALL must be satisfied for the command to fire. May be empty `[]` for unconditional commands. |
-| `effects`      | array    | yes      | Ordered array of effect objects. Executed sequentially when all preconditions pass. Must contain at least one effect. |
-| `fail_message` | string   | no       | Message printed when preconditions are not met. If omitted, the engine uses a generic failure message. |
-| `one_shot`     | boolean  | no       | If `true`, this command can only fire once. Defaults to `false`. See section 5. |
+| Field              | Type     | Required | Description |
+|--------------------|----------|----------|-------------|
+| `id`               | string   | yes      | Unique identifier for this command. Snake_case. Must be unique across the entire game. |
+| `verb`             | string   | yes      | The first word of the player's input that triggers pattern matching. Lowercased. |
+| `pattern`          | string   | yes      | The full input pattern including `{slot}` placeholders. Must start with the verb. |
+| `preconditions`    | array    | yes      | Array of precondition objects. ALL must be satisfied for the command to fire. May be empty `[]` for unconditional commands. |
+| `effects`          | array    | yes      | Ordered array of effect objects. Executed sequentially when all preconditions pass. |
+| `success_message`  | string   | no       | Message displayed when the command succeeds, before effects run. Supports `{slot}` references. Defaults to empty. |
+| `failure_message`  | string   | no       | Message printed when preconditions are not met. If omitted, the engine uses a generic failure message. |
+| `done_message`     | string   | no       | Message displayed when a one-shot command has already been executed. Only meaningful when `one_shot` is `true`. Defaults to empty. |
+| `priority`         | integer  | no       | Commands with higher priority are tried first during resolution. Defaults to `0`. Among equal-priority commands, fewer slots (more specific patterns) win. |
+| `context_room_ids` | array    | no       | JSON array of room IDs this command is scoped to. If `null` or omitted, the command is global (matches in any room). When set, the command is only a candidate when the player is in one of the listed rooms. |
+| `one_shot`         | boolean  | no       | If `true`, this command can only fire once. Defaults to `false`. See section 5. |
 
 ---
 
@@ -47,12 +55,12 @@ The LLM generates commands during world-building. The deterministic engine evalu
 When the player types input, the engine:
 
 1. **Extracts the verb** — the first whitespace-delimited word, lowercased.
-2. **Finds candidate commands** — all commands in the database whose `verb` field matches.
-3. **Matches patterns** — for each candidate, attempts to match the full input against the command's `pattern`. Slots (`{slot}`) capture one or more words. Literal words must match exactly (case-insensitive).
-4. **Evaluates preconditions** — for each pattern match, checks all preconditions using the captured slot values. The first command whose preconditions all pass is the one that fires.
-5. **Executes effects** — runs the matched command's effects in order.
-
-If multiple commands match the same input and pass preconditions, the engine uses the **most specific match** (fewest slots, longest literal prefix). If still ambiguous, the command defined first in the database wins.
+2. **Finds candidate commands** — all enabled commands whose `verb` field matches, filtered to those whose `context_room_ids` include the player's current room (or are global, i.e., `context_room_ids` is `null`).
+3. **Sorts by priority** — candidates are sorted by `priority` descending, then by specificity (fewer slots = more specific) ascending. Ties preserve database insertion order.
+4. **Matches patterns** — for each candidate in priority order, attempts to match the full input against the command's `pattern`. Slots (`{slot}`) capture one or more words. Literal words must match exactly (case-insensitive).
+5. **Skips executed one-shots** — if the matching command is a one-shot that has already executed, its `done_message` (if any) is saved as a fallback and the engine moves to the next candidate.
+6. **Evaluates preconditions** — checks all preconditions using the captured slot values. The first command whose preconditions all pass is the one that fires.
+7. **Executes effects** — runs the matched command's effects in order. If the command has a `success_message`, it is displayed before effects run.
 
 ### Slot Extraction
 
@@ -193,7 +201,7 @@ A specific item must be present in a specific room (not in anyone's inventory).
 
 ### 3.6 `npc_in_room`
 
-A specific NPC must be present in a specific room.
+A specific NPC must be present in a specific room and alive. Dead NPCs fail this check.
 
 | Field   | Type   | Required | Description |
 |---------|--------|----------|-------------|
@@ -254,6 +262,142 @@ The player's health must be above a threshold.
 {
   "type": "health_above",
   "threshold": 0
+}
+```
+
+### 3.10 `item_accessible`
+
+An item must be accessible to the player — meaning it is visible and either in the player's inventory, loose in the current room, or inside an open, accessible container in inventory or the current room. The engine walks the container chain to verify accessibility.
+
+| Field   | Type   | Required | Description |
+|---------|--------|----------|-------------|
+| `type`  | string | yes      | `"item_accessible"` |
+| `item`  | string | yes      | The item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "item_accessible",
+  "item": "{item}"
+}
+```
+
+### 3.11 `container_open`
+
+A container item must be in the open state (or have no lid).
+
+| Field       | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `type`      | string | yes      | `"container_open"` |
+| `container` | string | yes      | The container item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "container_open",
+  "container": "wooden_chest"
+}
+```
+
+### 3.12 `item_in_container`
+
+A specific visible item must be inside a specific container.
+
+| Field       | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `type`      | string | yes      | `"item_in_container"` |
+| `item`      | string | yes      | The item ID. Supports `{slot}` references. |
+| `container` | string | yes      | The container item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "item_in_container",
+  "item": "gold_coin",
+  "container": "wooden_chest"
+}
+```
+
+### 3.13 `not_item_in_container`
+
+A specific visible item must NOT be inside a specific container. The inverse of `item_in_container`.
+
+| Field       | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `type`      | string | yes      | `"not_item_in_container"` |
+| `item`      | string | yes      | The item ID. Supports `{slot}` references. |
+| `container` | string | yes      | The container item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "not_item_in_container",
+  "item": "gold_coin",
+  "container": "wooden_chest"
+}
+```
+
+### 3.14 `container_has_contents`
+
+A container must have at least one visible item inside it.
+
+| Field       | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `type`      | string | yes      | `"container_has_contents"` |
+| `container` | string | yes      | The container item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "container_has_contents",
+  "container": "wooden_chest"
+}
+```
+
+### 3.15 `container_empty`
+
+A container must have no visible items inside it.
+
+| Field       | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `type`      | string | yes      | `"container_empty"` |
+| `container` | string | yes      | The container item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "container_empty",
+  "container": "wooden_chest"
+}
+```
+
+### 3.16 `has_quantity`
+
+An item must have at least a minimum number of charges/uses remaining.
+
+| Field   | Type    | Required | Description |
+|---------|---------|----------|-------------|
+| `type`  | string  | yes      | `"has_quantity"` |
+| `item`  | string  | yes      | The item ID. Supports `{slot}` references. |
+| `min`   | integer | no       | The minimum quantity required. Defaults to `1`. |
+
+```json
+{
+  "type": "has_quantity",
+  "item": "healing_herbs",
+  "min": 3
+}
+```
+
+### 3.17 `toggle_state`
+
+An item's toggle state must match a specific value.
+
+| Field   | Type   | Required | Description |
+|---------|--------|----------|-------------|
+| `type`  | string | yes      | `"toggle_state"` |
+| `item`  | string | yes      | The item ID. Supports `{slot}` references. |
+| `state` | string | yes      | The required toggle state (e.g., `"on"`, `"off"`, `"open"`). Supports `{slot}` references. Items without a toggle state are treated as `"off"`. |
+
+```json
+{
+  "type": "toggle_state",
+  "item": "wall_switch",
+  "state": "on"
 }
 ```
 
@@ -379,7 +523,7 @@ Creates a new item instance in a location. Used when an item should appear that 
 |---------------|--------|----------|-------------|
 | `type`        | string | yes      | `"spawn_item"` |
 | `item`        | string | yes      | The item ID to create. This item must be defined in the items table (it exists in the database but was not yet placed in the world). |
-| `location`    | string | yes      | Where to place it: a room ID, `"_inventory"`, or `"_current"`. |
+| `location`    | string | yes      | Where to place it: a room ID, `"_inventory"`, `"_current"`, or a container item ID. If the location matches an existing container item, the spawned item is placed inside that container. |
 
 ```json
 {
@@ -503,6 +647,292 @@ With slot reference:
 }
 ```
 
+### 4.13 `open_container`
+
+Opens a container, allowing items inside to be seen and taken.
+
+| Field       | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `type`      | string | yes      | `"open_container"` |
+| `container` | string | yes      | The container item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "open_container",
+  "container": "wooden_chest"
+}
+```
+
+### 4.14 `move_item_to_container`
+
+Places an item inside a container. If the container rejects the item (e.g., full or wrong type), a rejection message is returned.
+
+| Field       | Type   | Required | Description |
+|-------------|--------|----------|-------------|
+| `type`      | string | yes      | `"move_item_to_container"` |
+| `item`      | string | yes      | The item ID. Supports `{slot}` references. |
+| `container` | string | yes      | The container item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "move_item_to_container",
+  "item": "gold_coin",
+  "container": "leather_pouch"
+}
+```
+
+### 4.15 `take_item_from_container`
+
+Removes an item from its container and places it in the player's inventory.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"take_item_from_container"` |
+| `item` | string | yes      | The item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "take_item_from_container",
+  "item": "gold_coin"
+}
+```
+
+### 4.16 `consume_quantity`
+
+Consumes a number of charges or uses from a quantity-tracked item.
+
+| Field    | Type    | Required | Description |
+|----------|---------|----------|-------------|
+| `type`   | string  | yes      | `"consume_quantity"` |
+| `item`   | string  | yes      | The item ID. Supports `{slot}` references. |
+| `amount` | integer | no       | Number of charges to consume. Defaults to `1`. |
+
+```json
+{
+  "type": "consume_quantity",
+  "item": "healing_herbs",
+  "amount": 1
+}
+```
+
+### 4.17 `restore_quantity`
+
+Restores charges or uses on a quantity-tracked item.
+
+| Field    | Type    | Required | Description |
+|----------|---------|----------|-------------|
+| `type`   | string  | yes      | `"restore_quantity"` |
+| `item`   | string  | yes      | The item ID. Supports `{slot}` references. |
+| `amount` | integer | no       | Number of charges to restore. Defaults to `1`. |
+| `source` | string  | no       | An optional source item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "restore_quantity",
+  "item": "lantern",
+  "amount": 5,
+  "source": "oil_flask"
+}
+```
+
+### 4.18 `set_toggle_state`
+
+Changes an item's toggle state to a new value (e.g., "on"/"off", "open"/"closed").
+
+| Field   | Type   | Required | Description |
+|---------|--------|----------|-------------|
+| `type`  | string | yes      | `"set_toggle_state"` |
+| `item`  | string | yes      | The item ID. Supports `{slot}` references. |
+| `state` | string | yes      | The new toggle state. Supports `{slot}` references. |
+
+```json
+{
+  "type": "set_toggle_state",
+  "item": "wall_switch",
+  "state": "on"
+}
+```
+
+### 4.19 `move_npc`
+
+Relocates an NPC to a different room.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"move_npc"` |
+| `npc`  | string | yes      | The NPC ID. Supports `{slot}` references. |
+| `room` | string | yes      | The destination room ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "move_npc",
+  "npc": "old_wizard",
+  "room": "tower_top"
+}
+```
+
+### 4.20 `make_visible`
+
+Makes a hidden item visible. The item remains in its current location but becomes visible to the player.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"make_visible"` |
+| `item` | string | yes      | The item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "make_visible",
+  "item": "hidden_lever"
+}
+```
+
+### 4.21 `make_hidden`
+
+Makes a visible item hidden. The item remains in its current location but becomes invisible to the player.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"make_hidden"` |
+| `item` | string | yes      | The item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "make_hidden",
+  "item": "trapdoor"
+}
+```
+
+### 4.22 `make_takeable`
+
+Makes an item takeable. Useful for items that start as scenery and become collectible after an interaction.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"make_takeable"` |
+| `item` | string | yes      | The item ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "make_takeable",
+  "item": "loose_brick"
+}
+```
+
+### 4.23 `fail_quest`
+
+Marks a quest as failed.
+
+| Field   | Type   | Required | Description |
+|---------|--------|----------|-------------|
+| `type`  | string | yes      | `"fail_quest"` |
+| `quest` | string | yes      | The quest ID to fail. Supports `{slot}` references. |
+
+```json
+{
+  "type": "fail_quest",
+  "quest": "rescue_the_prisoner"
+}
+```
+
+### 4.24 `complete_quest`
+
+Marks a quest as completed. If the quest has a `completion_flag`, that flag is set. If the quest has a `score_value`, points are awarded.
+
+| Field   | Type   | Required | Description |
+|---------|--------|----------|-------------|
+| `type`  | string | yes      | `"complete_quest"` |
+| `quest` | string | yes      | The quest ID to complete. Supports `{slot}` references. |
+
+```json
+{
+  "type": "complete_quest",
+  "quest": "seal_the_mountain_gate"
+}
+```
+
+### 4.25 `kill_npc`
+
+Kills a specific NPC, marking them as dead.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"kill_npc"` |
+| `npc`  | string | yes      | The NPC ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "kill_npc",
+  "npc": "cave_troll"
+}
+```
+
+### 4.26 `remove_npc`
+
+Permanently removes an NPC from the game.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"remove_npc"` |
+| `npc`  | string | yes      | The NPC ID. Supports `{slot}` references. |
+
+```json
+{
+  "type": "remove_npc",
+  "npc": "phantom"
+}
+```
+
+### 4.27 `lock_exit`
+
+Locks an exit, preventing traversal until unlocked.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"lock_exit"` |
+| `exit` | string | yes      | The exit ID to lock. Supports `{slot}` references. |
+
+```json
+{
+  "type": "lock_exit",
+  "exit": "bridge_crossing"
+}
+```
+
+### 4.28 `hide_exit`
+
+Hides an exit, making it invisible and non-traversable until revealed again.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"hide_exit"` |
+| `exit` | string | yes      | The exit ID to hide. Supports `{slot}` references. |
+
+```json
+{
+  "type": "hide_exit",
+  "exit": "secret_passage"
+}
+```
+
+### 4.29 `change_description`
+
+Changes the description text of any entity (room, item, NPC).
+
+| Field    | Type   | Required | Description |
+|----------|--------|----------|-------------|
+| `type`   | string | yes      | `"change_description"` |
+| `entity` | string | yes      | The entity ID. Supports `{slot}` references. |
+| `text`   | string | yes      | The new description text. Supports `{slot}` references. |
+
+```json
+{
+  "type": "change_description",
+  "entity": "old_bookshelf",
+  "text": "The bookshelf stands ajar, revealing a dark passage behind it."
+}
+```
+
 ### Slot References in Effects
 
 Just as with preconditions, any string field in an effect can use `{slot_name}` to reference a value captured from the pattern. The engine substitutes the resolved value before execution.
@@ -517,7 +947,7 @@ Setting `"one_shot": true` on a command causes the engine to:
 
 1. Execute the command normally the first time all preconditions are met.
 2. After execution, set an internal `executed` flag on that command in the database.
-3. On subsequent attempts, the engine skips this command entirely (it will never fire again).
+3. On subsequent attempts, the engine skips this command. If the command has a `done_message`, that message is displayed as a fallback (the engine still verifies preconditions, excluding `not_flag` checks, before showing it). If no `done_message` is set, the command is silently skipped and resolution continues to lower-priority commands.
 
 The `executed` flag is stored per-command in the commands table. It persists across save/load because the `.zork` file IS the save.
 
@@ -619,7 +1049,7 @@ All effects in a command execute within a single database transaction. If the en
     { "type": "add_score", "points": 10 },
     { "type": "print", "message": "The rusty key turns with a grinding screech. The iron door shudders, then swings inward. A cold draft rushes out from the darkness beyond." }
   ],
-  "fail_message": "You need the right key for this door.",
+  "failure_message": "You need the right key for this door.",
   "one_shot": true
 }
 ```
@@ -786,7 +1216,7 @@ A follow-up command for re-examining the bookshelf after the passage is revealed
     { "type": "add_score", "points": 25 },
     { "type": "print", "message": "The statue slides across the floor with surprising ease — the mechanism below has unlocked its base. Behind it, a narrow staircase descends into the earth. Cold air rises from below, carrying the faint scent of dust and something older." }
   ],
-  "fail_message": "The statue won't budge. It feels like something is holding it in place from below.",
+  "failure_message": "The statue won't budge. It feels like something is holding it in place from below.",
   "one_shot": true
 }
 ```
@@ -814,8 +1244,8 @@ A follow-up command for re-examining the bookshelf after the passage is revealed
 **Design notes on multi-step chains**:
 
 - Flags are the connective tissue. Step 1 sets `lever_pulled`. Step 2 requires `lever_pulled`.
-- The `fail_message` on the main push command provides a hint ("holding it in place from below") that nudges the player toward finding the mechanism room.
-- The separate "locked" variant gives explicit feedback when the player tries pushing the statue before the lever. This is not strictly necessary (the `fail_message` on the primary command would fire), but it allows for more specific narrative text that guides the player without being heavy-handed.
+- The `failure_message` on the main push command provides a hint ("holding it in place from below") that nudges the player toward finding the mechanism room.
+- The separate "locked" variant gives explicit feedback when the player tries pushing the statue before the lever. This is not strictly necessary (the `failure_message` on the primary command would fire), but it allows for more specific narrative text that guides the player without being heavy-handed.
 - The `solve_puzzle` effect on step 2 marks the entire multi-step puzzle as complete for scoring and progression tracking.
 
 ---
@@ -831,11 +1261,11 @@ A follow-up command for re-examining the bookshelf after the passage is revealed
 | `has_flag` | `flag` | World flag is set |
 | `not_flag` | `flag` | World flag is NOT set |
 | `item_in_room` | `item`, `room` | Item exists in this room |
-| `npc_in_room` | `npc`, `room` | NPC exists in this room |
+| `npc_in_room` | `npc`, `room` | Living NPC exists in this room |
 | `lock_unlocked` | `lock` | Lock is in unlocked state |
 | `puzzle_solved` | `puzzle` | Puzzle has been solved |
 | `health_above` | `threshold` | Player health > threshold |
-| `item_accessible` | `item` | Item is accessible to the player (in inventory or current room) |
+| `item_accessible` | `item` | Item is visible and reachable (in inventory, current room, or inside an open container in either) |
 | `container_open` | `container` | Container is in open state |
 | `item_in_container` | `item`, `container` | Item is inside this container |
 | `not_item_in_container` | `item`, `container` | Item is NOT inside this container |
@@ -863,10 +1293,20 @@ A follow-up command for re-examining the bookshelf after the passage is revealed
 | `open_container` | `container` | Open a container |
 | `move_item_to_container` | `item`, `container` | Place item inside container |
 | `take_item_from_container` | `item` | Remove item from its container to player inventory |
-| `consume_quantity` | `item`, `amount` | Use up consumable charges |
-| `restore_quantity` | `item`, `amount` | Refill consumable charges |
+| `consume_quantity` | `item` | Use up consumable charges (amount defaults to 1) |
+| `restore_quantity` | `item` | Refill consumable charges (amount defaults to 1) |
 | `set_toggle_state` | `item`, `state` | Change an item's toggle state |
 | `move_npc` | `npc`, `room` | Relocate an NPC to a different room |
+| `make_visible` | `item` | Make a hidden item visible |
+| `make_hidden` | `item` | Make a visible item hidden |
+| `make_takeable` | `item` | Make an item takeable |
+| `fail_quest` | `quest` | Mark a quest as failed |
+| `complete_quest` | `quest` | Mark a quest as completed (sets completion flag, awards score) |
+| `kill_npc` | `npc` | Kill a specific NPC |
+| `remove_npc` | `npc` | Permanently remove an NPC from the game |
+| `lock_exit` | `exit` | Lock an exit |
+| `hide_exit` | `exit` | Hide an exit |
+| `change_description` | `entity`, `text` | Change the description of any entity |
 
 ### Target-Aware Effects (Interaction Responses Only)
 

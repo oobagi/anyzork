@@ -62,8 +62,8 @@ false
 
 ```
 game player room exit item npc lock puzzle flag quest objective
-command trigger dialogue option interaction
-require effect on when in
+command trigger dialogue option interaction on when
+require effect in
 true false
 ```
 
@@ -88,19 +88,18 @@ declarations in any order.
 game {
   title       "The Sealed King"
   author      "A wizard's prompt goes here."
-  intro_text  "You awaken in a stone corridor..."
+  intro       "You awaken in a stone corridor..."
   win_text    "The mountain gate seals shut behind you."
   lose_text   "Darkness takes you."
   max_score   100
   realism     "medium"
-  win_conditions  [sealed_king_defeated]
-  lose_conditions [player_died]
+  win         [sealed_king_defeated]
+  lose        [player_died]
 }
 
 player {
-  start_room  dungeon_entrance
-  hp          100
-  max_hp      100
+  start  dungeon_entrance
+  hp     100
 }
 
 # Entity declarations follow in any order.
@@ -117,13 +116,13 @@ Compiles to the `metadata` table (single row).
 |-------------------|---------------|----------|-------|
 | `title`           | string        | yes      | |
 | `author`          | string        | yes      | Maps to `author_prompt` |
-| `intro_text`      | string        | no       | |
+| `intro_text`      | string        | no       | Shorthand: `intro` |
 | `win_text`        | string        | no       | |
 | `lose_text`       | string        | no       | |
 | `max_score`       | integer       | no       | Default 0 |
 | `realism`         | string        | no       | `"low"`, `"medium"`, `"high"`. Default `"medium"` |
-| `win_conditions`  | id-list       | yes      | `[flag_id, ...]` |
-| `lose_conditions` | id-list       | no       | `[flag_id, ...]` |
+| `win_conditions`  | id-list       | yes      | `[flag_id, ...]`. Shorthand: `win` |
+| `lose_conditions` | id-list       | no       | `[flag_id, ...]`. Shorthand: `lose` |
 
 ### `player` block
 
@@ -131,7 +130,7 @@ Compiles to the `player` table (single row).
 
 | Field        | Type      | Required | Notes |
 |--------------|-----------|----------|-------|
-| `start_room` | id        | yes      | References a room id |
+| `start_room` | id        | yes      | References a room id. Shorthand: `start` |
 | `hp`         | integer   | no       | Default 100 |
 | `max_hp`     | integer   | no       | Default 100 |
 
@@ -145,11 +144,14 @@ room cellar {
   name        "The Cellar"
   description "Damp stone walls sweat in the lamplight. A rusted shelf
                holds forgotten jars. Water drips from somewhere above."
-  short_description "A damp cellar beneath the house."
+  short       "A damp cellar beneath the house."
   first_visit "The smell hits you first -- mildew and something sharper."
   region      "house"
-  is_dark     false
-  is_start    false
+  dark        false
+  start       false
+
+  exit north -> hall
+  exit down  -> vault (locked) "A trapdoor in the floor."
 }
 ```
 
@@ -159,13 +161,30 @@ Compiles to the `rooms` table.
 |---------------------|---------|----------|---------|
 | `name`              | string  | yes      | |
 | `description`       | string  | yes      | |
-| `short_description` | string  | yes      | |
+| `short_description` | string  | yes      | Shorthand: `short` |
 | `first_visit`       | string  | no       | Maps to `first_visit_text` |
 | `region`            | string  | yes      | |
-| `is_dark`           | boolean | no       | false |
-| `is_start`          | boolean | no       | false |
+| `is_dark`           | boolean | no       | false. Shorthand: `dark` |
+| `is_start`          | boolean | no       | false. Shorthand: `start` |
+
+#### Inline exits
+
+Exits can be declared inline inside a room block. The exit ID is
+auto-generated as `{from_room}_{direction}`.
+
+```zorkscript
+exit north -> hall                        # cellar_north
+exit down  -> vault (locked)              # cellar_down, is_locked = true
+exit east  -> secret_room (hidden) "A crack in the wall."
+```
+
+Parenthetical modifiers: `(locked)`, `(hidden)`, or `(locked, hidden)`.
+An optional trailing string sets the exit description.
 
 ### 4.2 Exits
+
+Exits can also be declared as standalone blocks. Use this form when you
+need an explicit exit ID.
 
 ```zorkscript
 exit cellar_to_hall {
@@ -193,186 +212,316 @@ Compiles to the `exits` table.
 
 ```zorkscript
 item rusty_key {
-  name              "Rusty Key"
-  description       "A small iron key, red with rust."
-  examine           "The teeth are worn but intact. It might still work."
-  room_id           cellar
-  is_takeable       true
-  is_visible        true
+  name        "Rusty Key"
+  description "A small iron key, red with rust."
+  examine     "The teeth are worn but intact. It might still work."
+  in          cellar
+  takeable    true
+  visible     true
 
   # Optional messaging
-  take_message      "You pocket the key. It leaves rust on your fingers."
-  room_description  "A rusty key lies on the shelf."
+  take_msg    "You pocket the key. It leaves rust on your fingers."
+  room_desc   "A rusty key lies on the shelf."
+  home        cellar
 }
 ```
 
 Compiles to the `items` table. The `examine` field maps to
 `examine_description`.
 
-Items support all fields from the schema. The most common fields:
+Items support all fields from the schema. The most common fields are
+listed below. Shorthand aliases (preferred in new code) are shown in
+the Notes column.
 
-| Field                 | Type    | Required | Default |
-|-----------------------|---------|----------|---------|
-| `name`                | string  | yes      | |
-| `description`         | string  | yes      | |
-| `examine`             | string  | yes      | Maps to `examine_description` |
-| `room_id`             | id      | no       | null (not placed yet) |
-| `container_id`        | id      | no       | null |
-| `is_takeable`         | boolean | no       | true |
-| `is_visible`          | boolean | no       | true |
-| `is_consumed_on_use`  | boolean | no       | false |
-| `take_message`        | string  | no       | |
-| `drop_message`        | string  | no       | |
-| `room_description`    | string  | no       | |
-| `read_description`    | string  | no       | |
-| `category`            | string  | no       | |
-| `item_tags`           | list    | no       | `["weapon", "light_source", ...]` |
+| Field                 | Type    | Required | Default | Notes |
+|-----------------------|---------|----------|---------|-------|
+| `name`                | string  | yes      | | |
+| `description`         | string  | yes      | | |
+| `examine_description` | string  | yes      | | Shorthand: `examine` or `examine_text` |
+| `room_id`             | id      | no       | null (not placed yet) | Shorthand: `in`. Auto-reclassified to `container_id` if the target is an item. |
+| `container_id`        | id      | no       | null | |
+| `is_takeable`         | boolean | no       | true | Shorthand: `takeable` |
+| `is_visible`          | boolean | no       | true | Shorthand: `visible` |
+| `is_consumed_on_use`  | boolean | no       | false | Shorthand: `consumable` |
+| `take_message`        | string  | no       | | Shorthand: `take_msg` |
+| `drop_message`        | string  | no       | | Shorthand: `drop_msg` |
+| `room_description`    | string  | no       | | Shorthand: `room_desc` |
+| `drop_description`    | string  | no       | | Shorthand: `drop_desc` |
+| `read_description`    | string  | no       | | Shorthand: `read_text` |
+| `home_room_id`        | id      | no       | | Shorthand: `home` |
+| `category`            | string  | no       | | |
+| `item_tags`           | list    | no       | `["weapon", "light_source", ...]` | Shorthand: `tags` |
+| `requires_item_id`    | id      | no       | | Shorthand: `requires`. Item dependency (e.g. flashlight requires batteries). |
+| `requires_message`    | string  | no       | | Shorthand: `requires_msg` |
 
 #### Container items
 
 ```zorkscript
 item wooden_chest {
-  name          "Wooden Chest"
-  description   "A heavy oak chest bound with iron bands."
-  examine       "The lock is old but sturdy."
-  room_id       cellar
-  is_takeable   false
-  is_container  true
-  is_open       false
-  has_lid       true
-  is_locked     true
-  key_item_id   rusty_key
-  consume_key   true
-  open_message  "The lid creaks open."
-  unlock_message "The lock clicks and falls away."
+  name        "Wooden Chest"
+  description "A heavy oak chest bound with iron bands."
+  examine     "The lock is old but sturdy."
+  in          cellar
+  takeable    false
+  container   true
+  locked      true
+  key         rusty_key
+  consume_key true
+  category    "furniture"
+  open_msg    "The lid creaks open."
+  unlock_msg  "The lock clicks and falls away."
+  lock_msg    "The chest is locked."
+  search_msg  "You rummage through the chest."
 }
 ```
+
+Container-specific fields:
+
+| Field              | Type    | Default | Notes |
+|--------------------|---------|---------|-------|
+| `is_container`     | boolean | false   | Shorthand: `container` |
+| `is_open`          | boolean | false   | Shorthand: `open` |
+| `has_lid`          | boolean | | |
+| `is_locked`        | boolean | false   | Shorthand: `locked` |
+| `key_item_id`      | id      | | Shorthand: `key` |
+| `consume_key`      | boolean | | |
+| `open_message`     | string  | | Shorthand: `open_msg` |
+| `unlock_message`   | string  | | Shorthand: `unlock_msg` |
+| `lock_message`     | string  | | Shorthand: `lock_msg` |
+| `search_message`   | string  | | Shorthand: `search_msg` |
+| `accepts_items`    | list    | | Shorthand: `accepts` |
+| `reject_message`   | string  | | Shorthand: `reject_msg` |
 
 #### Toggleable items
 
 ```zorkscript
 item oil_lamp {
-  name              "Oil Lamp"
-  description       "A brass lamp with a wick."
-  examine           "The oil reservoir is half full."
-  room_id           cellar
-  is_toggleable     true
-  toggle_state      "off"
-  toggle_on_message  "The flame catches and steadies."
-  toggle_off_message "You snuff the flame."
+  name          "Oil Lamp"
+  description   "A brass lamp with a wick."
+  examine       "The oil reservoir is half full."
+  in            cellar
+  toggle        true
+  toggle_state  "off"
+  on_msg        "The flame catches and steadies."
+  off_msg       "You snuff the flame."
+  tags          ["light_source"]
 }
 ```
+
+Toggle-specific fields:
+
+| Field                | Type    | Default | Notes |
+|----------------------|---------|---------|-------|
+| `is_toggleable`      | boolean | false   | Shorthand: `toggle` |
+| `toggle_state`       | string  | | Shorthand: `toggle_default` |
+| `toggle_on_message`  | string  | | Shorthand: `on_msg` |
+| `toggle_off_message` | string  | | Shorthand: `off_msg` |
+| `toggle_states`      | list    | | Shorthand: `states`. Multi-state toggles. |
+| `toggle_messages`    | list    | | Shorthand: `state_msgs`. Messages per state. |
 
 #### Quantity items
 
 ```zorkscript
 item revolver {
-  name                "Revolver"
-  description         "A six-shot revolver."
-  examine             "Four rounds remain."
-  room_id             study
-  quantity            4
-  max_quantity        6
-  quantity_unit       "rounds"
-  depleted_message    "Click. Empty."
-  quantity_description "The {name} has {quantity} {unit} remaining."
-  item_tags           ["weapon", "firearm"]
+  name           "Revolver"
+  description    "A six-shot revolver."
+  examine        "Four rounds remain."
+  in             study
+  quantity       4
+  max_quantity   6
+  quantity_unit  "rounds"
+  depleted_msg   "Click. Empty."
+  quantity_desc  "The {name} has {quantity} {unit} remaining."
+  tags           ["weapon", "firearm"]
 }
 ```
+
+Quantity-specific fields:
+
+| Field                  | Type    | Default | Notes |
+|------------------------|---------|---------|-------|
+| `quantity`             | integer | | |
+| `max_quantity`         | integer | | |
+| `quantity_unit`        | string  | | Shorthand: `quantity_unit` |
+| `depleted_message`     | string  | | Shorthand: `depleted_msg` |
+| `quantity_description` | string  | | Shorthand: `quantity_desc` |
 
 ### 4.4 NPCs
 
 ```zorkscript
 npc old_wizard {
-  name              "The Old Wizard"
-  description       "A stooped figure in threadbare robes."
-  examine           "His eyes are sharp despite his age."
-  room_id           tower_study
-  default_dialogue  "He peers at you over his spectacles."
-  category          "character"
+  name        "The Old Wizard"
+  description "A stooped figure in threadbare robes."
+  examine     "His eyes are sharp despite his age."
+  in          tower_study
+  dialogue    "He peers at you over his spectacles."
+  category    "character"
 }
 ```
 
 Compiles to the `npcs` table.
 
-| Field              | Type    | Required | Default |
-|--------------------|---------|----------|---------|
-| `name`             | string  | yes      | |
-| `description`      | string  | yes      | |
-| `examine`          | string  | yes      | Maps to `examine_description` |
-| `room_id`          | id      | yes      | |
-| `default_dialogue` | string  | yes      | |
-| `is_alive`         | boolean | no       | true |
-| `is_blocking`      | boolean | no       | false |
-| `blocked_exit_id`  | id      | no       | |
-| `unblock_flag`     | id      | no       | |
-| `hp`               | integer | no       | |
-| `damage`           | integer | no       | |
-| `category`         | string  | no       | |
+| Field              | Type    | Required | Default | Notes |
+|--------------------|---------|----------|---------|-------|
+| `name`             | string  | yes      | | |
+| `description`      | string  | yes      | | |
+| `examine_description` | string | yes   | | Shorthand: `examine` or `examine_text` |
+| `room_id`          | id      | yes      | | Shorthand: `in` |
+| `default_dialogue` | string  | yes      | | Shorthand: `dialogue` |
+| `is_alive`         | boolean | no       | true | |
+| `is_blocking`      | boolean | no       | false | Set automatically by `blocking` directive |
+| `blocked_exit_id`  | id      | no       | | Set automatically by `blocking` directive |
+| `unblock_flag`     | id      | no       | Field name: `unblock` |
+| `hp`               | integer | no       | | |
+| `damage`           | integer | no       | | |
+| `category`         | string  | no       | | |
 
-### 4.5 Locks
+#### Blocking NPCs
+
+An NPC can block an exit using the `blocking` directive. The parser
+resolves the exit by `from -> to direction` and sets `is_blocking` and
+`blocked_exit_id` automatically.
 
 ```zorkscript
-lock dungeon_door_lock {
-  type            "key"
-  target_exit     dungeon_entrance_to_hall
-  key_item_id     rusty_key
-  locked_message  "The iron door is locked."
-  unlock_message  "The lock clicks open."
-  consume_key     true
+npc guard {
+  name     "The Guard"
+  ...
+  blocking gate_room -> courtyard north
+  unblock  guard_bribed
 }
 ```
 
-Compiles to the `locks` table. The `type` field maps to `lock_type`.
-The `target_exit` field maps to `target_exit_id`.
+#### Inline dialogue (`talk` blocks)
 
-| Field            | Type    | Required | Default |
-|------------------|---------|----------|---------|
-| `type`           | string  | yes      | `"key"`, `"puzzle"`, `"flag"`, `"combination"`, `"npc"` |
-| `target_exit`    | id      | yes      | Maps to `target_exit_id` |
-| `key_item_id`    | id      | no       | For key-type locks |
-| `puzzle_id`      | id      | no       | For puzzle-type locks |
-| `combination`    | string  | no       | For combination-type locks |
-| `required_flags` | id-list | no       | For flag-type locks |
-| `locked_message` | string  | yes      | |
-| `unlock_message` | string  | yes      | |
-| `is_locked`      | boolean | no       | true |
-| `consume_key`    | boolean | no       | true |
+Dialogue trees can be declared inline inside an NPC block using `talk`
+sub-blocks. The first `talk` block is automatically marked as the root
+dialogue node. Node IDs are generated as `{npc_id}_{label}`.
+
+```zorkscript
+npc guard {
+  name        "The Guard"
+  description "A heavyset man in dented armor."
+  examine     "His eyes are bloodshot."
+  in          gate_room
+  dialogue    "He barely looks up."
+  category    "character"
+  blocking    gate_room -> courtyard north
+  unblock     guard_bribed
+
+  talk root {
+    "Another rat from the cells. Go back."
+    option "I have something for you." -> bribe {
+      require_item silver_key
+    }
+    option "What's beyond the gate?" -> gate_info
+    option "I'll find another way."
+  }
+
+  talk gate_info {
+    "Courtyard. Sunlight. None of which concerns you."
+    option "I'll be back." -> root
+    option "Forget it."
+  }
+
+  talk bribe {
+    "His eyes fix on the key. He pockets it. 'Fine. Go.'"
+    sets [guard_bribed]
+  }
+}
+```
+
+Talk block syntax:
+- The first string in the block is the `content`.
+- `option "text" -> label` adds a dialogue option pointing to another
+  talk block on the same NPC. Use `-> end` for terminal options. Omit
+  the arrow entirely for terminal options too.
+- Options can have a sub-block with `require_flag`, `exclude_flag`,
+  `require_item`, `set_flags`, `required_flags`, `excluded_flags`,
+  `required_items`.
+- `sets [flag1, flag2]` sets flags when the dialogue node is visited.
+
+Option IDs are auto-generated as `{node_id}_opt_{index}`.
+
+### 4.5 Locks
+
+Locks can reference their target exit by ID or by route.
+
+```zorkscript
+# By exit ID
+lock dungeon_door_lock {
+  type         "key"
+  target_exit  dungeon_entrance_to_hall
+  key          rusty_key
+  locked       "The iron door is locked."
+  unlocked     "The lock clicks open."
+  consume      true
+}
+
+# By exit route (preferred with inline exits)
+lock portcullis_lock {
+  exit     gate_room -> courtyard north
+  type     "flag"
+  flags    [door_raised]
+  locked   "The portcullis is lowered."
+  unlocked "The portcullis rises."
+}
+```
+
+Compiles to the `locks` table.
+
+| Field            | Type    | Required | Default | Notes |
+|------------------|---------|----------|---------|-------|
+| `lock_type`      | string  | yes      | | `"key"`, `"puzzle"`, `"flag"`, `"combination"`, `"npc"`. Shorthand: `type` |
+| `target_exit_id` | id      | yes      | | Shorthand: `target_exit`. Or use `exit from -> to direction` route syntax. |
+| `key_item_id`    | id      | no       | | For key-type locks. Shorthand: `key` |
+| `puzzle_id`      | id      | no       | | For puzzle-type locks. Shorthand: `puzzle` |
+| `combination`    | string  | no       | | For combination-type locks |
+| `required_flags` | id-list | no       | | For flag-type locks. Shorthand: `flags` |
+| `locked_message` | string  | yes      | | Shorthand: `locked` |
+| `unlock_message` | string  | yes      | | Shorthand: `unlocked` |
+| `is_locked`      | boolean | no       | true | |
+| `consume_key`    | boolean | no       | true | Shorthand: `consume` |
 
 ### 4.6 Puzzles
 
 ```zorkscript
 puzzle lever_and_statue {
-  name            "The Lever and the Statue"
-  description     "Two mechanisms work in tandem."
-  room_id         mechanism_room
-  difficulty      2
-  score_value     25
-  is_optional     false
-  solution_steps  ["Pull the lever in the mechanism room",
-                   "Push the statue in the great hall"]
-  hint_text       ["Something clicks deep in the walls.",
-                   "The statue seems anchored from below."]
+  name        "The Lever and the Statue"
+  description "Two mechanisms work in tandem."
+  in          mechanism_room
+  difficulty  2
+  score       25
+  is_optional false
+  steps       ["Pull the lever in the mechanism room",
+               "Push the statue in the great hall"]
+  hint        ["Something clicks deep in the walls.",
+               "The statue seems anchored from below."]
 }
 ```
 
 Compiles to the `puzzles` table.
 
-| Field            | Type       | Required | Default |
-|------------------|------------|----------|---------|
-| `name`           | string     | yes      | |
-| `description`    | string     | yes      | |
-| `room_id`        | id         | yes      | |
-| `difficulty`     | integer    | no       | 1 |
-| `score_value`    | integer    | no       | 0 |
-| `is_optional`    | boolean    | no       | false |
-| `is_solved`      | boolean    | no       | false |
-| `solution_steps` | string-list| no       | JSON array |
-| `hint_text`      | string-list| no       | JSON array |
+| Field            | Type       | Required | Default | Notes |
+|------------------|------------|----------|---------|-------|
+| `name`           | string     | yes      | | |
+| `description`    | string     | yes      | | |
+| `room_id`        | id         | yes      | | Shorthand: `in` |
+| `difficulty`     | integer    | no       | 1 | |
+| `score_value`    | integer    | no       | 0 | Shorthand: `score` |
+| `is_optional`    | boolean    | no       | false | |
+| `is_solved`      | boolean    | no       | false | |
+| `solution_steps` | string-list| no       | JSON array | Shorthand: `steps` |
+| `hint_text`      | string-list| no       | JSON array | Shorthand: `hint` |
 
 ### 4.7 Flags
 
+Flags support both a single-line form and a block form.
+
 ```zorkscript
+# Single-line form (preferred)
+flag dungeon_door_opened "The dungeon door has been opened"
+
+# Block form
 flag dungeon_door_opened {
   description "The dungeon door has been opened"
   value       false
@@ -389,39 +538,23 @@ Compiles to the `flags` table. The `value` is stored as a string
 
 ### 4.8 Quests
 
+The quest type can be specified with a `main:` or `side:` prefix before
+the quest ID, or with a `quest_type` field inside the block.
+
+Objectives use an inline shorthand: `objective "description" -> flag`.
+
 ```zorkscript
-quest seal_the_gate {
-  name            "Seal the Mountain Gate"
-  description     "Find the three keys and seal the gate."
-  quest_type      "main"
-  discovery_flag  met_wizard
-  completion_flag gate_sealed
-  score_value     50
-  sort_order      0
+quest main:seal_the_gate {
+  name        "Seal the Mountain Gate"
+  description "Find the three keys and seal the gate."
+  discovery   met_wizard
+  completion  gate_sealed
+  score       50
+  sort_order  0
 
-  objective obj_find_amulet {
-    description     "Retrieve the enchanted amulet."
-    completion_flag has_amulet
-    order_index     0
-    is_optional     false
-    bonus_score     10
-  }
-
-  objective obj_find_crystal {
-    description     "Find the crystal shard."
-    completion_flag has_crystal
-    order_index     1
-    is_optional     false
-    bonus_score     10
-  }
-
-  objective obj_explore_crypt {
-    description     "Explore the hidden crypt."
-    completion_flag explored_crypt
-    order_index     2
-    is_optional     true
-    bonus_score     5
-  }
+  objective "Retrieve the enchanted amulet" -> has_amulet (bonus: 10)
+  objective "Find the crystal shard" -> has_crystal (bonus: 10)
+  objective "Explore the hidden crypt" -> explored_crypt (optional, bonus: 5)
 }
 ```
 
@@ -430,25 +563,40 @@ nested inside the quest block.
 
 Quest fields:
 
-| Field             | Type    | Required | Default |
-|-------------------|---------|----------|---------|
-| `name`            | string  | yes      | |
-| `description`     | string  | yes      | |
-| `quest_type`      | string  | yes      | `"main"` or `"side"` |
-| `discovery_flag`  | id      | no       | |
-| `completion_flag` | id      | yes      | |
-| `score_value`     | integer | no       | 0 |
-| `sort_order`      | integer | no       | 0 |
+| Field             | Type    | Required | Default | Notes |
+|-------------------|---------|----------|---------|-------|
+| `name`            | string  | yes      | | |
+| `description`     | string  | yes      | | |
+| `quest_type`      | string  | yes      | | `"main"` or `"side"`. Can use prefix syntax: `quest main:id` |
+| `discovery_flag`  | id      | no       | | Shorthand: `discovery` |
+| `completion_flag` | id      | yes      | | Shorthand: `completion` |
+| `score_value`     | integer | no       | 0 | Shorthand: `score` |
+| `sort_order`      | integer | no       | 0 | |
 
-Objective fields:
+Objective inline syntax:
 
-| Field             | Type    | Required | Default |
-|-------------------|---------|----------|---------|
-| `description`     | string  | yes      | |
-| `completion_flag` | id      | yes      | |
-| `order_index`     | integer | no       | 0 |
-| `is_optional`     | boolean | no       | false |
-| `bonus_score`     | integer | no       | 0 |
+```
+objective "description" -> completion_flag (modifiers)
+```
+
+Modifiers (in parentheses, comma-separated):
+- `optional` -- marks the objective as optional
+- `bonus: N` -- sets the bonus score
+- `order: N` -- overrides the auto-assigned order index
+
+Objective IDs are auto-generated as `{quest_id}_obj_{index}`.
+
+The older named-block form is also supported:
+
+```zorkscript
+objective obj_find_amulet {
+  description     "Retrieve the enchanted amulet."
+  completion_flag has_amulet
+  order_index     0
+  is_optional     false
+  bonus_score     10
+}
+```
 
 
 ## 5. Command Blocks
@@ -456,7 +604,9 @@ Objective fields:
 Commands define player-initiated actions. Each command is a pattern-matching
 rule with preconditions and effects.
 
-### Basic syntax
+There are two forms: the named `command` block and the shorthand `on` block.
+
+### Named `command` block
 
 ```zorkscript
 command use_key_on_door {
@@ -481,20 +631,58 @@ command use_key_on_door {
 }
 ```
 
-### Structure
+### Shorthand `on` block
+
+The `on` form auto-generates an ID and extracts the verb from the
+pattern. Use this for concise command definitions.
+
+```zorkscript
+on "pull {target}" in [supply_closet] {
+  require not_flag(lever_pulled)
+
+  effect set_flag(lever_pulled)
+  effect add_score(15)
+
+  success "You heave the lever down. Chains rattle."
+  fail    "The lever is already down."
+  once
+}
+
+# Global fallback (no room scope)
+on "pull {target}" {
+  success "There's nothing here you can pull."
+}
+```
+
+`on` block fields:
+
+| Field     | Type         | Notes |
+|-----------|--------------|-------|
+| pattern   | string       | The quoted pattern after `on`. Verb is extracted automatically. |
+| `in`      | id or id-list| Optional room scope. `in room_id` or `in [room1, room2]`. |
+| `require` | precondition | 0+. Same syntax as `command`. |
+| `effect`  | effect       | 0+. Same syntax as `command`. |
+| `success` | string       | Maps to `success_message`. |
+| `fail`    | string       | Maps to `failure_message`. |
+| `done`    | string       | Maps to `done_message`. |
+| `priority`| integer      | Default 0. |
+| `once`    | keyword      | Sets `one_shot` to true. |
+
+### `command` block structure
 
 | Field       | Type        | Required | Notes |
 |-------------|-------------|----------|-------|
-| `verb`      | string      | yes      | First word of input. Lowercased. |
-| `pattern`   | string      | yes      | Full pattern with `{slot}` placeholders |
-| `in_rooms`  | id-list     | no       | Maps to `context_room_ids`. Omit for global. |
-| `one_shot`  | boolean     | no       | Default false |
-| `priority`  | integer     | no       | Default 0. Higher = evaluated first. |
-| `puzzle_id` | id          | no       | Associate with a puzzle. |
-| `require`   | precondition| 0+       | All must pass for the command to fire. |
-| `on_fail`   | string      | no       | Maps to `failure_message` |
-| `on_done`   | string      | no       | Maps to `done_message` (for re-fired one-shots) |
-| `effect`    | effect      | 1+       | Executed in order when preconditions pass. |
+| `verb`              | string      | yes      | First word of input. Lowercased. Auto-extracted from `pattern` if omitted. |
+| `pattern`           | string      | yes      | Full pattern with `{slot}` placeholders |
+| `in_rooms`          | id-list     | no       | Maps to `context_room_ids`. Omit for global. |
+| `one_shot`          | boolean     | no       | Default false |
+| `priority`          | integer     | no       | Default 0. Higher = evaluated first. |
+| `puzzle_id`         | id          | no       | Associate with a puzzle. |
+| `require`           | precondition| 0+       | All must pass for the command to fire. |
+| `success_message`   | string      | no       | Displayed on success. |
+| `on_fail`           | string      | no       | Maps to `failure_message` |
+| `on_done`           | string      | no       | Maps to `done_message` (for re-fired one-shots) |
+| `effect`            | effect      | 1+       | Executed in order when preconditions pass. |
 
 ### Precondition syntax
 
@@ -581,6 +769,10 @@ effect remove_npc(shady_merchant)
 effect lock_exit(mine_shaft_north)
 effect hide_exit(lower_cavern_east)
 effect change_description(lower_cavern, "The cavern is knee-deep in rushing water.")
+effect make_visible(hidden_gem)
+effect make_hidden(decoy_item)
+effect make_takeable(mounted_sword)
+effect move_npc(old_wizard, tower_study)
 ```
 
 #### Effect reference
@@ -613,6 +805,10 @@ effect change_description(lower_cavern, "The cavern is knee-deep in rushing wate
 | `lock_exit(E)`                | exit id                    | `{"type": "lock_exit", "exit": E}` |
 | `hide_exit(E)`                | exit id                    | `{"type": "hide_exit", "exit": E}` |
 | `change_description(ID, TXT)` | entity id, string literal  | `{"type": "change_description", "entity": ID, "text": TXT}` |
+| `make_visible(I)`            | item id                    | `{"type": "make_visible", "item": I}` |
+| `make_hidden(I)`             | item id                    | `{"type": "make_hidden", "item": I}` |
+| `make_takeable(I)`           | item id                    | `{"type": "make_takeable", "item": I}` |
+| `move_npc(NPC, R)`           | npc id, room id            | `{"type": "move_npc", "npc": NPC, "room": R}` |
 
 ### Slot references
 
@@ -638,6 +834,11 @@ JSON, preserving the engine's existing substitution behavior.
 Triggers are reactive rules that fire when the engine emits an event. They
 share the same precondition/effect vocabulary as commands.
 
+There are two forms: the named `trigger` block and the shorthand `when`
+block.
+
+### Named `trigger` block
+
 ```zorkscript
 trigger enter_hut_intro {
   on       room_enter
@@ -653,8 +854,6 @@ trigger enter_hut_intro {
 }
 ```
 
-### Structure
-
 | Field     | Type        | Required | Notes |
 |-----------|-------------|----------|-------|
 | `on`      | string      | yes      | Event type. See below. |
@@ -665,6 +864,34 @@ trigger enter_hut_intro {
 | `effect`  | effect      | 0+       | Same syntax as commands. |
 | `message` | string      | no       | Display text when trigger fires. |
 
+### Shorthand `when` block
+
+The `when` form uses function-call syntax for the event and
+auto-generates an ID as `when_{event}_{arg}`.
+
+```zorkscript
+when room_enter(courtyard) {
+  require has_flag(guard_bribed)
+
+  effect set_flag(escaped_dungeon)
+  effect add_score(15)
+
+  message "You climb the stairs into blinding sunlight. Free."
+  once
+}
+```
+
+`when` block fields:
+
+| Field     | Type         | Notes |
+|-----------|--------------|-------|
+| event     | func-call    | `event_type(event_arg)` after `when`. |
+| `require` | precondition | 0+. Same syntax as `trigger`. |
+| `effect`  | effect       | 0+. Same syntax as `trigger`. |
+| `message` | string       | Display text when trigger fires. |
+| `priority`| integer      | Default 0. |
+| `once`    | keyword      | Sets `one_shot` to true. |
+
 ### Event types
 
 | Event Type      | `when` fields       | Fired when... |
@@ -673,9 +900,9 @@ trigger enter_hut_intro {
 | `flag_set`      | `flag`              | A flag is set to true |
 | `dialogue_node` | `node_id`           | A dialogue node is visited |
 | `item_taken`    | `item_id`           | Player takes an item |
-| `item_dropped`  | `item_id`, `room_id`| Player drops an item |
+| `item_dropped`  | `item_id`           | Player drops an item |
 
-### `when` clause compilation
+### `when` clause compilation (named `trigger` form)
 
 Each `when` line becomes a key-value pair in the `event_data` JSON object:
 
@@ -690,6 +917,9 @@ Compiles to:
 {"event_data": {"room_id": "hut"}}
 {"event_data": {"item_id": "rusty_key"}}
 ```
+
+In the shorthand `when` form, the event argument is mapped automatically:
+`when room_enter(hut)` compiles to `{"event_type": "room_enter", "event_data": {"room_id": "hut"}}`.
 
 
 ## 7. Dialogue Trees
@@ -784,15 +1014,15 @@ Use `target "*"` for wildcard fallbacks that match any category.
 
 Compiles to the `interaction_responses` table.
 
-| Field      | Type    | Required | Default |
-|------------|---------|----------|---------|
-| `tag`      | string  | yes      | |
-| `target`   | string  | yes      | Use `"*"` for wildcard |
-| `response` | string  | yes      | Template with `{item}` and `{target}` |
-| `consumes` | integer | no       | 0 |
-| `score`    | integer | no       | 0 |
-| `sets_flag`| id      | no       | |
-| `effect`   | effect  | no       | Repeatable. All standard + target-aware effects |
+| Field      | Type    | Required | Default | Notes |
+|------------|---------|----------|---------|-------|
+| `tag`      | string  | yes      | | Maps to `item_tag` |
+| `target`   | string  | yes      | Use `"*"` for wildcard | Maps to `target_category` |
+| `response` | string  | yes      | Template with `{item}` and `{target}` | |
+| `consumes` | integer | no       | 0 | |
+| `score`    | integer | no       | 0 | Maps to `score_change` |
+| `sets_flag`| id      | no       | | Maps to `flag_to_set` |
+| `effect`   | effect  | no       | | Repeatable. All standard + target-aware effects |
 
 Target-aware effects (only available in interactions):
 - `kill_target()` — kill the target NPC, spawn lootable body
@@ -970,17 +1200,16 @@ A small but complete game: two rooms, a locked door, a key, and a puzzle.
 game {
   title       "The Iron Door"
   author      "A two-room escape puzzle."
-  intro_text  "You wake in a stone cellar. The only exit is an iron door."
+  intro       "You wake in a stone cellar. The only exit is an iron door."
   win_text    "Daylight. You are free."
   max_score   20
   realism     "medium"
-  win_conditions [escaped]
+  win         [escaped]
 }
 
 player {
-  start_room cellar
-  hp         100
-  max_hp     100
+  start  cellar
+  hp     100
 }
 
 # -- World --
@@ -989,54 +1218,50 @@ room cellar {
   name        "The Cellar"
   description "Damp stone walls sweat in the lamplight. A shelf holds
                forgotten jars. A heavy iron door blocks the north wall."
-  short_description "A damp cellar."
+  short       "A damp cellar."
   first_visit "The smell hits you first."
   region      "underground"
-  is_start    true
+  start       true
+
+  exit north -> courtyard (locked) "A heavy iron door."
 }
 
 room courtyard {
   name        "The Courtyard"
   description "Open sky above crumbling walls. Weeds push through
                cracked flagstones."
-  short_description "A crumbling courtyard."
+  short       "A crumbling courtyard."
   first_visit "Fresh air. Finally."
   region      "surface"
-}
 
-exit cellar_north {
-  from      cellar
-  to        courtyard
-  direction north
-  description "A heavy iron door."
-  is_locked true
+  exit south -> cellar
 }
 
 item iron_key {
-  name              "Iron Key"
-  description       "A blackened iron key."
-  examine           "Heavy and cold. The teeth are sharp."
-  room_id           cellar
-  room_description  "An iron key lies half-hidden under a jar."
+  name        "Iron Key"
+  description "A blackened iron key."
+  examine     "Heavy and cold. The teeth are sharp."
+  in          cellar
+  room_desc   "An iron key lies half-hidden under a jar."
 }
 
 lock cellar_door_lock {
-  type           "key"
-  target_exit    cellar_north
-  key_item_id    iron_key
-  locked_message "The iron door is locked."
-  unlock_message "The lock grinds open."
-  consume_key    true
+  exit     cellar -> courtyard north
+  type     "key"
+  key      iron_key
+  locked   "The iron door is locked."
+  unlocked "The lock grinds open."
+  consume  true
 }
 
 puzzle escape_cellar {
-  name           "Escape the Cellar"
-  description    "Find the key and unlock the door."
-  room_id        cellar
-  difficulty     1
-  score_value    10
-  solution_steps ["Take the iron key", "Use it on the door"]
-  hint_text      ["Look under the jars."]
+  name        "Escape the Cellar"
+  description "Find the key and unlock the door."
+  in          cellar
+  difficulty  1
+  score       10
+  steps       ["Take the iron key", "Use it on the door"]
+  hint        ["Look under the jars."]
 }
 
 flag door_unlocked { description "The cellar door has been unlocked" }
@@ -1076,9 +1301,9 @@ trigger reach_courtyard {
 }
 ```
 
-**ZorkScript: ~80 lines, ~1,100 tokens.**
+**ZorkScript: ~65 lines, ~1,000 tokens.**
 
-Token reduction: roughly **60%** for equivalent content.
+Token reduction: roughly **65%** for equivalent content.
 
 
 ## 10. Compilation Model
@@ -1113,8 +1338,8 @@ ZorkScript source
    Track brace depth.
 3. **Field extraction** -- inside a block, each line is `field_name value`.
    Values are strings, numbers, booleans, identifiers, or bracket-lists.
-4. **Nested blocks** -- only `quest > objective` uses nesting. All other
-   blocks are flat.
+4. **Nested blocks** -- `quest > objective`, `room > exit`, and
+   `npc > talk > option` use nesting. All other blocks are flat.
 5. **Function-call syntax** -- `require` and `effect` lines parse as
    `name(arg1, arg2, ...)`.
 
@@ -1126,12 +1351,37 @@ maps them to their DB column names:
 | ZorkScript        | DB column             | Table |
 |-------------------|-----------------------|-------|
 | `author`          | `author_prompt`       | metadata |
+| `intro`           | `intro_text`          | metadata |
+| `win`             | `win_conditions`      | metadata |
+| `lose`            | `lose_conditions`     | metadata |
+| `start`           | `start_room_id`       | player |
+| `start_room`      | `start_room_id`       | player |
+| `short`           | `short_description`   | rooms |
 | `first_visit`     | `first_visit_text`    | rooms |
+| `dark`            | `is_dark`             | rooms |
 | `examine`         | `examine_description` | items, npcs |
+| `in`              | `room_id`             | items, npcs, puzzles |
+| `takeable`        | `is_takeable`         | items |
+| `visible`         | `is_visible`          | items |
+| `container`       | `is_container`        | items |
+| `toggle`          | `is_toggleable`       | items |
+| `tags`            | `item_tags`           | items |
+| `home`            | `home_room_id`        | items |
 | `from`            | `from_room_id`        | exits |
 | `to`              | `to_room_id`          | exits |
 | `type` (in lock)  | `lock_type`           | locks |
 | `target_exit`     | `target_exit_id`      | locks |
+| `key` (in lock)   | `key_item_id`         | locks |
+| `locked` (in lock)| `locked_message`      | locks |
+| `unlocked`        | `unlock_message`      | locks |
+| `flags` (in lock) | `required_flags`      | locks |
+| `consume`         | `consume_key`         | locks |
+| `score`           | `score_value`         | puzzles, quests |
+| `steps`           | `solution_steps`      | puzzles |
+| `hint`            | `hint_text`           | puzzles |
+| `completion`      | `completion_flag`     | quests |
+| `discovery`       | `discovery_flag`      | quests |
+| `dialogue`        | `default_dialogue`    | npcs |
 | `npc` (in dialogue)| `npc_id`             | dialogue_nodes |
 | `node` (in option)| `node_id`             | dialogue_options |
 | `next_node`       | `next_node_id`        | dialogue_options |
@@ -1142,6 +1392,8 @@ maps them to their DB column names:
 | `on_fail`         | `failure_message`     | commands |
 | `on_done`         | `done_message`        | commands |
 | `on` (in trigger) | `event_type`          | triggers |
+| `tag`             | `item_tag`            | interaction_responses |
+| `target`          | `target_category`     | interaction_responses |
 
 ### ID-list syntax
 
@@ -1181,21 +1433,48 @@ Produces the single string:
 
 ```ebnf
 program        = { top_level } ;
-top_level      = game_block | player_block | entity_block ;
+top_level      = game_block | player_block | entity_block
+               | on_block | when_block | flag_line ;
 
 game_block     = "game" "{" { field } "}" ;
 player_block   = "player" "{" { field } "}" ;
 
 entity_block   = entity_kw IDENT "{" block_body "}" ;
 entity_kw      = "room" | "exit" | "item" | "npc" | "lock" | "puzzle"
-               | "flag" | "quest" | "command" | "trigger"
+               | "quest" | "command" | "trigger"
                | "dialogue" | "option" | "interaction" ;
 
-block_body     = { field | nested_block | require_line | effect_line | when_line } ;
+block_body     = { field | nested_block | require_line | effect_line
+               | when_line | inline_exit | talk_block | inline_obj } ;
+
 nested_block   = "objective" IDENT "{" { field } "}" ;
+inline_obj     = "objective" STRING [ "->" IDENT ] [ "(" obj_mods ")" ] ;
+obj_mods       = obj_mod { "," obj_mod } ;
+obj_mod        = "optional" | "bonus" [ ":" ] NUMBER | "order" [ ":" ] NUMBER ;
+
+inline_exit    = "exit" IDENT "->" IDENT [ "(" exit_mods ")" ] [ STRING ] ;
+exit_mods      = exit_mod { "," exit_mod } ;
+exit_mod       = "locked" | "hidden" ;
+
+talk_block     = "talk" IDENT "{" [ STRING ] { talk_field } "}" ;
+talk_field     = "content" STRING | "sets" id_list
+               | "option" STRING [ "->" IDENT ] [ "{" { field } "}" ]
+               | field ;
+
+on_block       = "on" STRING [ "in" ( IDENT | id_list ) ] "{" on_body "}" ;
+on_body        = { require_line | effect_line | "once"
+               | "success" STRING | "fail" STRING | "done" STRING
+               | "priority" NUMBER | field } ;
+
+when_block     = "when" func_call "{" when_body "}" ;
+when_body      = { require_line | effect_line | "once"
+               | "message" STRING | "priority" NUMBER | field } ;
+
+flag_line      = "flag" IDENT [ STRING ]
+               | "flag" IDENT "{" { field } "}" ;
 
 field          = IDENT value ;
-value          = STRING | NUMBER | BOOLEAN | IDENT | id_list | string_list ;
+value          = STRING | NUMBER | BOOLEAN | IDENT | list ;
 
 require_line   = "require" func_call ;
 effect_line    = "effect" func_call ;
@@ -1206,10 +1485,9 @@ arg_list       = [ arg { "," arg } ] ;
 arg            = STRING | NUMBER | BOOLEAN | IDENT | slot_ref ;
 slot_ref       = "{" IDENT "}" ;
 
-id_list        = "[" [ IDENT { "," IDENT } ] "]" ;
-string_list    = "[" [ STRING { "," STRING } ] "]" ;
+list           = "[" [ value { "," value } ] "]" ;
 
-IDENT          = /[a-z_][a-z0-9_]*/ ;
+IDENT          = /[a-zA-Z_][a-zA-Z0-9_]*/ ;
 STRING         = /"([^"\\]|\\.)*"/ ;
 NUMBER         = /-?[0-9]+/ ;
 BOOLEAN        = "true" | "false" ;
@@ -1226,9 +1504,9 @@ Comparison using the worked example from section 9.
 
 | Metric                  | JSON       | ZorkScript | Savings |
 |-------------------------|------------|------------|---------|
-| Lines                   | ~120       | ~80        | 33%     |
-| Characters              | ~3,400     | ~2,100     | 38%     |
-| Estimated tokens (GPT-4)| ~2,800     | ~1,100     | 61%     |
+| Lines                   | ~120       | ~65        | 46%     |
+| Characters              | ~3,400     | ~1,800     | 47%     |
+| Estimated tokens (GPT-4)| ~2,800     | ~1,000     | 64%     |
 | Structural punctuation  | ~180 chars | ~40 chars  | 78%     |
 
 The savings come from three sources:
@@ -1289,15 +1567,21 @@ item_in_container, not_item_in_container, container_has_contents,
 container_empty, has_quantity, toggle_state
 ```
 
-### Effect types (25)
+### Effect types (29)
 
 ```
 move_item, remove_item, set_flag, unlock, move_player, spawn_item,
 change_health, add_score, reveal_exit, solve_puzzle, discover_quest,
 print, open_container, move_item_to_container, take_item_from_container,
-consume_quantity, restore_quantity, set_toggle_state, fail_quest,
-complete_quest, kill_npc, remove_npc, lock_exit, hide_exit,
-change_description
+consume_quantity, restore_quantity, set_toggle_state, make_visible,
+make_hidden, make_takeable, move_npc, fail_quest, complete_quest,
+kill_npc, remove_npc, lock_exit, hide_exit, change_description
+```
+
+### Target-aware effect types (4, interaction responses only)
+
+```
+kill_target, damage_target, destroy_target, open_target
 ```
 
 ### Event types (5)
