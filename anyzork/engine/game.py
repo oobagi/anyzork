@@ -2158,6 +2158,7 @@ class GameEngine:
 
         # Apply root node flags on entry and emit dialogue_node event.
         self._apply_node_flags(root_node)
+        self.db.set_flag(f"_visited_dlg_{root_node['id']}", "true")
         self._emit_event("dialogue_node", node_id=root_node["id"], npc_id=npc["id"])
         self._dialogue_state = _DialogueState(
             npc_id=npc["id"],
@@ -2206,9 +2207,6 @@ class GameEngine:
 
         npc, node, visible_options = context
         self._render_dialogue_panel(npc, node, visible_options)
-        if not visible_options:
-            self.console.print()
-            self._end_dialogue()
 
     def _submit_dialogue_choice(self, raw: str) -> None:
         """Advance or exit the active dialogue based on the player's input."""
@@ -2217,13 +2215,14 @@ class GameEngine:
             return
 
         npc, _node, visible_options = context
-        if not visible_options:
-            return
 
         choice = raw.strip().lower()
         if choice in ("0", "leave", "bye", "exit", "quit"):
             self.console.print()
             self._end_dialogue()
+            return
+
+        if not visible_options:
             return
 
         try:
@@ -2252,6 +2251,7 @@ class GameEngine:
             return
 
         self._apply_node_flags(next_node)
+        self.db.set_flag(f"_visited_dlg_{next_node['id']}", "true")
         self._emit_event("dialogue_node", node_id=next_node["id"], npc_id=npc["id"])
         if self._dialogue_state is None:
             return
@@ -2330,7 +2330,12 @@ class GameEngine:
 
         for i, opt in enumerate(visible_options, 1):
             tag = " [bright_yellow]\\[NEW][/]" if opt.get("_is_item_gated") else ""
-            lines.append(f"  {i}. {opt['text']}{tag}")
+            next_id = opt.get("next_node_id")
+            visited = next_id is not None and self.db.has_flag(f"_visited_dlg_{next_id}")
+            if visited:
+                lines.append(f"  [dim]{i}. {opt['text']}{tag}[/]")
+            else:
+                lines.append(f"  {i}. {opt['text']}{tag}")
 
         if not has_terminal:
             lines.append("  0. [dim]\\[Leave][/]")
