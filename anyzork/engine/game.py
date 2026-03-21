@@ -2039,57 +2039,61 @@ class GameEngine:
         text = text.replace("{target}", target_display)
         self.console.print(text)
 
-        # Apply effects if present.
+        # Apply all interaction mutations atomically — effects, consume,
+        # and flag_to_set are wrapped in a single transaction.
         effects_json = response.get("effects")
-        if effects_json:
-            from anyzork.engine.commands import apply_effect
-
-            parsed_effects = (
-                json.loads(effects_json)
-                if isinstance(effects_json, str)
-                else effects_json
-            )
-            # Determine target identity for target-aware effects.
-            if target_npc is not None:
-                target_id = target_npc["id"]
-                target_type = "npc"
-            elif target_item is not None:
-                target_id = target_item["id"]
-                target_type = "item"
-            else:
-                target_id = ""
-                target_type = ""
-
-            target_slots = {
-                "_target_id": target_id,
-                "_target_type": target_type,
-            }
-            for eff in parsed_effects:
-                try:
-                    msgs = apply_effect(
-                        eff,
-                        db,
-                        target_slots,
-                        command_id=f"interaction:{response['id']}",
-                        emit_event=self._emit_event,
-                    )
-                    for msg in msgs:
-                        self.console.print(msg)
-                except Exception:
-                    logger.exception("Interaction effect failed: %s", eff)
-
-        # Consume quantity if specified.
         consumes = response.get("consumes", 0)
-        if consumes and consumes > 0:
-            db.consume_item_quantity(inv_item["id"], consumes)
-
-        # Set flag if specified.
         flag = response.get("flag_to_set")
-        if flag:
-            was_set = db.has_flag(flag)
-            db.set_flag(flag, "true")
-            if not was_set:
-                self._emit_event("flag_set", flag=flag)
+
+        try:
+            with db.transaction():
+                if effects_json:
+                    from anyzork.engine.commands import apply_effect
+
+                    parsed_effects = (
+                        json.loads(effects_json)
+                        if isinstance(effects_json, str)
+                        else effects_json
+                    )
+                    # Determine target identity for target-aware effects.
+                    if target_npc is not None:
+                        target_id = target_npc["id"]
+                        target_type = "npc"
+                    elif target_item is not None:
+                        target_id = target_item["id"]
+                        target_type = "item"
+                    else:
+                        target_id = ""
+                        target_type = ""
+
+                    target_slots = {
+                        "_target_id": target_id,
+                        "_target_type": target_type,
+                    }
+                    for eff in parsed_effects:
+                        msgs = apply_effect(
+                            eff,
+                            db,
+                            target_slots,
+                            command_id=f"interaction:{response['id']}",
+                            emit_event=self._emit_event,
+                        )
+                        for msg in msgs:
+                            self.console.print(msg)
+
+                # Consume quantity if specified.
+                if consumes and consumes > 0:
+                    db.consume_item_quantity(inv_item["id"], consumes)
+
+                # Set flag if specified.
+                if flag:
+                    was_set = db.has_flag(flag)
+                    db.set_flag(flag, "true")
+                    if not was_set:
+                        self._emit_event("flag_set", flag=flag)
+        except Exception:
+            logger.exception("Interaction effects failed, rolled back")
+            return True
 
         return True
 

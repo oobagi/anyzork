@@ -788,20 +788,6 @@ def resolve_command(
         if cmd.get("success_message"):
             all_messages.append(_substitute_slots(cmd["success_message"], resolved_slots))
 
-        applied: list[str] = []
-        for eff in effects:
-            try:
-                msgs = apply_effect(
-                    eff, db, resolved_slots,
-                    command_id=cmd["id"],
-                    emit_event=emit_event,
-                )
-                applied.append(eff["type"])
-                all_messages.extend(msgs)
-            except Exception:
-                logger.exception("Effect failed: %s", eff)
-                applied.append(eff["type"])
-
         if not effects and not all_messages:
             fallback = cmd.get("failure_message") or "Nothing happens."
             return CommandResult(
@@ -810,9 +796,29 @@ def resolve_command(
                 command_id=cmd["id"],
             )
 
-        # Mark one-shot commands as executed
-        if cmd["one_shot"]:
-            db.mark_command_executed(cmd["id"])
+        # Execute all effects atomically — if any effect raises, the
+        # entire command is rolled back and we try the next candidate.
+        applied: list[str] = []
+        try:
+            with db.transaction():
+                for eff in effects:
+                    msgs = apply_effect(
+                        eff, db, resolved_slots,
+                        command_id=cmd["id"],
+                        emit_event=emit_event,
+                    )
+                    applied.append(eff["type"])
+                    all_messages.extend(msgs)
+
+                # Mark one-shot commands as executed inside the transaction
+                # so it rolls back together with effects on failure.
+                if cmd["one_shot"]:
+                    db.mark_command_executed(cmd["id"])
+        except Exception:
+            logger.exception(
+                "Command %s failed, all effects rolled back", cmd["id"],
+            )
+            continue  # try next candidate command
 
         return CommandResult(
             success=True,
