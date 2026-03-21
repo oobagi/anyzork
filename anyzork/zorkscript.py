@@ -516,6 +516,7 @@ class _Parser:
         "locked": "is_locked",
         "key": "key_item_id",
         "consume_key": "consume_key",
+        "code": "combination",
         "accepts": "accepts_items",
         "reject_msg": "reject_message",
         # Toggle fields
@@ -720,6 +721,7 @@ class _Parser:
         "puzzle": "puzzle_id",
         "flags": "required_flags",
         "target_exit": "target_exit_id",
+        "code": "combination",
     }
 
     def _parse_lock_block(self) -> None:

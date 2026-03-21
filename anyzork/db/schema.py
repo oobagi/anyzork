@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS items (
     read_description    TEXT,
     key_item_id         TEXT    REFERENCES items(id),
     consume_key         INTEGER NOT NULL DEFAULT 0,
+    combination         TEXT,
     unlock_message      TEXT,
     accepts_items       TEXT,       -- JSON array of accepted item IDs, NULL = accepts anything
     reject_message      TEXT,       -- Custom rejection text when whitelist blocks an item

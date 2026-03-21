@@ -1549,6 +1549,37 @@ class GameEngine:
                                 f"Inside the [{STYLE_ITEM}]{item['name']}[/]: {names}."
                             )
                         return
+                # Code-locked container (combination field, no key or key not in inventory).
+                combo = item.get("combination")
+                if combo:
+                    msg = item.get("lock_message") or "It's locked."
+                    self.console.print(msg, style=STYLE_LOCKED)
+                    try:
+                        entered = Prompt.ask(f"[{STYLE_PROMPT}]Enter code[/]")
+                    except EOFError:
+                        self.console.print(
+                            "You need to enter a code.", style=STYLE_SYSTEM
+                        )
+                        return
+                    if entered.strip().lower() == combo.strip().lower():
+                        db.open_container(item["id"])
+                        unlock_msg = (
+                            item.get("unlock_message") or item.get("open_message") or "Unlocked."
+                        )
+                        self.console.print(unlock_msg, style=STYLE_SUCCESS)
+                        contents = db.get_container_contents(item["id"])
+                        if contents:
+                            names = ", ".join(
+                                f"[{STYLE_ITEM}]{c['name']}[/]" for c in contents
+                            )
+                            self.console.print(
+                                f"Inside the [{STYLE_ITEM}]{item['name']}[/]: {names}."
+                            )
+                    else:
+                        self.console.print(
+                            "That's not the right code.", style=STYLE_LOCKED
+                        )
+                    return
                 msg = item.get("lock_message") or "It's locked."
                 self.console.print(msg, style=STYLE_LOCKED)
                 return
@@ -1558,7 +1589,7 @@ class GameEngine:
         self.console.print("There's nothing to unlock.", style=STYLE_SYSTEM)
 
     def _try_unlock(self, lock: dict) -> None:
-        """Attempt to unlock a lock — checks if player has the key."""
+        """Attempt to unlock a lock — checks if player has the key or code."""
         db = self.db
 
         if lock.get("lock_type") == "key" and lock.get("key_item_id"):
@@ -1583,6 +1614,29 @@ class GameEngine:
                     self.console.print(msg, style=STYLE_LOCKED)
                 else:
                     self.console.print("It's locked.", style=STYLE_LOCKED)
+        elif lock.get("lock_type") == "combination" and lock.get("combination"):
+            correct_code = lock["combination"]
+            msg = lock.get("locked_message", "")
+            if msg:
+                self.console.print(msg, style=STYLE_LOCKED)
+            try:
+                entered = Prompt.ask(f"[{STYLE_PROMPT}]Enter code[/]")
+            except EOFError:
+                self.console.print(
+                    "You need to enter a code.", style=STYLE_SYSTEM
+                )
+                return
+            if entered.strip().lower() == correct_code.strip().lower():
+                db.unlock(lock["id"])
+                unlock_msg = lock.get("unlock_message", "")
+                if unlock_msg:
+                    self.console.print(unlock_msg, style=STYLE_SUCCESS)
+                else:
+                    self.console.print("Unlocked.", style=STYLE_SUCCESS)
+            else:
+                self.console.print(
+                    "That's not the right code.", style=STYLE_LOCKED
+                )
         else:
             # Non-key lock (puzzle, state, etc.) — just show the locked message.
             msg = lock.get("locked_message", "")
