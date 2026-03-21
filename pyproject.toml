@@ -5,10 +5,34 @@ build-backend = "hatchling.build"
 [project]
 name = "anyzork"
 version = "0.1.0"
-description = "AI-powered text adventure generator — turn a prompt into a playable Zork-style game"
+description = "AI-assisted text adventure generator - turn a prompt into a playable Zork-style game"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
+authors = [
+    { name = "AnyZork contributors" },
+]
+keywords = [
+    "cli",
+    "interactive-fiction",
+    "llm",
+    "sqlite",
+    "text-adventure",
+    "zork",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Games/Entertainment",
+    "Topic :: Software Development :: Code Generators",
+]
 dependencies = [
     "click>=8.1",
     "rich>=13.0",
@@ -21,13 +45,27 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "build>=1.2",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "ruff>=0.8",
 ]
 
+[project.urls]
+Homepage = "https://github.com/oobagi/anyzork"
+Repository = "https://github.com/oobagi/anyzork"
+Issues = "https://github.com/oobagi/anyzork/issues"
+
 [project.scripts]
 anyzork = "anyzork.cli:main"
+
+[tool.hatch.build]
+exclude = [
+    "/.claude",
+    "/.github",
+    "/AGENTS.md",
+    "/CLAUDE.md",
+]
 
 [tool.ruff]
 target-version = "py311"

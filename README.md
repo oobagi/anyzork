@@ -18,17 +18,27 @@
 
 ## Quickstart
 
-Install:
+Install from a fresh clone:
 
 ```bash
 git clone https://github.com/oobagi/anyzork.git
 cd anyzork
-pip install -e .
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -e .
 ```
 
 Requires Python 3.11+.
 
-Create your first game:
+Try the included example without using an LLM:
+
+```bash
+anyzork import examples/minimal_game.zorkscript -o starter.zork
+anyzork play starter.zork
+```
+
+Create your own game:
 
 ```bash
 anyzork generate --guided
@@ -51,6 +61,43 @@ anyzork play game.zork --narrator
 ```
 
 > AnyZork uses an LLM during authoring, not during normal play. Runtime stays deterministic unless you explicitly enable narrator mode.
+
+## Project Status
+
+AnyZork is open source and MIT-licensed, but it is currently maintained as a solo project.
+
+External pull requests and general code contributions are not being accepted right now.
+
+If you run into a reproducible bug, feel free to open an issue. For security-sensitive problems, use the guidance in [SECURITY.md](SECURITY.md).
+
+## Narrator Setup
+
+Narrator mode is optional and only affects presentation during play. Configure a provider with either standard provider env vars or `ANYZORK_` overrides:
+
+```bash
+export ANYZORK_PROVIDER=openai
+export OPENAI_API_KEY=your_key_here
+anyzork play game.zork --narrator
+```
+
+Supported providers:
+
+- `claude` with `ANTHROPIC_API_KEY` or `ANYZORK_ANTHROPIC_API_KEY`
+- `openai` with `OPENAI_API_KEY` or `ANYZORK_OPENAI_API_KEY`
+- `gemini` with `GOOGLE_API_KEY` or `ANYZORK_GOOGLE_API_KEY`
+
+You can also store defaults in `~/.anyzork/config.toml`:
+
+```toml
+[anyzork]
+provider = "openai"
+model = "gpt-4o"
+
+[keys]
+openai = "your_key_here"
+```
+
+If narrator mode fails, AnyZork falls back to deterministic engine output.
 
 ## Core Concepts
 
@@ -79,6 +126,22 @@ cat game.zorkscript | anyzork import -
 ```
 
 For the full architecture and rationale, see the [Design Brief](docs/guides/design-brief.md) and [System Architecture](docs/architecture/system-design.md).
+
+## Development
+
+Set up a local development environment with:
+
+```bash
+python -m pip install -e '.[dev]'
+```
+
+Common checks:
+
+```bash
+ruff check .
+pytest -q
+python -m build
+```
 
 ## Docs
 

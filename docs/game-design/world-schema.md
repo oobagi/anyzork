@@ -2,7 +2,7 @@
 
 This document describes the current logical schema of a `.zork` file.
 
-The executable SQL source of truth lives in [anyzork/db/schema.py](/Users/jaden/Developer/anyzork/anyzork/db/schema.py). This document is the human-oriented companion: table purpose, major relationships, and field families.
+The executable SQL source of truth lives in [anyzork/db/schema.py](../../anyzork/db/schema.py). This document is the human-oriented companion: table purpose, major relationships, and field families.
 
 ## 1. Schema Overview
 
@@ -193,7 +193,7 @@ Key fields:
 - `priority`
 - `is_enabled`, `one_shot`, `executed`
 
-See [docs/dsl/command-spec.md](/Users/jaden/Developer/anyzork/docs/dsl/command-spec.md) for the runtime vocabulary.
+See [docs/dsl/command-spec.md](../dsl/command-spec.md) for the runtime vocabulary.
 
 ### `flags`
 
@@ -307,4 +307,4 @@ When updating generation or runtime code, keep these invariants true:
 - lock solutions remain reachable
 - quest and trigger flags line up with actual command/dialogue behavior
 
-If you need exact defaults, constraints, or index names, inspect [anyzork/db/schema.py](/Users/jaden/Developer/anyzork/anyzork/db/schema.py).
+If you need exact defaults, constraints, or index names, inspect [anyzork/db/schema.py](../../anyzork/db/schema.py).
