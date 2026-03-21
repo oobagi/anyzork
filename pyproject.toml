@@ -51,6 +51,11 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.8",
 ]
+catalog = [
+    "fastapi>=0.115",
+    "python-multipart>=0.0.9",
+    "uvicorn>=0.30",
+]
 
 [project.urls]
 Homepage = "https://github.com/oobagi/anyzork"

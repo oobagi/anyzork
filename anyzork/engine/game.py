@@ -10,6 +10,7 @@ import json
 import logging
 import re
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from rich.console import Console
@@ -93,6 +94,15 @@ SCENE_TOKEN_STOPWORDS: set[str] = {
 }
 
 
+@dataclass
+class _DialogueState:
+    """Mutable state for an in-progress conversation."""
+
+    npc_id: str
+    npc_name: str
+    current_node_id: str
+
+
 class GameEngine:
     """Deterministic text-adventure engine.
 
@@ -106,13 +116,17 @@ class GameEngine:
         self,
         db: GameDB,
         *,
+        console: Console | None = None,
         narrator_enabled: bool = False,
         narrator_provider: str | None = None,
         narrator_model: str | None = None,
+        interactive_dialogue: bool = True,
     ) -> None:
         self.db = db
-        self.console = Console()
+        self.console = console or Console()
         self._running = False
+        self._session_initialized = False
+        self._opening_rendered = False
         # Cache of objective completion states from the previous tick.
         # Maps objective_id -> bool (was complete last tick).
         self._objective_cache: dict[str, bool] = {}
@@ -121,6 +135,7 @@ class GameEngine:
         self._narrator_requested = narrator_enabled
         self._narrator_provider_override = narrator_provider
         self._narrator_model_override = narrator_model
+        self._interactive_dialogue = interactive_dialogue
         self._shown_shortcut_bar = False
         self._has_seen_help = False
         # Event / trigger system — deferred event queue for cascade-safe
@@ -130,6 +145,7 @@ class GameEngine:
         # Dialogue state — quest notifications are deferred while in dialogue.
         self._in_dialogue: bool = False
         self._pending_notifications: list[Any] = []
+        self._dialogue_state: _DialogueState | None = None
 
     # ------------------------------------------------------------------
     # Public entry point
@@ -137,6 +153,15 @@ class GameEngine:
 
     def start(self) -> None:
         """Initialise player state (if needed), show the intro, and enter the main loop."""
+        if not self.initialize_session():
+            return
+        self.render_opening()
+        self.main_loop()
+
+    def initialize_session(self) -> bool:
+        """Initialize state required before a play session can begin."""
+        if self._session_initialized:
+            return True
 
         # Ensure the player row exists.
         player = self.db.get_player()
@@ -144,9 +169,27 @@ class GameEngine:
             start_room = self.db.get_start_room()
             if start_room is None:
                 self.console.print("Error: No start room defined in this game.", style=STYLE_ERROR)
-                return
+                return False
             self.db.init_player(start_room["id"])
             player = self.db.get_player()
+
+        # Initialize narrator if requested via CLI flag, env var, or saved preference.
+        if self._narrator_requested or self.db.has_flag("_narrator_enabled"):
+            self._init_narrator()
+
+        # Initialize quest state: auto-discover main quest and cache objectives.
+        self._init_quest_state()
+
+        self._running = True
+        self._session_initialized = True
+        return True
+
+    def render_opening(self) -> None:
+        """Render the initial title, intro, and room view once."""
+        if not self.initialize_session() or self._opening_rendered:
+            return
+
+        player = self.db.get_player()
 
         # Show game title and info panel.
         meta = self.db.get_all_meta()
@@ -162,7 +205,6 @@ class GameEngine:
                 )
             )
 
-            # Compact game info line below the title.
             info_parts: list[str] = []
             runtime_version = str(meta.get("version", "?"))
             if runtime_version == RUNTIME_COMPAT_VERSION:
@@ -183,7 +225,6 @@ class GameEngine:
             max_score = meta.get("max_score", 0)
             if max_score:
                 info_parts.append(f"Max score: {max_score}")
-            # Show active CLI flags.
             if self._narrator_requested:
                 narrator_info = "Narrator: on"
                 if self._narrator_provider_override:
@@ -204,13 +245,6 @@ class GameEngine:
 
         self.console.print()
 
-        # Initialize narrator if requested via CLI flag, env var, or saved preference.
-        if self._narrator_requested or self.db.has_flag("_narrator_enabled"):
-            self._init_narrator()
-
-        # Initialize quest state: auto-discover main quest and cache objectives.
-        self._init_quest_state()
-
         # Display the starting room.
         assert player is not None
         self.display_room(player["current_room_id"])
@@ -223,131 +257,307 @@ class GameEngine:
             )
             self._shown_shortcut_bar = True
 
-        # Enter the REPL.
-        self.main_loop()
+        self._opening_rendered = True
+
+    def capture_opening(self) -> str:
+        """Return the initial rendered session output as plain text."""
+        if not self.initialize_session():
+            return ""
+        with self.console.capture() as capture:
+            self.render_opening()
+        return capture.get()
 
     # ------------------------------------------------------------------
     # Main REPL
     # ------------------------------------------------------------------
 
-    def main_loop(self) -> None:
-        """Read-eval-print loop: prompt for input, dispatch, repeat."""
+    def _can_continue(self) -> bool:
+        """Return True when the current play session is still active."""
+        player = self.db.get_player()
+        return bool(self._running and player is not None and player["game_state"] == "playing")
 
-        self._running = True
+    def submit_command(self, raw: str) -> tuple[bool, str]:
+        """Process a command and return continuation state plus rendered output."""
+        if not self.initialize_session():
+            return False, ""
+        with self.console.capture() as capture:
+            should_continue = self.process_command(raw)
+        return should_continue, capture.get()
 
-        while self._running:
-            player = self.db.get_player()
-            if player is None or player["game_state"] != "playing":
-                break
+    @property
+    def in_dialogue(self) -> bool:
+        """Return whether the player is currently inside a dialogue tree."""
+        return self._dialogue_state is not None
 
-            try:
-                raw = self.console.input(f"\n[{STYLE_PROMPT}]> [/]")
-            except (EOFError, KeyboardInterrupt):
-                self.console.print("\nFarewell, adventurer.")
-                break
+    @property
+    def dialogue_speaker(self) -> str | None:
+        """Return the active dialogue speaker name, if any."""
+        if self._dialogue_state is None:
+            return None
+        return self._dialogue_state.npc_name
 
-            raw = raw.strip()
-            if not raw:
-                continue
+    @property
+    def dialogue_prompt(self) -> str | None:
+        """Return a UI-friendly prompt hint for the active dialogue state."""
+        context = self._get_dialogue_context()
+        if context is None:
+            return None
 
-            tokens = raw.lower().split()
-            verb = tokens[0]
+        _npc, _node, visible_options = context
+        if not visible_options:
+            return None
 
-            # ---- Built-in commands (handled before DSL) ----
+        option_count = len(visible_options)
+        has_terminal = any(opt.get("next_node_id") is None for opt in visible_options)
+        if has_terminal:
+            return f"Choose 1-{option_count}."
+        return f"Choose 1-{option_count} or 0 to leave."
 
-            if verb in ("quit", "exit", "q"):
-                self.console.print("Farewell, adventurer.", style=STYLE_SYSTEM)
-                break
+    def process_command(self, raw: str) -> bool:
+        """Process a single player command and return False when play should stop."""
+        if not self.initialize_session():
+            return False
 
-            if verb in ("look", "l") and len(tokens) == 1:
-                self.display_room(player["current_room_id"], force_full=True)
+        player = self.db.get_player()
+        if player is None or player["game_state"] != "playing":
+            return False
+
+        raw = raw.strip()
+        if not raw:
+            return self._can_continue()
+
+        if self._dialogue_state is not None:
+            self._submit_dialogue_choice(raw)
+            if self._dialogue_state is not None:
+                self._render_active_dialogue()
+            else:
                 self._tick()
-                continue
+            return self._can_continue()
 
-            if verb in ("inventory", "i") and len(tokens) == 1:
-                self.show_inventory()
-                self._tick()
-                continue
+        tokens = raw.lower().split()
+        verb = tokens[0]
 
-            if verb == "score" and len(tokens) == 1:
-                self._show_score()
-                self._tick()
-                continue
+        if verb in ("quit", "exit", "q"):
+            self.console.print("Farewell, adventurer.", style=STYLE_SYSTEM)
+            self._running = False
+            return False
 
-            if verb in ("help", "h", "?") and len(tokens) == 1:
-                self.show_help()
-                self._has_seen_help = True
-                continue  # help doesn't cost a move
+        if verb in ("look", "l") and len(tokens) == 1:
+            self.display_room(player["current_room_id"], force_full=True)
+            self._tick()
+            return self._can_continue()
 
-            if verb == "save" and len(tokens) == 1:
-                self.console.print(
-                    "Your progress is saved automatically to "
-                    f"[bold]{self.db.path}[/bold]. Use "
-                    "[bold]anyzork play <game> --slot <name> --new[/bold] "
-                    "for a fresh replay of a managed save slot.",
-                    style=STYLE_SYSTEM,
-                )
-                continue  # save info doesn't cost a move
+        if verb in ("inventory", "i") and len(tokens) == 1:
+            self.show_inventory()
+            self._tick()
+            return self._can_continue()
 
-            if verb == "narrator" and len(tokens) >= 2:
-                if tokens[1] == "on":
-                    if self._narrator is None:
-                        self._init_narrator()
-                    if self._narrator is not None:
-                        self.console.print("Narrator mode enabled.", style=STYLE_SYSTEM)
-                        self.db.set_flag("_narrator_enabled", "true")
-                    else:
-                        self.console.print(
-                            "Cannot enable narrator: no API key configured.",
-                            style=STYLE_SYSTEM,
-                        )
-                elif tokens[1] == "off":
-                    self._narrator = None
-                    self.console.print("Narrator mode disabled.", style=STYLE_SYSTEM)
-                    self.db.set_flag("_narrator_enabled", "false")
+        if verb == "score" and len(tokens) == 1:
+            self._show_score()
+            self._tick()
+            return self._can_continue()
+
+        if verb in ("help", "h", "?") and len(tokens) == 1:
+            self.show_help()
+            self._has_seen_help = True
+            return self._can_continue()
+
+        if verb == "save" and len(tokens) == 1:
+            self.console.print(
+                "Your progress is saved automatically to "
+                f"[bold]{self.db.path}[/bold]. Use "
+                "[bold]anyzork play <game> --slot <name> --new[/bold] "
+                "for a fresh replay of a managed save slot.",
+                style=STYLE_SYSTEM,
+            )
+            return self._can_continue()
+
+        if verb == "narrator" and len(tokens) >= 2:
+            if tokens[1] == "on":
+                if self._narrator is None:
+                    self._init_narrator()
+                if self._narrator is not None:
+                    self.console.print("Narrator mode enabled.", style=STYLE_SYSTEM)
+                    self.db.set_flag("_narrator_enabled", "true")
                 else:
-                    status = "ON" if self._narrator is not None else "OFF"
                     self.console.print(
-                        f"Narrator: {status}. Use 'narrator on' or 'narrator off'.",
+                        "Cannot enable narrator: no API key configured.",
                         style=STYLE_SYSTEM,
                     )
-                continue  # narrator toggle doesn't cost a move
-
-            if verb in ("quests", "journal", "quest", "j") and len(tokens) == 1:
-                self._show_quests()
-                continue  # quest log doesn't cost a move
-
-            # ---- Movement ----
-
-            direction = self._parse_direction(tokens)
-            if direction is not None:
-                self.handle_movement(direction)
-                self._tick()
-                continue
-
-            # ---- Darkness check: block most actions in unlit dark rooms ----
-            room = self.db.get_room(player["current_room_id"])
-            if (
-                room
-                and room.get("is_dark")
-                and not self._is_room_lit(room)
-                and verb not in ("light", "turn", "toggle", "use", "eat", "drink")
-            ):
+            elif tokens[1] == "off":
+                self._narrator = None
+                self.console.print("Narrator mode disabled.", style=STYLE_SYSTEM)
+                self.db.set_flag("_narrator_enabled", "false")
+            else:
+                status = "ON" if self._narrator is not None else "OFF"
                 self.console.print(
-                    "It's too dark to do that. You need a light source.",
+                    f"Narrator: {status}. Use 'narrator on' or 'narrator off'.",
                     style=STYLE_SYSTEM,
                 )
+            return self._can_continue()
+
+        if verb in ("quests", "journal", "quest", "j") and len(tokens) == 1:
+            self._show_quests()
+            return self._can_continue()
+
+        direction = self._parse_direction(tokens)
+        if direction is not None:
+            self.handle_movement(direction)
+            self._tick()
+            return self._can_continue()
+
+        room = self.db.get_room(player["current_room_id"])
+        if (
+            room
+            and room.get("is_dark")
+            and not self._is_room_lit(room)
+            and verb not in ("light", "turn", "toggle", "use", "eat", "drink")
+        ):
+            self.console.print(
+                "It's too dark to do that. You need a light source.",
+                style=STYLE_SYSTEM,
+            )
+            self._tick()
+            return self._can_continue()
+
+        try:
+            from anyzork.engine.commands import resolve_command
+        except ImportError:
+            resolve_command = None  # type: ignore[assignment]
+
+        dsl_handled = False
+        if resolve_command is not None:
+            result = resolve_command(
+                raw, self.db, player["current_room_id"],
+                emit_event=self._emit_event,
+            )
+            if result.success or (
+                result.messages and result.messages != ["I don't understand that."]
+            ):
+                for msg in result.messages:
+                    self.console.print(msg)
+                dsl_handled = True
+
+        if dsl_handled:
+            self._tick()
+            return self._can_continue()
+
+        if verb in ("take", "get") and len(tokens) >= 2:
+            rest_tokens = tokens[1:]
+            if "from" in rest_tokens:
+                from_idx = rest_tokens.index("from")
+                if from_idx > 0 and from_idx < len(rest_tokens) - 1:
+                    item_name = " ".join(rest_tokens[:from_idx])
+                    container_name = " ".join(rest_tokens[from_idx + 1:])
+                    self._handle_take_from(item_name, container_name, player["current_room_id"])
+                    self._tick()
+                    return self._can_continue()
+            item_name = " ".join(rest_tokens)
+            self._handle_take(item_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "pick" and len(tokens) >= 3 and tokens[1] == "up":
+            item_name = " ".join(tokens[2:])
+            self._handle_take(item_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "drop" and len(tokens) >= 2:
+            item_name = " ".join(tokens[1:])
+            self._handle_drop(item_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "examine" and len(tokens) >= 2:
+            target_name = " ".join(tokens[1:])
+            self._handle_examine(target_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "x" and len(tokens) >= 2:
+            target_name = " ".join(tokens[1:])
+            self._handle_examine(target_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "read" and len(tokens) >= 2:
+            target_name = " ".join(tokens[1:])
+            self._handle_examine(target_name, player["current_room_id"], prefer_read=True)
+            self._tick()
+            return self._can_continue()
+
+        if verb == "look" and len(tokens) >= 3 and tokens[1] in ("in", "inside"):
+            target_name = " ".join(tokens[2:])
+            self._handle_search(target_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "look" and len(tokens) >= 3 and tokens[1] == "at":
+            target_name = " ".join(tokens[2:])
+            self._handle_examine(target_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "search" and len(tokens) >= 2:
+            target_name = " ".join(tokens[1:])
+            self._handle_search(target_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "open" and len(tokens) >= 2:
+            target_name = " ".join(tokens[1:])
+            self._handle_open(target_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "unlock" and len(tokens) >= 2:
+            target_name = " ".join(tokens[1:])
+            self._handle_unlock(target_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "turn" and len(tokens) >= 3 and tokens[1] in ("on", "off"):
+            target_state = tokens[1]
+            item_name = " ".join(tokens[2:])
+            self._handle_turn(item_name, target_state, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
+        if verb == "use" and len(tokens) >= 2:
+            if len(tokens) >= 4 and "on" in tokens:
+                on_idx = tokens.index("on")
+                if on_idx > 1 and on_idx < len(tokens) - 1:
+                    item_name = " ".join(tokens[1:on_idx])
+                    target_name = " ".join(tokens[on_idx + 1:])
+                    handled = self._handle_use_on(
+                        item_name,
+                        target_name,
+                        player["current_room_id"],
+                    )
+                    if handled:
+                        self._tick()
+                        return self._can_continue()
+                    handled = self._handle_install_requires(item_name, target_name)
+                    if handled:
+                        self._tick()
+                        return self._can_continue()
+                    handled = self._handle_interaction(
+                        item_name, target_name, player["current_room_id"]
+                    )
+                    if handled:
+                        self._tick()
+                        return self._can_continue()
+                    self._handle_put_in(item_name, target_name, player["current_room_id"])
+                    self._tick()
+                    return self._can_continue()
+            else:
+                item_name = " ".join(tokens[1:])
+                self._handle_use_bare(item_name, player["current_room_id"])
                 self._tick()
-                continue
+                return self._can_continue()
 
-            # ---- DSL command resolution (checked BEFORE built-in interaction
-            # verbs so game-specific commands take priority) ----
-            try:
-                from anyzork.engine.commands import resolve_command
-            except ImportError:
-                resolve_command = None  # type: ignore[assignment]
-
-            dsl_handled = False
+        if verb in ("put", "place") and len(tokens) >= 4:
             if resolve_command is not None:
                 result = resolve_command(
                     raw, self.db, player["current_room_id"],
@@ -356,217 +566,78 @@ class GameEngine:
                 if result.success:
                     for msg in result.messages:
                         self.console.print(msg)
-                    dsl_handled = True
-                elif result.messages and result.messages != ["I don't understand that."]:
-                    # DSL matched a command but preconditions failed with a
-                    # specific failure message (e.g. "You need a loaded gun
-                    # to shoot"). Show it so the player gets useful feedback.
-                    for msg in result.messages:
-                        self.console.print(msg)
-                    dsl_handled = True
-
-            if dsl_handled:
-                self._tick()
-                continue
-
-            # ---- Built-in interaction verbs (fallbacks when no DSL matched) ----
-
-            # take / get / pick up — with "from <container>" support
-            if verb in ("take", "get") and len(tokens) >= 2:
-                rest_tokens = tokens[1:]
-                # Check for "take X from Y" pattern
-                if "from" in rest_tokens:
-                    from_idx = rest_tokens.index("from")
-                    if from_idx > 0 and from_idx < len(rest_tokens) - 1:
-                        item_name = " ".join(rest_tokens[:from_idx])
-                        container_name = " ".join(rest_tokens[from_idx + 1:])
-                        self._handle_take_from(item_name, container_name, player["current_room_id"])
-                        self._tick()
-                        continue
-                item_name = " ".join(rest_tokens)
-                self._handle_take(item_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            if verb == "pick" and len(tokens) >= 3 and tokens[1] == "up":
-                item_name = " ".join(tokens[2:])
-                self._handle_take(item_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            # drop
-            if verb == "drop" and len(tokens) >= 2:
-                item_name = " ".join(tokens[1:])
-                self._handle_drop(item_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            # examine / look at / x
-            if verb == "examine" and len(tokens) >= 2:
-                target_name = " ".join(tokens[1:])
-                self._handle_examine(target_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            if verb == "x" and len(tokens) >= 2:
-                target_name = " ".join(tokens[1:])
-                self._handle_examine(target_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            # read — routes to examine with read_description preference
-            if verb == "read" and len(tokens) >= 2:
-                target_name = " ".join(tokens[1:])
-                self._handle_examine(target_name, player["current_room_id"], prefer_read=True)
-                self._tick()
-                continue
-
-            # look in / look inside (search container) — must come BEFORE "look at"
-            if verb == "look" and len(tokens) >= 3 and tokens[1] in ("in", "inside"):
-                target_name = " ".join(tokens[2:])
-                self._handle_search(target_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            if verb == "look" and len(tokens) >= 3 and tokens[1] == "at":
-                target_name = " ".join(tokens[2:])
-                self._handle_examine(target_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            # search
-            if verb == "search" and len(tokens) >= 2:
-                target_name = " ".join(tokens[1:])
-                self._handle_search(target_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            # open
-            if verb == "open" and len(tokens) >= 2:
-                target_name = " ".join(tokens[1:])
-                self._handle_open(target_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            # unlock (only tries locked exits/containers — won't "open" something already unlocked)
-            if verb == "unlock" and len(tokens) >= 2:
-                target_name = " ".join(tokens[1:])
-                self._handle_unlock(target_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            # turn on/off {item} — direct state setters
-            if verb == "turn" and len(tokens) >= 3 and tokens[1] in ("on", "off"):
-                target_state = tokens[1]
-                item_name = " ".join(tokens[2:])
-                self._handle_turn(item_name, target_state, player["current_room_id"])
-                self._tick()
-                continue
-
-            # use {item} on {target} — key-on-lock, then interaction matrix, then put-in
-            if verb == "use" and len(tokens) >= 2:
-                if len(tokens) >= 4 and "on" in tokens:
-                    on_idx = tokens.index("on")
-                    if on_idx > 1 and on_idx < len(tokens) - 1:
-                        item_name = " ".join(tokens[1:on_idx])
-                        target_name = " ".join(tokens[on_idx + 1:])
-                        # Try key-on-lock first.
-                        handled = self._handle_use_on(
-                            item_name,
-                            target_name,
-                            player["current_room_id"],
-                        )
-                        if handled:
-                            self._tick()
-                            continue
-                        # Try requires_item_id (e.g. "use batteries on flashlight").
-                        handled = self._handle_install_requires(
-                            item_name, target_name,
-                        )
-                        if handled:
-                            self._tick()
-                            continue
-                        # Try interaction matrix.
-                        handled = self._handle_interaction(
-                            item_name, target_name, player["current_room_id"]
-                        )
-                        if handled:
-                            self._tick()
-                            continue
-                        # Fall back to put-in (use ammo on magazine = put ammo in magazine).
-                        self._handle_put_in(item_name, target_name, player["current_room_id"])
-                        self._tick()
-                        continue
-                else:
-                    # "use X" without "on Y" — toggle if toggleable, else syntax hint
-                    item_name = " ".join(tokens[1:])
-                    self._handle_use_bare(item_name, player["current_room_id"])
                     self._tick()
-                    continue
-
-            # put / place <item> in/into/inside/on <container>
-            if verb in ("put", "place") and len(tokens) >= 4:
-                # Try DSL first (catches placement puzzles like "put crystal on altar")
-                if resolve_command is not None:
-                    result = resolve_command(
-                        raw, self.db, player["current_room_id"],
-                        emit_event=self._emit_event,
-                    )
-                    if result.success:
-                        for msg in result.messages:
-                            self.console.print(msg)
-                        self._tick()
-                        continue
-                # Fall through to built-in container handling
-                rest_tokens = tokens[1:]
-                # Find the split word: "in", "into", "inside", or "on"
-                split_idx = None
-                for i, t in enumerate(rest_tokens):
-                    if t in ("in", "into", "inside", "on"):
-                        split_idx = i
-                        break
-                if split_idx is not None and split_idx > 0 and split_idx < len(rest_tokens) - 1:
-                    item_name = " ".join(rest_tokens[:split_idx])
-                    container_name = " ".join(rest_tokens[split_idx + 1:])
-                    self._handle_put_in(item_name, container_name, player["current_room_id"])
-                    self._tick()
-                    continue
-
-            # give / show {item} to {npc}
-            if verb in ("give", "show") and len(tokens) >= 4 and "to" in tokens:
-                to_idx = tokens.index("to")
-                if to_idx > 1 and to_idx < len(tokens) - 1:
-                    item_name = " ".join(tokens[1:to_idx])
-                    npc_name = " ".join(tokens[to_idx + 1:])
-                    self._handle_give_show(
-                        verb, item_name, npc_name, player["current_room_id"],
-                    )
-                    self._tick()
-                    continue
-
-            # talk to
-            if verb == "talk" and len(tokens) >= 3 and tokens[1] == "to":
-                npc_name = " ".join(tokens[2:])
-                self._enter_dialogue(npc_name, player["current_room_id"])
+                    return self._can_continue()
+            rest_tokens = tokens[1:]
+            split_idx = None
+            for i, token in enumerate(rest_tokens):
+                if token in ("in", "into", "inside", "on"):
+                    split_idx = i
+                    break
+            if split_idx is not None and split_idx > 0 and split_idx < len(rest_tokens) - 1:
+                item_name = " ".join(rest_tokens[:split_idx])
+                container_name = " ".join(rest_tokens[split_idx + 1:])
+                self._handle_put_in(item_name, container_name, player["current_room_id"])
                 self._tick()
-                continue
+                return self._can_continue()
 
-            if verb == "talk" and len(tokens) >= 2 and tokens[1] != "to":
-                npc_name = " ".join(tokens[1:])
-                self._enter_dialogue(npc_name, player["current_room_id"])
-                self._tick()
-                continue
-
-            # ---- Nothing matched ----
-            if not self._has_seen_help:
-                self.console.print(
-                    "I don't understand that. Type 'help' or 'h' for available commands.",
-                    style=STYLE_SYSTEM,
+        if verb in ("give", "show") and len(tokens) >= 4 and "to" in tokens:
+            to_idx = tokens.index("to")
+            if to_idx > 1 and to_idx < len(tokens) - 1:
+                item_name = " ".join(tokens[1:to_idx])
+                npc_name = " ".join(tokens[to_idx + 1:])
+                self._handle_give_show(
+                    verb, item_name, npc_name, player["current_room_id"],
                 )
-                self._has_seen_help = True
-            else:
-                self.console.print("I don't understand that.", style=STYLE_SYSTEM)
-            self._tick()
+                self._tick()
+                return self._can_continue()
+
+        if verb == "talk" and len(tokens) >= 3 and tokens[1] == "to":
+            npc_name = " ".join(tokens[2:])
+            self._start_dialogue(npc_name, player["current_room_id"])
+            if self._interactive_dialogue and self._dialogue_state is not None:
+                self._run_dialogue_loop()
+            elif self._dialogue_state is not None:
+                self._render_active_dialogue()
+            if self._dialogue_state is None:
+                self._tick()
+            return self._can_continue()
+
+        if verb == "talk" and len(tokens) >= 2 and tokens[1] != "to":
+            npc_name = " ".join(tokens[1:])
+            self._start_dialogue(npc_name, player["current_room_id"])
+            if self._interactive_dialogue and self._dialogue_state is not None:
+                self._run_dialogue_loop()
+            elif self._dialogue_state is not None:
+                self._render_active_dialogue()
+            if self._dialogue_state is None:
+                self._tick()
+            return self._can_continue()
+
+        if not self._has_seen_help:
+            self.console.print(
+                "I don't understand that. Type 'help' or 'h' for available commands.",
+                style=STYLE_SYSTEM,
+            )
+            self._has_seen_help = True
+        else:
+            self.console.print("I don't understand that.", style=STYLE_SYSTEM)
+        self._tick()
+        return self._can_continue()
+
+    def main_loop(self) -> None:
+        """Read-eval-print loop: prompt for input, dispatch, repeat."""
+        self._running = True
+
+        while self._can_continue():
+
+            try:
+                raw = self.console.input(f"\n[{STYLE_PROMPT}]> [/]")
+            except (EOFError, KeyboardInterrupt):
+                self.console.print("\nFarewell, adventurer.")
+                break
+            if not self.process_command(raw):
+                break
 
     # ------------------------------------------------------------------
     # Room display
@@ -2022,13 +2093,8 @@ class GameEngine:
 
         return True
 
-    def _enter_dialogue(self, npc_name: str, current_room_id: str) -> None:
-        """Enter dialogue mode with an NPC.
-
-        Finds the NPC, gets their root dialogue node, then runs a sub-loop
-        that renders a Rich Panel with numbered options until the player
-        leaves or reaches a terminal node.
-        """
+    def _start_dialogue(self, npc_name: str, current_room_id: str) -> None:
+        """Initialize dialogue state for an NPC conversation, if available."""
         db = self.db
 
         npc = db.find_npc_by_name_any(npc_name, current_room_id)
@@ -2060,77 +2126,107 @@ class GameEngine:
         # Apply root node flags on entry and emit dialogue_node event.
         self._apply_node_flags(root_node)
         self._emit_event("dialogue_node", node_id=root_node["id"], npc_id=npc["id"])
-
-        current_node = root_node
-        in_dialogue = True
+        self._dialogue_state = _DialogueState(
+            npc_id=npc["id"],
+            npc_name=npc["name"],
+            current_node_id=root_node["id"],
+        )
         self._in_dialogue = True
 
-        while in_dialogue:
-            # Filter options for this node based on flags and inventory.
-            visible_options = self._get_visible_options(current_node["id"])
-
-            # Clear the terminal so only the current dialogue panel is visible.
+    def _run_dialogue_loop(self) -> None:
+        """Drive the legacy CLI dialogue loop using the stateful dialogue API."""
+        while self._dialogue_state is not None:
             self.console.clear()
-
-            # Render the dialogue panel.
-            self._render_dialogue_panel(npc, current_node, visible_options)
-
-            # If no visible options, show the text and exit.
-            if not visible_options:
-                self.console.print()
+            self._render_active_dialogue()
+            if self._dialogue_state is None:
                 break
 
-            # Wait for player input with a distinct dialogue prompt.
+            speaker = self._dialogue_state.npc_name
             try:
-                choice = Prompt.ask(
-                    f"[{STYLE_NPC}]{npc['name']}[/] [dim]>[/]"
-                )
+                choice = Prompt.ask(f"[{STYLE_NPC}]{speaker}[/] [dim]>[/]")
             except (EOFError, KeyboardInterrupt):
                 self.console.print()
+                self._end_dialogue()
                 break
 
-            choice = choice.strip().lower()
+            self._submit_dialogue_choice(choice)
 
-            # Exit dialogue.
-            if choice in ("0", "leave", "bye", "exit", "quit"):
-                self.console.print()
-                break
+    def _get_dialogue_context(self) -> tuple[dict, dict, list[dict]] | None:
+        """Return the current NPC, node, and visible dialogue options."""
+        if self._dialogue_state is None:
+            return None
 
-            # Parse numeric choice.
-            try:
-                choice_num = int(choice)
-            except ValueError:
-                self.console.print("  Pick a number.", style=STYLE_SYSTEM)
-                continue
+        npc = self.db.get_npc(self._dialogue_state.npc_id)
+        node = self.db.get_dialogue_node(self._dialogue_state.current_node_id)
+        if npc is None or node is None:
+            self._end_dialogue()
+            return None
 
-            if choice_num < 1 or choice_num > len(visible_options):
-                self.console.print("  Pick a number.", style=STYLE_SYSTEM)
-                continue
+        visible_options = self._get_visible_options(node["id"])
+        return npc, node, visible_options
 
-            selected = visible_options[choice_num - 1]
+    def _render_active_dialogue(self) -> None:
+        """Render the current dialogue state, ending immediately if terminal."""
+        context = self._get_dialogue_context()
+        if context is None:
+            return
 
-            # Apply the option's set_flags.
-            self._apply_option_flags(selected)
+        npc, node, visible_options = context
+        self._render_dialogue_panel(npc, node, visible_options)
+        if not visible_options:
+            self.console.print()
+            self._end_dialogue()
 
-            # Navigate to next node.
-            next_node_id = selected.get("next_node_id")
-            if next_node_id is None:
-                # Terminal option -- show nothing more, exit dialogue.
-                self.console.print()
-                break
+    def _submit_dialogue_choice(self, raw: str) -> None:
+        """Advance or exit the active dialogue based on the player's input."""
+        context = self._get_dialogue_context()
+        if context is None:
+            return
 
-            next_node = db.get_dialogue_node(next_node_id)
-            if next_node is None:
-                # Broken link -- exit gracefully.
-                self.console.print()
-                break
+        npc, _node, visible_options = context
+        if not visible_options:
+            return
 
-            # Apply the new node's set_flags and emit dialogue_node event.
-            self._apply_node_flags(next_node)
-            self._emit_event("dialogue_node", node_id=next_node["id"], npc_id=npc["id"])
-            current_node = next_node
+        choice = raw.strip().lower()
+        if choice in ("0", "leave", "bye", "exit", "quit"):
+            self.console.print()
+            self._end_dialogue()
+            return
 
-        # Dialogue ended — flush any deferred quest notifications.
+        try:
+            choice_num = int(choice)
+        except ValueError:
+            self.console.print("  Pick a number.", style=STYLE_SYSTEM)
+            return
+
+        if choice_num < 1 or choice_num > len(visible_options):
+            self.console.print("  Pick a number.", style=STYLE_SYSTEM)
+            return
+
+        selected = visible_options[choice_num - 1]
+        self._apply_option_flags(selected)
+
+        next_node_id = selected.get("next_node_id")
+        if next_node_id is None:
+            self.console.print()
+            self._end_dialogue()
+            return
+
+        next_node = self.db.get_dialogue_node(next_node_id)
+        if next_node is None:
+            self.console.print()
+            self._end_dialogue()
+            return
+
+        self._apply_node_flags(next_node)
+        self._emit_event("dialogue_node", node_id=next_node["id"], npc_id=npc["id"])
+        if self._dialogue_state is None:
+            return
+        self._dialogue_state.current_node_id = next_node["id"]
+
+    def _end_dialogue(self) -> None:
+        """Clear dialogue state and flush deferred notifications."""
+        self._dialogue_state = None
         self._in_dialogue = False
         self._flush_notifications()
 

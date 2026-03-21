@@ -30,13 +30,18 @@ Current commands:
 
 - `anyzork generate [prompt]`
 - `anyzork import <file|->`
+- `anyzork publish <game>`
+- `anyzork upload <package>`
+- `anyzork install <package|ref>`
+- `anyzork install <ref>`
+- `anyzork browse`
 - `anyzork play <file.zork>`
 - `anyzork list`
 - `anyzork saves <game>`
 - `anyzork delete-save <game>`
 - `anyzork delete <game>`
 
-The CLI handles argument parsing, import/export UX, and launching the runtime engine.
+The CLI handles argument parsing, import/export UX, package creation, upload/install flows, official catalog browsing, and launching the runtime engine.
 
 ### 2.2 Config
 
@@ -51,8 +56,23 @@ Sources, from lowest to highest priority:
 5. CLI overrides
 
 Supported providers for narrator mode today are `claude`, `openai`, and `gemini`.
+Browse/install talk to the official AnyZork catalog, upload talks to the official AnyZork upload API, and public installs are intentionally limited to official refs plus local `.anyzorkpkg` artifacts.
 
-### 2.3 Database Layer
+### 2.3 Public Catalog Service
+
+Public sharing for uploaded games lives in a small FastAPI app at [anyzork/catalog_api.py](../../anyzork/catalog_api.py), backed by SQLite + package-file storage in [anyzork/catalog_store.py](../../anyzork/catalog_store.py).
+
+The service exposes:
+
+- `POST /api/games` for uploaded `.anyzorkpkg` files and metadata
+- `GET /api/games` for public game listings
+- `GET /api/games/{slug}` for one public entry
+- `GET /api/games/{slug}/package` for package downloads
+- `GET /catalog.json` for the CLI catalog contract
+
+This is deployment infrastructure for the official AnyZork hosted catalog. The end-user CLI is intentionally aligned to that single service instead of supporting arbitrary user-hosted catalogs.
+
+### 2.4 Database Layer
 
 The database wrapper lives in [anyzork/db/schema.py](../../anyzork/db/schema.py). SQLite is both the world format and the save format.
 
@@ -74,7 +94,7 @@ Important tables:
 
 `GameDB` provides the single persistence API used by the engine, importer, and CLI.
 
-### 2.4 Runtime Engine
+### 2.5 Runtime Engine
 
 The runtime entry point is [anyzork/engine/game.py](../../anyzork/engine/game.py).
 
@@ -91,7 +111,7 @@ The engine loop is deterministic:
 
 Built-in commands include `look`, `inventory`, `quests`, `help`, `save`, `quit`, movement shortcuts, container verbs, dialogue verbs, and item-state helpers such as `turn on`.
 
-### 2.5 Command DSL
+### 2.6 Command DSL
 
 The command interpreter lives in [anyzork/engine/commands.py](../../anyzork/engine/commands.py). It evaluates structured rules stored in `commands`.
 
@@ -118,7 +138,7 @@ Current effect families include:
 
 The authoritative effect/precondition contract is documented in [docs/dsl/command-spec.md](../dsl/command-spec.md).
 
-### 2.6 Quest and Trigger Systems
+### 2.7 Quest and Trigger Systems
 
 Two higher-level deterministic layers sit on top of the command DSL:
 
@@ -127,11 +147,11 @@ Two higher-level deterministic layers sit on top of the command DSL:
 
 Quests do not gate actions directly. They observe state and present progress. Triggers let the world react without requiring the player to type a command.
 
-### 2.7 Provider Abstraction
+### 2.8 Provider Abstraction
 
 Providers implement a shared interface in [anyzork/engine/providers/base.py](../../anyzork/engine/providers/base.py). Narrator mode still relies on that abstraction, so the rest of the system does not care whether the backend is Claude, OpenAI, or Gemini.
 
-### 2.8 Narrator
+### 2.9 Narrator
 
 Narrator mode lives in [anyzork/engine/narrator.py](../../anyzork/engine/narrator.py). It is read-only presentation polish layered on top of deterministic output.
 

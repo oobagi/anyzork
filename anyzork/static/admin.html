@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnyZork Admin</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-hover: #22262f;
+    --border: #2a2e3a;
+    --text: #e4e6eb;
+    --text-muted: #8b8fa3;
+    --accent: #6c63ff;
+    --accent-hover: #5a52e0;
+    --green: #2ecc71;
+    --green-bg: rgba(46, 204, 113, 0.12);
+    --yellow: #f1c40f;
+    --yellow-bg: rgba(241, 196, 15, 0.12);
+    --red: #e74c3c;
+    --red-bg: rgba(231, 76, 60, 0.12);
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header h1 {
+    font-size: 1.2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .header h1 span { color: var(--accent); }
+  .btn-logout {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+  }
+  .btn-logout:hover { border-color: var(--red); color: var(--red); }
+
+  /* Login */
+  .login-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100dvh;
+    padding: 20px;
+  }
+  .login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 28px;
+    width: 100%;
+    max-width: 380px;
+  }
+  .login-card h2 {
+    font-size: 1.3rem;
+    margin-bottom: 6px;
+    letter-spacing: -0.02em;
+  }
+  .login-card p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 24px;
+  }
+  .input {
+    width: 100%;
+    padding: 14px 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 1rem;
+    outline: none;
+    transition: border 0.15s;
+  }
+  .input:focus { border-color: var(--accent); }
+  .input::placeholder { color: var(--text-muted); }
+
+  .btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 14px;
+    transition: background 0.15s;
+  }
+  .btn:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Content area */
+  .content { padding: 20px; max-width: 720px; margin: 0 auto; }
+
+  .stats-bar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    flex: 1;
+    min-width: 100px;
+  }
+  .stat-num {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+  .stat-label {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  /* Game cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 14px;
+    transition: border-color 0.15s;
+  }
+  .card:hover { border-color: #3a3e4a; }
+
+  .card-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .card-title {
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .badge-published {
+    background: var(--green-bg);
+    color: var(--green);
+  }
+  .badge-draft {
+    background: var(--yellow-bg);
+    color: var(--yellow);
+  }
+
+  .card-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+  .card-meta strong { color: var(--text); font-weight: 500; }
+
+  .card-genres {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .genre-tag {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .btn-publish {
+    width: 100%;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-publish:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-do-publish {
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(46, 204, 113, 0.25);
+  }
+  .btn-do-publish:hover:not(:disabled) {
+    background: rgba(46, 204, 113, 0.2);
+  }
+  .btn-do-unpublish {
+    background: var(--red-bg);
+    color: var(--red);
+    border: 1px solid rgba(231, 76, 60, 0.25);
+  }
+  .btn-do-unpublish:hover:not(:disabled) {
+    background: rgba(231, 76, 60, 0.2);
+  }
+
+  /* States */
+  .loading, .error-msg, .empty-msg {
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--text-muted);
+  }
+  .error-msg { color: var(--red); }
+  .login-error {
+    color: var(--red);
+    font-size: 0.85rem;
+    margin-top: 10px;
+    text-align: center;
+  }
+
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel">
+const { useState, useEffect, useCallback } = React;
+
+const API_BASE = window.location.origin;
+
+async function apiFetch(path, { token, method = "GET" } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method,
+    headers: token ? { "X-Admin-Token": token } : {},
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || `Request failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// ── Login Screen ──────────────────────────────────────────
+
+function LoginScreen({ onLogin }) {
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const token = input.trim();
+    if (!token) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await apiFetch("/api/admin/games", { token });
+      localStorage.setItem("anyzork_admin_token", token);
+      onLogin(token);
+    } catch (err) {
+      setError(err.message || "Could not connect. Check your token.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-wrap">
+      <form className="login-card" onSubmit={handleSubmit}>
+        <h2>AnyZork Admin</h2>
+        <p>Enter your admin token to manage games.</p>
+        <input
+          className="input"
+          type="password"
+          placeholder="Admin token"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          autoFocus
+        />
+        <button className="btn" type="submit" disabled={loading || !input.trim()}>
+          {loading ? "Connecting..." : "Connect"}
+        </button>
+        {error && <div className="login-error">{error}</div>}
+      </form>
+    </div>
+  );
+}
+
+// ── Game Card ─────────────────────────────────────────────
+
+function GameCard({ game, token, onToggled }) {
+  const [busy, setBusy] = useState(false);
+
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      const action = game.published ? "unpublish" : "publish";
+      await apiFetch(`/api/admin/games/${game.slug}/${action}`, {
+        token,
+        method: "POST",
+      });
+      onToggled();
+    } catch (err) {
+      alert(err.message || "Action failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const genres = game.genres || [];
+
+  return (
+    <div className="card">
+      <div className="card-top">
+        <div className="card-title">{game.title || game.slug}</div>
+        <span className={`badge ${game.published ? "badge-published" : "badge-draft"}`}>
+          {game.published ? "Published" : "Draft"}
+        </span>
+      </div>
+
+      <div className="card-meta">
+        <span><strong>{game.slug}</strong></span>
+        {game.author && <span>by {game.author}</span>}
+        {game.room_count != null && <span>{game.room_count} rooms</span>}
+      </div>
+
+      {genres.length > 0 && (
+        <div className="card-genres">
+          {genres.map((g) => (
+            <span className="genre-tag" key={g}>{g}</span>
+          ))}
+        </div>
+      )}
+
+      <button
+        className={`btn-publish ${game.published ? "btn-do-unpublish" : "btn-do-publish"}`}
+        onClick={toggle}
+        disabled={busy}
+      >
+        {busy
+          ? (game.published ? "Unpublishing..." : "Publishing...")
+          : (game.published ? "Unpublish" : "Publish")}
+      </button>
+    </div>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────
+
+function Dashboard({ token, onLogout }) {
+  const [games, setGames] = useState(null);
+  const [error, setError] = useState(null);
+
+  const loadGames = useCallback(async () => {
+    setError(null);
+    try {
+      const data = await apiFetch("/api/admin/games", { token });
+      setGames(data.games || []);
+    } catch (err) {
+      if (err.message && err.message.includes("403")) {
+        localStorage.removeItem("anyzork_admin_token");
+        onLogout();
+        return;
+      }
+      setError(err.message || "Failed to load games.");
+    }
+  }, [token, onLogout]);
+
+  useEffect(() => { loadGames(); }, [loadGames]);
+
+  const published = games ? games.filter((g) => g.published).length : 0;
+  const drafts = games ? games.length - published : 0;
+
+  return (
+    <>
+      <header className="header">
+        <h1>Any<span>Zork</span> Admin</h1>
+        <button className="btn-logout" onClick={onLogout}>Log out</button>
+      </header>
+
+      <main className="content">
+        {error && <div className="error-msg">{error}</div>}
+
+        {!games && !error && (
+          <div className="loading">
+            <div className="spinner" />
+            Loading games...
+          </div>
+        )}
+
+        {games && (
+          <>
+            <div className="stats-bar">
+              <div className="stat">
+                <div className="stat-num">{games.length}</div>
+                <div className="stat-label">Total</div>
+              </div>
+              <div className="stat">
+                <div className="stat-num">{published}</div>
+                <div className="stat-label">Published</div>
+              </div>
+              <div className="stat">
+                <div className="stat-num">{drafts}</div>
+                <div className="stat-label">Drafts</div>
+              </div>
+            </div>
+
+            {games.length === 0 && (
+              <div className="empty-msg">No games uploaded yet.</div>
+            )}
+
+            {games.map((game) => (
+              <GameCard
+                key={game.slug}
+                game={game}
+                token={token}
+                onToggled={loadGames}
+              />
+            ))}
+          </>
+        )}
+      </main>
+    </>
+  );
+}
+
+// ── App Root ──────────────────────────────────────────────
+
+function App() {
+  const [token, setToken] = useState(() => localStorage.getItem("anyzork_admin_token"));
+
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem("anyzork_admin_token");
+    setToken(null);
+  }, []);
+
+  if (!token) return <LoginScreen onLogin={setToken} />;
+  return <Dashboard token={token} onLogout={handleLogout} />;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
+from urllib.parse import urlparse
 from uuid import uuid4
 
 import click
@@ -19,6 +20,14 @@ from anyzork.config import (
     Config,
 )
 from anyzork.importer import current_prompt_system_version
+from anyzork.services import importing as importing_service
+from anyzork.services import library as library_service
+from anyzork.sharing import (
+    OFFICIAL_CATALOG_URL,
+    OFFICIAL_UPLOAD_URL,
+    SHARE_PACKAGE_SUFFIX,
+    SharePackageError,
+)
 from anyzork.versioning import RUNTIME_COMPAT_VERSION
 
 console = Console()
@@ -32,6 +41,29 @@ if TYPE_CHECKING:
     from anyzork.db.schema import GameDB
 
 
+def _share_metadata_options(func: Callable[..., object]) -> Callable[..., object]:
+    """Add public share-metadata options to a CLI command."""
+    options = [
+        click.option("--title", type=str, default=None, help="Public title override."),
+        click.option("--author", type=str, default=None, help="Public author name."),
+        click.option("--description", type=str, default=None, help="Public description."),
+        click.option("--tagline", type=str, default=None, help="Short public tagline."),
+        click.option(
+            "--genre",
+            "genres",
+            multiple=True,
+            help="Public genre tag. Repeat for multiple values.",
+        ),
+        click.option("--slug", type=str, default=None, help="Public catalog slug override."),
+        click.option("--homepage-url", type=str, default=None, help="Public homepage URL."),
+        click.option("--cover-image-url", type=str, default=None, help="Public cover image URL."),
+    ]
+    wrapped = func
+    for option in reversed(options):
+        wrapped = option(wrapped)
+    return wrapped
+
+
 @click.group()
 @click.version_option(version=CLI_VERSION, prog_name="anyzork")
 def cli() -> None:
@@ -39,7 +71,7 @@ def cli() -> None:
 
 
 @cli.command()
-@click.argument("game_ref", type=str)
+@click.argument("game_ref", type=str, required=False)
 @click.option(
     "--slot",
     type=str,
@@ -73,7 +105,7 @@ def cli() -> None:
 )
 @click.option("--model", type=str, default=None, help="Model for narrator mode.")
 def play(
-    game_ref: str,
+    game_ref: str | None,
     slot: str,
     restart: bool,
     direct: bool,
@@ -87,6 +119,8 @@ def play(
 
     if direct and restart:
         raise click.UsageError("--restart cannot be used with --direct.")
+    if direct and not game_ref:
+        raise click.UsageError("--direct requires GAME_REF.")
 
     # Also check the ANYZORK_NARRATOR env var / config.
     cfg: Config | None = None
@@ -101,8 +135,14 @@ def play(
     if cfg is None:
         cfg = Config()
 
-    source_path = _resolve_game_reference(game_ref, cfg)
-    if _is_within(source_path, cfg.saves_dir):
+    if game_ref:
+        source_path = library_service.resolve_game_reference(game_ref, cfg)
+    else:
+        source_path = _prompt_for_play_target(cfg)
+        if source_path is None:
+            return
+
+    if library_service.is_within(source_path, cfg.saves_dir):
         if restart:
             raise click.UsageError(
                 "--new only works for library games or original .zork files, not an existing save."
@@ -112,7 +152,7 @@ def play(
     elif direct:
         play_path = source_path
     else:
-        play_path, action = _prepare_managed_save(source_path, slot, restart, cfg)
+        play_path, action = library_service.prepare_managed_save(source_path, slot, restart, cfg)
         action_label = {
             "created": "Started save slot",
             "reset": "Restarted save slot",
@@ -136,6 +176,59 @@ def play(
             engine.start()
         except KeyboardInterrupt:
             console.print("\nFarewell, adventurer.", style="dim italic")
+
+
+def _prompt_for_play_target(cfg: Config) -> Path | None:
+    """Prompt for a library game when `play` is launched without a target."""
+    from rich.table import Table
+
+    overview = library_service.list_library_overview(cfg)
+    if not overview.games:
+        console.print(
+            f"[dim]No library games found in {cfg.games_dir}[/dim]"
+        )
+        if overview.saves:
+            console.print("[dim]Use anyzork saves to inspect existing save files.[/dim]")
+            console.print("[dim]Or pass a direct .zork path to anyzork play.[/dim]")
+            return None
+        console.print("[dim]Create an authoring prompt with:[/dim]  anyzork generate")
+        console.print("[dim]Then compile returned ZorkScript with:[/dim]  anyzork import -")
+        return None
+
+    entries: list[Path] = []
+    table = Table(title="Choose A Game", show_lines=False)
+    table.add_column("#", style="cyan", no_wrap=True)
+    table.add_column("Ref", style="cyan", no_wrap=True)
+    table.add_column("Title", style="bold")
+    table.add_column("Active Saves", justify="right", style="green")
+
+    for game in overview.games:
+        entries.append(game.path)
+        table.add_row(
+            str(len(entries)),
+            game.ref,
+            game.title,
+            str(game.active_saves),
+        )
+
+    console.print(table)
+
+    while True:
+        choice = click.prompt("Choose a game number", type=str).strip().lower()
+        if choice in {"q", "quit", "exit"}:
+            console.print("[dim]Canceled.[/dim]")
+            return None
+
+        try:
+            index = int(choice)
+        except ValueError:
+            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+            continue
+
+        if 1 <= index <= len(entries):
+            return entries[index - 1]
+
+        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
 
 
 def _slugify_name(value: str) -> str:
@@ -292,6 +385,269 @@ def _library_game_id(path: Path) -> str | None:
     return str(game_id) if game_id else None
 
 
+def _normalize_genres(genres: tuple[str, ...]) -> list[str] | None:
+    """Return clean genre values or None when no overrides were supplied."""
+    cleaned = [genre.strip() for genre in genres if genre.strip()]
+    return cleaned or None
+
+
+def _normalize_optional_text(value: str | None) -> str | None:
+    """Return stripped text or None when empty."""
+    if value is None:
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _prompt_optional_text(label: str, default: str | None = None) -> str | None:
+    """Prompt for an optional single-line text field."""
+    prompt_default = default or ""
+    value = click.prompt(label, default=prompt_default, show_default=bool(default), type=str)
+    return _normalize_optional_text(value)
+
+
+def _prompt_optional_genres(default: list[str] | None = None) -> list[str] | None:
+    """Prompt for optional comma-separated genre tags."""
+    default_text = ", ".join(default or [])
+    raw_value = click.prompt(
+        "Genre tags (comma-separated)",
+        default=default_text,
+        show_default=bool(default_text),
+        type=str,
+    )
+    values = [genre.strip() for genre in raw_value.split(",") if genre.strip()]
+    return values or None
+
+
+def _resolve_publish_listing_metadata(
+    source_path: Path,
+    *,
+    guided: bool,
+    title: str | None,
+    author: str | None,
+    description: str | None,
+    tagline: str | None,
+    genres: tuple[str, ...],
+    slug: str | None,
+    homepage_url: str | None,
+    cover_image_url: str | None,
+) -> tuple[
+    str | None,
+    str | None,
+    str | None,
+    str | None,
+    list[str] | None,
+    str | None,
+    str | None,
+    str | None,
+]:
+    """Return resolved public listing metadata for ``publish``."""
+    from anyzork.sharing import build_share_manifest
+
+    normalized_title = _normalize_optional_text(title)
+    normalized_author = _normalize_optional_text(author)
+    normalized_description = _normalize_optional_text(description)
+    normalized_tagline = _normalize_optional_text(tagline)
+    normalized_genres = _normalize_genres(genres)
+    normalized_slug = _normalize_optional_text(slug)
+    normalized_homepage_url = _normalize_optional_text(homepage_url)
+    normalized_cover_image_url = _normalize_optional_text(cover_image_url)
+
+    if not guided:
+        return (
+            normalized_title,
+            normalized_author,
+            normalized_description,
+            normalized_tagline,
+            normalized_genres,
+            normalized_slug,
+            normalized_homepage_url,
+            normalized_cover_image_url,
+        )
+
+    manifest = build_share_manifest(source_path)
+    listing = dict(manifest.get("listing", {}))
+    title_default = normalized_title or str(listing.get("title") or source_path.stem)
+    author_default = normalized_author or str(listing.get("author") or "")
+    description_default = normalized_description or str(listing.get("description") or "")
+    tagline_default = normalized_tagline or str(listing.get("tagline") or "")
+    genres_default = normalized_genres or [
+        str(genre).strip() for genre in listing.get("genres", []) if str(genre).strip()
+    ]
+    homepage_default = normalized_homepage_url or str(listing.get("homepage_url") or "")
+    cover_default = normalized_cover_image_url or str(listing.get("cover_image_url") or "")
+
+    console.print("[bold]Publish Listing[/bold]")
+    console.print("[dim]Press enter to keep a suggested value, or type your own.[/dim]")
+
+    resolved_title = _prompt_optional_text("Public title", title_default) or title_default
+    resolved_author = _prompt_optional_text("Author", author_default)
+    resolved_description = _prompt_optional_text("Description", description_default)
+    resolved_tagline = _prompt_optional_text("Tagline", tagline_default)
+    resolved_genres = _prompt_optional_genres(genres_default)
+    resolved_slug = _prompt_optional_text(
+        "Slug",
+        normalized_slug or _slugify_name(resolved_title or source_path.stem),
+    )
+    resolved_homepage = _prompt_optional_text("Homepage URL", homepage_default)
+    resolved_cover = _prompt_optional_text("Cover image URL", cover_default)
+
+    return (
+        resolved_title,
+        resolved_author,
+        resolved_description,
+        resolved_tagline,
+        resolved_genres,
+        resolved_slug,
+        resolved_homepage,
+        resolved_cover,
+    )
+
+
+@cli.command("publish")
+@click.argument("game_ref", type=str)
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    default=None,
+    help="Output path for the share package.",
+)
+@click.option("--guided", is_flag=True, help="Launch an interactive listing wizard.")
+@_share_metadata_options
+def publish_game(
+    game_ref: str,
+    output: Path | None,
+    guided: bool,
+    title: str | None,
+    author: str | None,
+    description: str | None,
+    tagline: str | None,
+    genres: tuple[str, ...],
+    slug: str | None,
+    homepage_url: str | None,
+    cover_image_url: str | None,
+) -> None:
+    """Package a library game into a shareable archive."""
+    from anyzork.sharing import create_share_package
+
+    cfg = Config()
+    source_path = _resolve_game_reference(game_ref, cfg)
+    if _is_within(source_path, cfg.saves_dir):
+        raise click.BadParameter(
+            "Publish a library game or original .zork file, not a managed save slot.",
+            param_hint="game_ref",
+        )
+
+    if output is None:
+        output = Path.cwd() / f"{source_path.stem}{SHARE_PACKAGE_SUFFIX}"
+
+    (
+        title,
+        author,
+        description,
+        tagline,
+        genre_values,
+        slug,
+        homepage_url,
+        cover_image_url,
+    ) = _resolve_publish_listing_metadata(
+        source_path,
+        guided=guided,
+        title=title,
+        author=author,
+        description=description,
+        tagline=tagline,
+        genres=genres,
+        slug=slug,
+        homepage_url=homepage_url,
+        cover_image_url=cover_image_url,
+    )
+
+    try:
+        package_path, manifest = create_share_package(
+            source_path,
+            output,
+            title=title,
+            author=author,
+            description=description,
+            tagline=tagline,
+            genres=genre_values,
+            slug=slug,
+            homepage_url=homepage_url,
+            cover_image_url=cover_image_url,
+        )
+    except SharePackageError as exc:
+        console.print(f"[red]Publish failed:[/red] {exc}")
+        sys.exit(1)
+
+    listing_title = str(
+        manifest.get("listing", {}).get("title")
+        or manifest.get("game", {}).get("title")
+        or source_path.stem
+    )
+    console.print(
+        f"[bold green]Packaged[/bold green] [cyan]{listing_title}[/cyan] "
+        f"[dim]to[/dim] [cyan]{package_path}[/cyan]"
+    )
+    console.print(f"[dim]Upload it with:[/dim]  anyzork upload {package_path}")
+    console.print(f"[dim]Install-test it with:[/dim]  anyzork install {package_path}")
+
+
+@cli.command("upload")
+@click.argument("source", type=str)
+@_share_metadata_options
+def upload_game(
+    source: str,
+    title: str | None,
+    author: str | None,
+    description: str | None,
+    tagline: str | None,
+    genres: tuple[str, ...],
+    slug: str | None,
+    homepage_url: str | None,
+    cover_image_url: str | None,
+) -> None:
+    """Upload a shared game package to the public catalog service."""
+    from anyzork.sharing import upload_share_package
+
+    genre_values = _normalize_genres(genres)
+    package_path = Path(source).expanduser()
+    if not package_path.exists() or package_path.suffix != SHARE_PACKAGE_SUFFIX:
+        raise click.BadParameter(
+            "Upload expects a .anyzorkpkg package. Run 'anyzork publish <game>' first.",
+            param_hint="source",
+        )
+
+    package_path = package_path.resolve()
+
+    try:
+        payload = upload_share_package(
+            package_path,
+            OFFICIAL_UPLOAD_URL,
+            title=title,
+            author=author,
+            description=description,
+            tagline=tagline,
+            genres=genre_values,
+            slug=slug,
+            homepage_url=homepage_url,
+            cover_image_url=cover_image_url,
+        )
+    except SharePackageError as exc:
+        console.print(f"[red]Upload failed:[/red] {exc}")
+        sys.exit(1)
+
+    game = dict(payload.get("game") or {})
+    uploaded_title = str(game.get("title") or title or source)
+    uploaded_slug = str(game.get("slug") or "")
+    console.print(
+        f"[bold green]Uploaded[/bold green] [cyan]{uploaded_title}[/cyan]"
+        + (f" [dim]as[/dim] [cyan]{uploaded_slug}[/cyan]" if uploaded_slug else "")
+    )
+    console.print(f"[dim]Install it with:[/dim]  anyzork install {uploaded_slug or '<slug>'}")
+
+
 @cli.command("import")
 @click.argument("spec_source", required=False, default="-")
 @click.option(
@@ -308,37 +664,36 @@ def _library_game_id(path: Path) -> str | None:
 )
 def import_game(spec_source: str, output: Path | None, print_template: bool) -> None:
     """Compile ZorkScript into a .zork game."""
-    from anyzork.importer import (
-        ZORKSCRIPT_AUTHORING_TEMPLATE,
-        ImportSpecError,
-        compile_import_spec,
-        load_import_source,
-    )
+    from anyzork.importer import ZORKSCRIPT_AUTHORING_TEMPLATE, ImportSpecError, load_import_source
 
     if print_template:
         console.print(ZORKSCRIPT_AUTHORING_TEMPLATE)
         return
 
+    cfg = Config()
+    resolved_source = _resolve_import_source(spec_source)
+
     try:
-        spec = load_import_source(_resolve_import_source(spec_source))
+        spec = load_import_source(resolved_source)
     except ImportSpecError as exc:
         console.print(f"[red]Import failed:[/red] {exc}")
         sys.exit(1)
 
-    cfg = Config()
-
-    if output is None:
-        title = str(spec.get("game", {}).get("title", "imported_game"))
-        output = cfg.games_dir / f"{_slugify_name(title)}.zork"
-
     try:
-        result_path, warnings = compile_import_spec(spec, output)
+        result = importing_service.import_zorkscript_spec(
+            spec=spec,
+            output_path=output,
+            cfg=cfg,
+        )
     except ImportSpecError as exc:
         console.print(f"[red]Import failed:[/red] {exc}")
         sys.exit(1)
     except Exception as exc:
         console.print(f"[red]Import failed:[/red] {exc}")
         sys.exit(1)
+
+    result_path = result.output_path
+    warnings = result.warnings
 
     console.print(
         "[bold green]Done![/bold green] Imported game saved to "
@@ -355,6 +710,154 @@ def import_game(spec_source: str, output: Path | None, print_template: bool) -> 
     if result_path.parent.resolve() == cfg.games_dir.resolve():
         play_ref = result_path.stem
     console.print(f"[dim]Play it with:[/dim]  anyzork play {play_ref}")
+
+
+@cli.command("install")
+@click.argument("source", type=str)
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Replace an existing installed library game with the same destination name.",
+)
+def install_game(source: str, force: bool) -> None:
+    """Install an official catalog game or local shared package into the library."""
+    from anyzork.sharing import install_shared_game, resolve_catalog_game_source
+
+    cfg = Config()
+    resolved_source = source
+    catalog_game: dict[str, object] | None = None
+    allow_remote = False
+
+    if _looks_like_catalog_ref(source):
+        try:
+            resolved_source, catalog_game = resolve_catalog_game_source(
+                OFFICIAL_CATALOG_URL,
+                source,
+            )
+            allow_remote = True
+        except SharePackageError as exc:
+            console.print(f"[red]Install failed:[/red] {exc}")
+            sys.exit(1)
+    else:
+        source_path = Path(source).expanduser()
+        if not source_path.exists() or source_path.suffix != SHARE_PACKAGE_SUFFIX:
+            raise click.BadParameter(
+                "Install expects an official catalog ref or a local .anyzorkpkg package.",
+                param_hint="source",
+            )
+        resolved_source = str(source_path.resolve())
+
+    try:
+        installed_path, manifest = install_shared_game(
+            resolved_source,
+            cfg.games_dir,
+            force=force,
+            allow_remote=allow_remote,
+        )
+    except SharePackageError as exc:
+        console.print(f"[red]Install failed:[/red] {exc}")
+        sys.exit(1)
+
+    title = str(manifest.get("game", {}).get("title") or installed_path.stem)
+    if catalog_game and catalog_game.get("title"):
+        title = str(catalog_game["title"])
+    console.print(
+        f"[bold green]Installed[/bold green] [cyan]{title}[/cyan] "
+        f"[dim]to[/dim] [cyan]{installed_path}[/cyan]"
+    )
+    console.print(f"[dim]Play it with:[/dim]  anyzork play {installed_path.stem}")
+
+
+@cli.command("browse")
+@click.option(
+    "--limit",
+    type=click.IntRange(1, 100),
+    default=20,
+    show_default=True,
+    help="Maximum number of catalog entries to display.",
+)
+def browse_games(limit: int) -> None:
+    """Browse the official AnyZork game catalog."""
+    from rich.table import Table
+
+    from anyzork.sharing import load_public_catalog
+
+    try:
+        catalog = load_public_catalog(OFFICIAL_CATALOG_URL)
+    except SharePackageError as exc:
+        console.print(f"[red]Browse failed:[/red] {exc}")
+        sys.exit(1)
+
+    games = sorted(
+        catalog["games"],
+        key=lambda game: (
+            not bool(game.get("featured")),
+            str(game.get("title") or "").lower(),
+        ),
+    )
+    games = games[:limit]
+    if not games:
+        console.print("[dim]No published games found right now.[/dim]")
+        return
+
+    if catalog.get("title"):
+        console.print(f"[bold]{catalog['title']}[/bold]")
+    if catalog.get("updated_at"):
+        console.print(f"[dim]Updated:[/dim] {catalog['updated_at']}")
+    console.print()
+
+    table = Table(show_lines=False)
+    table.add_column("Ref", style="cyan", no_wrap=True)
+    table.add_column("Title", style="bold")
+    table.add_column("Author", style="magenta")
+    table.add_column("Genres", style="green")
+    table.add_column("Rooms", justify="right", style="yellow")
+    table.add_column("Runtime", style="dim")
+    table.add_column("Package", style="dim")
+
+    for game in games:
+        genres = ", ".join(game.get("genres", [])) or "-"
+        package_source = str(game.get("package_url") or "")
+        parsed_source = urlparse(package_source)
+        if parsed_source.scheme in {"http", "https"} and parsed_source.netloc:
+            package_name = Path(parsed_source.path).name
+            package_label = (
+                f"{parsed_source.netloc}/{package_name}" if package_name else parsed_source.netloc
+            )
+        else:
+            package_label = Path(package_source).name or package_source
+        title = str(game.get("title") or "")
+        if game.get("featured"):
+            title = f"{title} [dim](featured)[/dim]"
+        table.add_row(
+            str(game.get("slug") or ""),
+            title,
+            str(game.get("author") or "-"),
+            genres,
+            str(game.get("room_count") or 0),
+            str(game.get("runtime_compat_version") or "-"),
+            package_label,
+        )
+
+    console.print(table)
+    console.print()
+    console.print("[dim]Install by ref:[/dim]  anyzork install <ref>")
+
+
+def _looks_like_catalog_ref(value: str) -> bool:
+    """Return True when a CLI install source should be treated as a catalog slug/ref."""
+    if Path(value).expanduser().exists():
+        return False
+
+    parsed = urlparse(value)
+    if parsed.scheme and parsed.scheme != "file":
+        return False
+
+    suffixes = {".zork", ".anyzorkpkg", ".json"}
+    if Path(value).suffix.lower() in suffixes:
+        return False
+
+    return not ("/" in value or "\\" in value)
 
 
 def _resolve_import_source(spec_source: str) -> str:
@@ -527,14 +1030,13 @@ def _resolve_generation_inputs(
 
 @cli.command("list")
 def list_games() -> None:
-    """List library games and managed save slots."""
+    """List library games and summarize their active saves."""
     from rich.table import Table
 
     cfg = Config()
-    library_files = sorted(cfg.games_dir.glob("*.zork")) if cfg.games_dir.exists() else []
-    save_files = sorted(cfg.saves_dir.glob("*/*.zork")) if cfg.saves_dir.exists() else []
+    overview = library_service.list_library_overview(cfg)
 
-    if not library_files and not save_files:
+    if not overview.games and not overview.saves:
         console.print(
             "[dim]No library games found in "
             f"{cfg.games_dir} and no saves found in {cfg.saves_dir}[/dim]"
@@ -543,108 +1045,90 @@ def list_games() -> None:
         console.print("[dim]Then compile returned ZorkScript with:[/dim]  anyzork import -")
         return
 
-    if library_files:
-        library_table = Table(title="Game Library", show_lines=False)
-        library_table.add_column("Ref", style="cyan", no_wrap=True)
-        library_table.add_column("Title", style="bold")
-        library_table.add_column("Version", style="dim")
-        library_table.add_column("Runs", justify="right", style="green")
-        library_table.add_column("Latest Run", style="dim")
+    library_table = Table(title="Game Library", show_lines=False)
+    library_table.add_column("Ref", style="cyan", no_wrap=True)
+    library_table.add_column("Title", style="bold")
+    library_table.add_column("Version", style="dim")
+    library_table.add_column("Active Saves", justify="right", style="green")
+    library_table.add_column("Latest Run", style="dim")
 
-        for zork_file in library_files:
-            meta = _read_zork_metadata(zork_file)
-            title = meta.get("title", "Untitled") if meta else "(error reading file)"
-            save_ver = str(meta.get("version", "?")) if meta else "?"
-            game_id = meta.get("game_id") if meta else None
-            version_label = _format_metadata_versions(meta)
-            if save_ver != RUNTIME_COMPAT_VERSION:
-                version_str = f"[yellow]{version_label}[/yellow]"
-            else:
-                version_str = version_label
+    for game in overview.games:
+        meta = library_service.read_zork_metadata(game.path)
+        save_ver = str(meta.get("version", "?")) if meta else "?"
+        version_label = game.version
+        if save_ver != RUNTIME_COMPAT_VERSION:
+            version_str = f"[yellow]{version_label}[/yellow]"
+        else:
+            version_str = version_label
 
-            slot_files = []
-            if game_id:
-                slot_files = sorted((cfg.saves_dir / str(game_id)).glob("*.zork"))
-            latest_desc = "new"
-            if slot_files:
-                latest_save = max(slot_files, key=lambda path: path.stat().st_mtime)
-                player = _read_player_state(latest_save)
-                state = player["game_state"] if player else "?"
-                latest_desc = f"{latest_save.stem} ({state})"
+        library_table.add_row(
+            game.ref,
+            game.title,
+            version_str,
+            str(game.active_saves),
+            game.latest_run,
+        )
 
-            library_table.add_row(
-                zork_file.stem,
-                title,
-                version_str,
-                str(len(slot_files)),
-                latest_desc,
-            )
-
-        console.print(library_table)
-
-    if save_files:
-        title_by_source_game_id: dict[str, str] = {}
-        for zork_file in library_files:
-            meta = _read_zork_metadata(zork_file) or {}
-            game_id = meta.get("game_id")
-            if game_id:
-                title_by_source_game_id[str(game_id)] = zork_file.stem
-
-        saves_table = Table(title="Managed Saves", show_lines=False)
-        saves_table.add_column("Game", style="cyan", no_wrap=True)
-        saves_table.add_column("Slot", style="bold")
-        saves_table.add_column("State", style="dim")
-        saves_table.add_column("Score", justify="right", style="green")
-        saves_table.add_column("Moves", justify="right", style="green")
-        saves_table.add_column("Updated", style="dim")
-
-        for save_file in sorted(save_files, key=_save_last_played_timestamp, reverse=True):
-            meta = _read_zork_metadata(save_file) or {}
-            player = _read_player_state(save_file) or {}
-            source_game_id = str(meta.get("source_game_id") or "")
-            game_label = title_by_source_game_id.get(source_game_id, save_file.parent.name)
-            saves_table.add_row(
-                game_label,
-                str(meta.get("save_slot") or save_file.stem),
-                str(player.get("game_state", "?")),
-                str(player.get("score", 0)),
-                str(player.get("moves", 0)),
-                _format_save_last_played(save_file),
-            )
-
-        console.print()
-        console.print(saves_table)
+    console.print(library_table)
 
 
 @cli.command("saves")
-@click.argument("game_ref", type=str)
-def list_saves(game_ref: str) -> None:
-    """List managed save slots for a single library game."""
+@click.argument("game_ref", type=str, required=False)
+def list_saves(game_ref: str | None) -> None:
+    """List managed save slots for all games or a single library game."""
     from rich.table import Table
 
     cfg = Config()
-    source_path = _resolve_game_reference(game_ref, cfg)
-    if _is_within(source_path, cfg.saves_dir):
-        raise click.BadParameter(
-            "Pass a library game, not an individual save file.",
-            param_hint="game_ref",
-        )
+    title = "Managed Saves"
+    game_filter_path: Path | None = None
+    if game_ref is not None:
+        try:
+            game_filter_path = library_service.resolve_game_reference(game_ref, cfg)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="game_ref") from exc
 
-    meta = _read_zork_metadata(source_path) or {}
-    game_id = meta.get("game_id")
-    title = meta.get("title", source_path.stem)
-    if not game_id:
-        console.print(f"[red]Missing game_id metadata in {source_path}[/red]")
-        return
+        if library_service.is_within(game_filter_path, cfg.saves_dir):
+            raise click.BadParameter(
+                "Pass a library game, not an individual save file.",
+                param_hint="game_ref",
+            )
 
-    save_files = _sorted_save_files(cfg.saves_dir / str(game_id))
+        meta = library_service.read_zork_metadata(game_filter_path) or {}
+        game_id = meta.get("game_id")
+        title = f"Managed Saves for {meta.get('title', game_filter_path.stem)}"
+        if not game_id:
+            console.print(f"[red]Missing game_id metadata in {game_filter_path}[/red]")
+            return
+        save_files = library_service.sorted_save_files(cfg.saves_dir / str(game_id))
+    else:
+        save_files = sorted(
+            cfg.saves_dir.glob("*/*.zork"),
+            key=library_service.save_last_played_timestamp,
+            reverse=True,
+        ) if cfg.saves_dir.exists() else []
+
     if not save_files:
-        console.print(
-            f"[dim]No managed saves found for[/dim] [cyan]{source_path.stem}[/cyan]"
-        )
+        if game_ref is not None and game_filter_path is not None:
+            console.print(
+                f"[dim]No managed saves found for[/dim] [cyan]{game_filter_path.stem}[/cyan]"
+            )
+        else:
+            console.print(f"[dim]No managed saves found in {cfg.saves_dir}[/dim]")
         return
 
-    table = Table(title=f"Saves for {title}", show_lines=False)
+    title_by_source_game_id: dict[str, str] = {}
+    ref_by_source_game_id: dict[str, str] = {}
+    library_files = sorted(cfg.games_dir.glob("*.zork")) if cfg.games_dir.exists() else []
+    for zork_file in library_files:
+        meta = library_service.read_zork_metadata(zork_file) or {}
+        source_game_id = meta.get("game_id")
+        if source_game_id:
+            title_by_source_game_id[str(source_game_id)] = str(meta.get("title") or zork_file.stem)
+            ref_by_source_game_id[str(source_game_id)] = zork_file.stem
+
+    table = Table(title=title, show_lines=False)
+    table.add_column("Ref", style="cyan", no_wrap=True)
+    table.add_column("Title", style="bold")
     table.add_column("Slot", style="bold")
     table.add_column("State", style="dim")
     table.add_column("Score", justify="right", style="green")
@@ -652,14 +1136,19 @@ def list_saves(game_ref: str) -> None:
     table.add_column("Updated", style="dim")
 
     for save_file in save_files:
-        save_meta = _read_zork_metadata(save_file) or {}
-        player = _read_player_state(save_file) or {}
+        save_meta = library_service.read_zork_metadata(save_file) or {}
+        player = library_service.read_player_state(save_file) or {}
+        source_game_id = str(save_meta.get("source_game_id") or "")
+        game_ref = ref_by_source_game_id.get(source_game_id, save_file.parent.name)
+        game_label = title_by_source_game_id.get(source_game_id, save_file.parent.name)
         table.add_row(
+            game_ref,
+            game_label,
             str(save_meta.get("save_slot") or save_file.stem),
             str(player.get("game_state", "?")),
             str(player.get("score", 0)),
             str(player.get("moves", 0)),
-            _format_save_last_played(save_file),
+            library_service.format_save_last_played(save_file),
         )
 
     console.print(table)
@@ -671,19 +1160,23 @@ def list_saves(game_ref: str) -> None:
 def delete_save(game_ref: str, slot: str) -> None:
     """Delete a managed save slot for a library game."""
     cfg = Config()
-    source_path = _resolve_game_reference(game_ref, cfg)
-    if _is_within(source_path, cfg.saves_dir):
+    try:
+        source_path = library_service.resolve_game_reference(game_ref, cfg)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="game_ref") from exc
+
+    if library_service.is_within(source_path, cfg.saves_dir):
         raise click.BadParameter(
             "Pass a library game, not an individual save file.",
             param_hint="game_ref",
         )
 
-    game_id = _library_game_id(source_path)
+    game_id = library_service.library_game_id(source_path)
     if not game_id:
         console.print(f"[red]Missing game_id metadata in {source_path}[/red]")
         return
 
-    save_path = cfg.saves_dir / game_id / f"{_sanitize_slot_name(slot)}.zork"
+    save_path = cfg.saves_dir / game_id / f"{library_service.sanitize_slot_name(slot)}.zork"
     if not save_path.exists():
         console.print(
             f"[dim]No save slot named[/dim] [cyan]{slot}[/cyan] "
@@ -707,14 +1200,18 @@ def delete_save(game_ref: str, slot: str) -> None:
 def delete_game(game_ref: str, yes: bool) -> None:
     """Delete a library game and all of its managed save slots."""
     cfg = Config()
-    source_path = _resolve_game_reference(game_ref, cfg)
-    if _is_within(source_path, cfg.saves_dir):
+    try:
+        source_path = library_service.resolve_game_reference(game_ref, cfg)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="game_ref") from exc
+
+    if library_service.is_within(source_path, cfg.saves_dir):
         raise click.BadParameter(
             "Delete the library game, not an individual save file. Use delete-save for slots.",
             param_hint="game_ref",
         )
 
-    game_id = _library_game_id(source_path)
+    game_id = library_service.library_game_id(source_path)
     save_dir = cfg.saves_dir / game_id if game_id else None
     save_count = len(list(save_dir.glob("*.zork"))) if save_dir and save_dir.exists() else 0
 
@@ -734,7 +1231,6 @@ def delete_game(game_ref: str, yes: bool) -> None:
         f"[green]Deleted library game[/green] [cyan]{source_path.stem}[/cyan] "
         f"[dim]and {save_count} managed save(s).[/dim]"
     )
-
 
 def main() -> None:
     """Entry point wired in pyproject.toml."""

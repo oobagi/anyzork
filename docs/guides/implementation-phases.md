@@ -17,7 +17,54 @@ What is already in place:
 - Guided authoring wizard and preset-backed prompt generation
 - ZorkScript parser, importer, and deterministic validation
 - Managed save slots and direct-play support
+- Share packages plus official catalog browse/install/upload plumbing
 - Optional narrator mode backed by Claude, OpenAI, or Gemini
+
+## Phase 5e: Catalog Moderation and Curation
+
+**Goal:** Turn the shipped sharing pipeline into a curated official library instead of a raw upload bucket.
+
+Security hardening shipped or in progress: upload filename sanitization, slug collision protection, unpublished-by-default uploads, and install source restrictions.
+
+**Remaining tasks:**
+
+- [ ] Add a real moderation workflow so uploads are reviewed before they appear in the public catalog
+- [ ] Add admin tooling for approving, rejecting, editing, and unpublishing submissions
+- [ ] Define how slug ownership and package updates work once a game is approved
+- [ ] Add reporting, featured picks, and richer browsing metadata after moderation exists
+- [ ] Decide whether ratings/voting belong in the first public catalog version or a later one
+
+**Likely files:**
+
+- `anyzork/catalog_api.py`
+- `anyzork/catalog_store.py`
+- `docs/architecture/system-design.md`
+- `README.md`
+
+**Done when:** creators can submit packages, moderators can curate them, and the public catalog only shows approved games.
+
+---
+
+## Packaging and Distribution (in progress)
+
+**Goal:** Make installing the AnyZork CLI feel like a normal product install instead of a source checkout workflow.
+
+Active work on `codex/pipx-packaging` branch.
+
+**Tasks:**
+
+- [ ] Publish real CLI releases as wheels and sdists instead of relying on editable installs for normal users
+- [ ] Support `pipx install anyzork` as the primary end-user install path
+- [ ] Document the install, upgrade, and narrator-extra flow clearly in the README and release docs
+- [ ] Decide whether Homebrew is worth supporting after the Python packaging path is stable
+
+**Likely files:**
+
+- `pyproject.toml`
+- `.github/workflows/`
+- `README.md`
+
+**Done when:** a new user can install, upgrade, and run the CLI without cloning the repo or using editable installs.
 
 ## Phase 5f: Narrator Immersive Mode
 

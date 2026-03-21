@@ -10,6 +10,8 @@
     ·
     <a href="#how-it-works"><strong>How It Works</strong></a>
     ·
+    <a href="#sharing-games"><strong>Sharing Games</strong></a>
+    ·
     <a href="#docs"><strong>Docs</strong></a>
   </p>
 </div>
@@ -132,6 +134,44 @@ cat game.zorkscript | anyzork import -
 ```
 
 For the full architecture and rationale, see the [Design Brief](docs/guides/design-brief.md) and [System Architecture](docs/architecture/system-design.md).
+
+## Sharing Games
+
+Package a library game or `.zork` file for sharing:
+
+```bash
+anyzork publish game.zork -o lighthouse.anyzorkpkg
+```
+
+`publish` creates a portable `.anyzorkpkg` archive containing the compiled `game.zork` plus a small manifest. By default the manifest pulls title/description from the compiled game metadata, and you can override the public listing fields directly from the CLI:
+
+```bash
+anyzork publish game.zork -o lighthouse.anyzorkpkg \
+  --author "Jaden" \
+  --description "A foggy lighthouse mystery." \
+  --genre mystery \
+  --genre short
+```
+
+If you want a step-by-step walkthrough instead of flags:
+
+```bash
+anyzork publish game.zork --guided
+```
+
+Creators can upload packages to the official catalog service, and players can browse/install from the CLI:
+
+```bash
+anyzork publish game.zork -o lighthouse.anyzorkpkg
+anyzork upload lighthouse.anyzorkpkg
+anyzork browse
+anyzork install clockwork_archives
+anyzork install lighthouse.anyzorkpkg
+```
+
+`install` is intentionally narrow: it accepts an official catalog ref or a local
+`.anyzorkpkg` file. It does not install arbitrary remote URLs or raw `.zork`
+files.
 
 ## Development
 

@@ -41,7 +41,7 @@ def load_config_file() -> dict:
     """Load ``~/.anyzork/config.toml`` if it exists.
 
     Returns a flat dict with keys that map to Config fields:
-      - ``provider``, ``model`` from ``[anyzork]`` for narrator mode
+      - ``provider`` and ``model`` from ``[anyzork]``
       - ``anthropic_api_key``, ``openai_api_key``, ``google_api_key`` from ``[keys]``
 
     Returns an empty dict if the file does not exist or cannot be parsed.
@@ -105,6 +105,9 @@ class Config(BaseSettings):
     # --- Paths ---
     games_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "games")
     saves_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "saves")
+    public_catalog_dir: Path = Field(
+        default_factory=lambda: Path.home() / ".anyzork" / "public_catalog"
+    )
 
     # ------------------------------------------------------------------
     # Validators
@@ -136,6 +139,7 @@ class Config(BaseSettings):
         """Resolve managed AnyZork directories to absolute paths."""
         self.games_dir = self.games_dir.expanduser().resolve()
         self.saves_dir = self.saves_dir.expanduser().resolve()
+        self.public_catalog_dir = self.public_catalog_dir.expanduser().resolve()
         return self
 
     # ------------------------------------------------------------------

@@ -122,6 +122,62 @@ def compiled_game_path(tmp_path: Path, minimal_import_spec: dict) -> Path:
     return compiled_path
 
 
+@pytest.fixture
+def dialogue_game_path(tmp_path: Path, minimal_import_spec: dict) -> Path:
+    dialogue_spec = {
+        **minimal_import_spec,
+        "npcs": [
+            {
+                "id": "caretaker",
+                "name": "Caretaker",
+                "description": "An old caretaker watches over the foyer.",
+                "room_id": "foyer",
+                "default_dialogue": "He nods politely.",
+            }
+        ],
+        "dialogue_nodes": [
+            {
+                "id": "caretaker_root",
+                "npc_id": "caretaker",
+                "content": '"State your business," the caretaker says.',
+                "is_root": True,
+            },
+            {
+                "id": "caretaker_riddle",
+                "npc_id": "caretaker",
+                "content": '"Then answer me this: what do travelers seek?"',
+            },
+        ],
+        "dialogue_options": [
+            {
+                "id": "caretaker_root_question",
+                "node_id": "caretaker_root",
+                "text": "Ask what he guards.",
+                "next_node_id": "caretaker_riddle",
+                "sort_order": 1,
+            },
+            {
+                "id": "caretaker_root_leave",
+                "node_id": "caretaker_root",
+                "text": "Decide this can wait.",
+                "next_node_id": None,
+                "sort_order": 2,
+            },
+            {
+                "id": "caretaker_answer",
+                "node_id": "caretaker_riddle",
+                "text": "Shelter.",
+                "next_node_id": None,
+                "set_flags": ["game_won"],
+                "sort_order": 1,
+            },
+        ],
+    }
+    output_path = tmp_path / "dialogue_fixture_game.zork"
+    compiled_path, _warnings = compile_import_spec(dialogue_spec, output_path)
+    return compiled_path
+
+
 def assert_has_error(messages: list, needle: str) -> None:
     text = "\n".join(str(message) for message in messages)
     assert needle in text
