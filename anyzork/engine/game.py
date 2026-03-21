@@ -704,7 +704,13 @@ class GameEngine:
         items: list[dict],
         npcs: list[dict],
     ) -> str:
-        """Return natural prose for visible entities not already in the scene text."""
+        """Return natural prose for foreign entities not already in the scene text.
+
+        Only **foreign** entities (those away from their home room, or those
+        with no home room at all) get the generic "Nearby..." fallback.
+        Home entities without prose are omitted entirely -- validation
+        catches those at compile time.
+        """
         additions: list[str] = []
         missing_items = [
             it for it in items if not cls._scene_mentions_name(scene_text, it["name"])
@@ -825,9 +831,10 @@ class GameEngine:
         else:
             parts.append(room.get("short_description") or room["description"])
 
-        # Append dynamic item prose: items with a room_description blend
-        # into the room body text. Items without prose get a simple scene
-        # note inside the panel below.
+        # Append dynamic entity prose: items/NPCs with a room_description
+        # blend into the room body text. Foreign entities without authored
+        # prose get a "Nearby..." fallback. Home entities without prose are
+        # silently omitted (validation catches those at compile time).
         items = self.db.get_items_in("room", room_id)
         prose_items: list[str] = []
         list_items: list[dict] = []
@@ -845,15 +852,37 @@ class GameEngine:
                 current_scene = "\n\n".join(parts + prose_items)
                 if not self._scene_mentions_name(current_scene, it["name"]):
                     prose_items.append(prose)
+            elif home == room_id:
+                # Home item without prose — skip (caught by validation)
+                pass
             else:
-                # No prose at all — fall back to name list
+                # Foreign item without prose — fall back to "Nearby..." list
                 list_items.append(it)
-
-        if prose_items:
-            parts.append(" ".join(prose_items))
 
         # NPCs present — fetched early because the narrator needs them.
         npcs = self.db.get_npcs_in(room_id)
+        list_npcs: list[dict] = []
+        for npc in npcs:
+            home = npc.get("home_room_id")
+            prose: str | None = None
+            if home == room_id and npc.get("room_description"):
+                prose = npc["room_description"]
+            elif npc.get("drop_description"):
+                prose = npc["drop_description"]
+
+            if prose:
+                current_scene = "\n\n".join(parts + prose_items)
+                if not self._scene_mentions_name(current_scene, npc["name"]):
+                    prose_items.append(prose)
+            elif home == room_id:
+                # Home NPC without prose — skip (caught by validation)
+                pass
+            else:
+                # Foreign NPC without prose — fall back to "Nearby..." list
+                list_npcs.append(npc)
+
+        if prose_items:
+            parts.append(" ".join(prose_items))
 
         body = "\n\n".join(parts)
 
@@ -887,7 +916,7 @@ class GameEngine:
                     style=STYLE_SYSTEM,
                 )
 
-        scene_prose = self._build_scene_prose(display_body, list_items, npcs)
+        scene_prose = self._build_scene_prose(display_body, list_items, list_npcs)
         if scene_prose:
             display_body = "\n\n".join([display_body, scene_prose])
 

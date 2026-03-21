@@ -144,6 +144,7 @@ room courtyard {
 # take_msg/drop_msg: generic messages that work in ANY room.
 # room_desc: shown when item is in its home room. drop_desc: shown elsewhere.
 # home: the item's native room (for room_desc vs drop_desc selection).
+# REQUIRED: every item with home MUST have room_desc (compile-time error otherwise).
 # Containers (furniture, chests): container/open/locked/key fields.
 # Toggleable (torches, switches): toggle/toggle_state/on_msg/off_msg.
 # requires: item dependency (e.g. flashlight requires batteries).
@@ -277,12 +278,18 @@ item rusty_pipe {
 }
 
 # -- NPCs -- Use category for the interaction matrix. Nest dialogue with talk blocks.
+# NPCs support room_desc, drop_desc, and home — identical to items.
+# home + room_desc is REQUIRED: room_desc is shown when the NPC is in its home room.
+# drop_desc (optional) is shown if the NPC is moved elsewhere (e.g., via move_npc).
+# NPCs without room_desc or home get a generic "Nearby, {name} lingers." fallback.
 
 npc guard {
   name        "The Guard"
   description "A heavyset man in dented armor."
   examine     "His eyes are bloodshot and his breath smells of cheap ale. He grips a short sword loosely."
   in          gate_room
+  home        gate_room
+  room_desc   "A heavyset guard slouches on a stool beside the gate, half-asleep."
   dialogue    "He barely looks up."
   category    "character"
   blocking    gate_room -> courtyard north
@@ -774,10 +781,12 @@ def _build_quality_requirements(realism: str, fields: dict[str, Any]) -> str:
     if realism != "low":
         lines.append("- Include dark rooms that require a light source.")
 
-    # Rich item feedback
+    # Rich item/NPC feedback
     lines.append("- Use take_msg, drop_msg, room_desc, drop_desc, examine for rich feedback. Never generic.")
     lines.append("- take_msg/drop_msg must work in ANY room (not context-specific).")
     lines.append("  Use home + room_desc for the item's native room, drop_desc for away.")
+    lines.append("- EVERY item and NPC with a home room MUST have room_desc. This is a compile-time error.")
+    lines.append("  NPCs support home, room_desc, and drop_desc identically to items.")
 
     # Consumables
     if realism != "low":

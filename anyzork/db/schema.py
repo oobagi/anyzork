@@ -168,8 +168,11 @@ CREATE TABLE IF NOT EXISTS npcs (
     default_dialogue  TEXT    NOT NULL,
     hp                INTEGER,
     damage            INTEGER,
-    category          TEXT    -- NPC category tag for interaction matrix:
+    category          TEXT,   -- NPC category tag for interaction matrix:
                                 -- "character", "merchant", "hostile"
+    home_room_id      TEXT    REFERENCES rooms(id),
+    room_description  TEXT,
+    drop_description  TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_npcs_room_id ON npcs(room_id);

@@ -152,7 +152,7 @@ item old_compass { name "Brass Compass" description "An old brass compass with c
 # ═══════════════════════════════════════════
 
 npc jonas {
-  name "Jonas" description "A sun-weathered man in tattered clothes blocks the gateway, arms folded." examine "Deep lines, tangled grey beard, anchor tattoo. He has been here a very long time." room_id fort_gate dialogue "Jonas watches you with wary eyes." category "character"
+  name "Jonas" description "A sun-weathered man in tattered clothes blocks the gateway, arms folded." examine "Deep lines, tangled grey beard, anchor tattoo. He has been here a very long time." in fort_gate home fort_gate room_desc "A sun-weathered man in tattered clothes blocks the gateway, arms folded." dialogue "Jonas watches you with wary eyes." category "character"
 
   blocking fort_gate -> fort_courtyard north
   unblock jonas_trusts_you

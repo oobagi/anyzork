@@ -238,6 +238,9 @@ def _insert_npcs(db: GameDB, spec: dict[str, Any]) -> None:
             hp=npc.get("hp"),
             damage=npc.get("damage"),
             category=optional_str(npc.get("category")),
+            home_room_id=optional_str(npc.get("home_room_id")),
+            room_description=optional_str(npc.get("room_description")),
+            drop_description=optional_str(npc.get("drop_description")),
         )
 
 
