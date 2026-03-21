@@ -191,6 +191,7 @@ def _insert_items(db: GameDB, spec: dict[str, Any]) -> None:
                 read_description=optional_str(item.get("read_description")),
                 key_item_id=optional_str(item.get("key_item_id")),
                 consume_key=bool_to_int(item.get("consume_key", False)),
+                combination=optional_str(item.get("combination")),
                 unlock_message=optional_str(item.get("unlock_message")),
                 accepts_items=json_or_none(item.get("accepts_items")),
                 reject_message=optional_str(item.get("reject_message")),

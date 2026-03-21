@@ -265,6 +265,32 @@ item guard_stool {
   room_desc   "A rickety stool sits beside the gate."
 }
 
+# Code-locked container example — the player types "unlock lockbox" and enters the code.
+# Always provide an in-game clue with the exact code somewhere (here it's on the stool: J.R. -> 417).
+item lockbox {
+  name        "Lockbox"
+  description "A small metal box with a three-digit combination dial."
+  examine     "The numbers 0-9 are etched around the dial. A label reads 'J.R. — 417'."
+  in          gate_room
+  takeable    false
+  container   true
+  locked      true
+  code        "417"
+  category    "furniture"
+  lock_msg    "The lockbox is locked. It has a combination dial."
+  open_msg    "The dial clicks and the lid pops open."
+}
+
+item gold_ring {
+  name        "Gold Ring"
+  description "A plain gold band."
+  examine     "Engraved inside: 'To J.R. — Forever.'"
+  in          lockbox
+  takeable    true
+  take_msg    "You slip the ring into your pocket."
+  room_desc   "A gold ring gleams inside the lockbox."
+}
+
 item rusty_pipe {
   name        "Rusty Pipe"
   description "A heavy iron pipe."
@@ -280,6 +306,10 @@ item rusty_pipe {
 # Every NPC talk branch MUST include a dismissive exit option (e.g., "Never mind" or
 # "Goodbye") so the player can leave the conversation. Do not create dialogue paths
 # with no exit option — the player gets trapped in dialogue mode.
+#
+# Conditions (require_item, require not_flag, etc.) go on OPTIONS, not on
+# talk node headers. Gate access to a dialogue branch by conditioning the
+# option that leads there.
 
 npc guard {
   name        "The Guard"
@@ -674,10 +704,13 @@ Constraints:
   says "pull the red book", the item must be named so that "pull red book" or "pull book"
   works. Never write clues that reference actions or phrasings the parser cannot accept.
   The player will type exactly what the clue says.
-- Do NOT create combination locks, keypads, or any puzzle requiring numeric code entry.
-  The engine has no mechanism for entering numbers as input. Use key-based locks,
-  flag-based locks, or "use X on Y" interactions instead. If you want a locked safe,
-  require a physical key item or a specific "use [item] on [safe]" interaction.
+- For combination locks and code-locked containers, use the code field. The engine
+  prompts the player to enter the code when they type "unlock [target]".
+  Exit lock example: lock safe_lock { exit room -> vault north / type "combination" /
+  code "813" / locked "A combination dial blocks the way." / unlocked "Click. The lock opens." }
+  Container example: item wall_safe { container true / locked true / code "813" /
+  lock_msg "The safe has a three-digit dial." }
+  Always provide an in-game clue with the exact code (a photograph, a note, a date).
 - Prefer built-in engine verbs over custom verbs. Instead of a custom "combine" verb,
   use "use item_a on item_b" with an interaction response. Instead of "install fuse",
   use "use fuse on generator". Instead of "light lantern", use "turn on lantern" (toggle).

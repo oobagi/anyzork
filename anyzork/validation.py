@@ -503,6 +503,27 @@ def _check_locks(db: GameDB) -> list[ValidationError]:
                     )
                 )
 
+        # Combination-type locks: must have a non-empty combination value.
+        if lock["lock_type"] == "combination":
+            combo = lock.get("combination")
+            if not combo or not str(combo).strip():
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "lock",
+                        f"Combination-type lock {lock['id']} has no combination code.",
+                    )
+                )
+            if lock.get("key_item_id"):
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        "lock",
+                        f"Combination-type lock {lock['id']} also has a key_item_id. "
+                        "Use either a combination or a key, not both.",
+                    )
+                )
+
     key_locks = [lock for lock in locks if lock["lock_type"] == "key"]
     for lock in key_locks:
         key_id = lock.get("key_item_id")
@@ -613,6 +634,21 @@ def _check_items(db: GameDB) -> list[ValidationError]:
                         "error",
                         "item",
                         f"Key item '{key_id}' (for lock {lock['id']}) must be takeable.",
+                    )
+                )
+
+    # --- Container lock consistency ---
+    for item in items:
+        if item.get("is_container") and item.get("is_locked"):
+            has_key = bool(item.get("key_item_id"))
+            has_combo = bool(item.get("combination"))
+            if has_key and has_combo:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        "item",
+                        f"Locked container '{item['id']}' has both key_item_id and "
+                        "combination. Use one unlock mechanism, not both.",
                     )
                 )
 
