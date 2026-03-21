@@ -191,7 +191,7 @@ room foyer {
   name "Foyer"
   description "A quiet foyer."
   short "A quiet foyer."
-  region "house"
+
   start true
 }
 
@@ -249,7 +249,7 @@ room foyer {
   name "Foyer"
   description "A quiet foyer."
   short "A quiet foyer."
-  region "house"
+
   start true
 
   exit north -> garden
@@ -259,7 +259,7 @@ room garden {
   name "Garden"
   description "A sunny garden."
   short "A sunny garden."
-  region "outside"
+
 
   exit south -> foyer
 }
@@ -318,7 +318,7 @@ room tavern {
   name "Tavern"
   description "A smoky tavern."
   short "A smoky tavern."
-  region "town"
+
   start true
 }
 

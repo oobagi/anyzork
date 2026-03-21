@@ -146,7 +146,6 @@ room cellar {
                holds forgotten jars. Water drips from somewhere above."
   short       "A damp cellar beneath the house."
   first_visit "The smell hits you first -- mildew and something sharper."
-  region      "house"
   dark        false
   start       false
 
@@ -163,7 +162,6 @@ Compiles to the `rooms` table.
 | `description`       | string  | yes      | |
 | `short_description` | string  | yes      | Shorthand: `short` |
 | `first_visit`       | string  | no       | Maps to `first_visit_text` |
-| `region`            | string  | yes      | |
 | `is_dark`           | boolean | no       | false. Shorthand: `dark` |
 | `is_start`          | boolean | no       | false. Shorthand: `start` |
 
@@ -245,10 +243,10 @@ the Notes column.
 | `is_consumed_on_use`  | boolean | no       | false | Shorthand: `consumable` |
 | `take_message`        | string  | no       | | Shorthand: `take_msg` |
 | `drop_message`        | string  | no       | | Shorthand: `drop_msg` |
-| `room_description`    | string  | no       | | Shorthand: `room_desc` |
-| `drop_description`    | string  | no       | | Shorthand: `drop_desc` |
+| `room_description`    | string  | no       | | Shorthand: `room_desc`. **Required** when `home` is set. Shown when item is in home room. |
+| `drop_description`    | string  | no       | | Shorthand: `drop_desc`. Shown when item is away from home. |
 | `read_description`    | string  | no       | | Shorthand: `read_text` |
-| `home_room_id`        | id      | no       | | Shorthand: `home` |
+| `home_room_id`        | id      | no       | | Shorthand: `home`. When set, `room_desc` is **required** (compile-time error). |
 | `category`            | string  | no       | | |
 | `item_tags`           | list    | no       | `["weapon", "light_source", ...]` | Shorthand: `tags` |
 | `requires_item_id`    | id      | no       | | Shorthand: `requires`. Item dependency (e.g. flashlight requires batteries). |
@@ -354,12 +352,23 @@ npc old_wizard {
   description "A stooped figure in threadbare robes."
   examine     "His eyes are sharp despite his age."
   in          tower_study
+  home        tower_study
+  room_desc   "An old wizard sits hunched over a heavy tome, muttering to himself."
   dialogue    "He peers at you over his spectacles."
   category    "character"
 }
 ```
 
 Compiles to the `npcs` table.
+
+NPCs support `home`, `room_desc`, and `drop_desc` identically to items.
+When an NPC is in its home room, the engine renders `room_desc` as authored
+prose blended into the room description. When the NPC is in a different room
+(e.g., moved via `move_npc`), the engine uses `drop_desc` if available, or
+falls back to the generic "Nearby, {name} lingers." message.
+
+**Required**: When `home` is set, `room_desc` is mandatory (compile-time error).
+NPCs without `home` receive the "Nearby..." fallback in all rooms.
 
 | Field              | Type    | Required | Default | Notes |
 |--------------------|---------|----------|---------|-------|
@@ -375,6 +384,9 @@ Compiles to the `npcs` table.
 | `hp`               | integer | no       | | |
 | `damage`           | integer | no       | | |
 | `category`         | string  | no       | | |
+| `home_room_id`     | id      | no       | | Shorthand: `home`. When set, `room_desc` is **required**. |
+| `room_description` | string  | no       | | Shorthand: `room_desc`. Shown when NPC is in home room. |
+| `drop_description` | string  | no       | | Shorthand: `drop_desc`. Shown when NPC is away from home. |
 
 #### Blocking NPCs
 
@@ -1077,7 +1089,6 @@ A small but complete game: two rooms, a locked door, a key, and a puzzle.
       "description": "Damp stone walls sweat in the lamplight. A shelf holds forgotten jars. A heavy iron door blocks the north wall.",
       "short_description": "A damp cellar.",
       "first_visit_text": "The smell hits you first.",
-      "region": "underground",
       "is_dark": false,
       "is_start": true
     },
@@ -1087,7 +1098,6 @@ A small but complete game: two rooms, a locked door, a key, and a puzzle.
       "description": "Open sky above crumbling walls. Weeds push through cracked flagstones.",
       "short_description": "A crumbling courtyard.",
       "first_visit_text": "Fresh air. Finally.",
-      "region": "surface",
       "is_dark": false,
       "is_start": false
     }
@@ -1227,7 +1237,6 @@ room cellar {
                forgotten jars. A heavy iron door blocks the north wall."
   short       "A damp cellar."
   first_visit "The smell hits you first."
-  region      "underground"
   start       true
 
   exit north -> courtyard (locked) "A heavy iron door."
@@ -1239,7 +1248,6 @@ room courtyard {
                cracked flagstones."
   short       "A crumbling courtyard."
   first_visit "Fresh air. Finally."
-  region      "surface"
 
   exit south -> cellar
 }
@@ -1373,7 +1381,9 @@ maps them to their DB column names:
 | `container`       | `is_container`        | items |
 | `toggle`          | `is_toggleable`       | items |
 | `tags`            | `item_tags`           | items |
-| `home`            | `home_room_id`        | items |
+| `home`            | `home_room_id`        | items, npcs |
+| `room_desc`       | `room_description`    | items, npcs |
+| `drop_desc`       | `drop_description`    | items, npcs |
 | `from`            | `from_room_id`        | exits |
 | `to`              | `to_room_id`          | exits |
 | `type` (in lock)  | `lock_type`           | locks |

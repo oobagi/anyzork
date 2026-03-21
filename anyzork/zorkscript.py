@@ -570,6 +570,9 @@ class _Parser:
         "examine_text": "examine_description",
         "in": "room_id",
         "dialogue": "default_dialogue",
+        "room_desc": "room_description",
+        "drop_desc": "drop_description",
+        "home": "home_room_id",
     }
 
     def _parse_npc_block(self) -> None:

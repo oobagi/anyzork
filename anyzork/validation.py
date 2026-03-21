@@ -602,6 +602,19 @@ def _check_items(db: GameDB) -> list[ValidationError]:
                 )
             )
 
+    # Items with a home room MUST have a room_description.
+    for item in items:
+        if item.get("home_room_id") and not item.get("room_description"):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "item",
+                    f"Item '{item['id']}' has home_room_id='{item['home_room_id']}' "
+                    "but no room_description. Home items require room_desc for "
+                    "authored prose in their home room.",
+                )
+            )
+
     # Key items referenced by locks must be takeable.
     locks = _all_locks(db)
     for lock in locks:
@@ -1293,6 +1306,18 @@ def _check_npcs(db: GameDB) -> list[ValidationError]:
                     "error",
                     "npc",
                     f"NPC '{npc['id']}' references non-existent room '{npc['room_id']}'.",
+                )
+            )
+
+        # NPCs with a home room MUST have a room_description.
+        if npc.get("home_room_id") and not npc.get("room_description"):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "npc",
+                    f"NPC '{npc['id']}' has home_room_id='{npc['home_room_id']}' "
+                    "but no room_description. Home NPCs require room_desc for "
+                    "authored prose in their home room.",
                 )
             )
 
