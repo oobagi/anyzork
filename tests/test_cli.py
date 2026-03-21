@@ -279,7 +279,7 @@ def test_publish_creates_share_package(
     library_dir.mkdir()
     target_game = library_dir / "fixture_game.zork"
     target_game.write_bytes(compiled_game_path.read_bytes())
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
+    uploaded: dict[str, object] = {}
 
     class FakeConfig:
         def __init__(self, **_kwargs) -> None:
@@ -287,21 +287,37 @@ def test_publish_creates_share_package(
             self.games_dir = library_dir
             self.saves_dir = saves_dir
 
-    monkeypatch.setattr(cli_module, "Config", FakeConfig)
+    def fake_upload_share_package(
+        package_path: Path,
+        upload_url: str,
+        **metadata: object,
+    ) -> dict[str, object]:
+        uploaded["package_path"] = str(package_path)
+        with zipfile.ZipFile(package_path) as archive:
+            uploaded["manifest"] = json.loads(archive.read("manifest.json").decode("utf-8"))
+            uploaded["payload_names"] = archive.namelist()
+        return {"game": {"slug": "fixture_game", "title": "Fixture Game"}}
 
-    result = runner.invoke(cli, ["publish", "fixture_game", "-o", str(package_path)])
+    monkeypatch.setattr(cli_module, "Config", FakeConfig)
+    monkeypatch.setattr("anyzork.sharing.upload_share_package", fake_upload_share_package)
+
+    # Wizard prompts: title, author, description, tagline, genres, slug,
+    # homepage url, cover image url, then "Ready to publish?" confirm.
+    # Press enter to accept all defaults.
+    result = runner.invoke(
+        cli,
+        ["publish", "fixture_game"],
+        input="\n\n\n\n\n\n\n\ny\n",
+    )
 
     assert result.exit_code == 0, result.output
-    assert package_path.exists()
+    assert "Published!" in result.output
 
-    with zipfile.ZipFile(package_path) as archive:
-        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
-        payload_names = archive.namelist()
-
+    manifest = uploaded["manifest"]
     assert manifest["format"] == "anyzork-share-package/v1"
     assert manifest["game"]["title"] == "Fixture Game"
     assert manifest["listing"]["title"] == "Fixture Game"
-    assert "game.zork" in payload_names
+    assert "game.zork" in uploaded["payload_names"]
 
 
 def test_publish_accepts_public_listing_metadata(
@@ -313,7 +329,7 @@ def test_publish_accepts_public_listing_metadata(
     library_dir.mkdir()
     target_game = library_dir / "fixture_game.zork"
     target_game.write_bytes(compiled_game_path.read_bytes())
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
+    uploaded: dict[str, object] = {}
 
     class FakeConfig:
         def __init__(self, **_kwargs) -> None:
@@ -321,35 +337,39 @@ def test_publish_accepts_public_listing_metadata(
             self.games_dir = library_dir
             self.saves_dir = saves_dir
 
-    monkeypatch.setattr(cli_module, "Config", FakeConfig)
+    def fake_upload_share_package(
+        package_path: Path,
+        upload_url: str,
+        **metadata: object,
+    ) -> dict[str, object]:
+        with zipfile.ZipFile(package_path) as archive:
+            uploaded["manifest"] = json.loads(archive.read("manifest.json").decode("utf-8"))
+        return {"game": {"slug": "fixture-game", "title": "Fixture Game"}}
 
+    monkeypatch.setattr(cli_module, "Config", FakeConfig)
+    monkeypatch.setattr("anyzork.sharing.upload_share_package", fake_upload_share_package)
+
+    # Wizard prompts: title, author, description, tagline, genres, slug,
+    # homepage url, cover image url, then "Ready to publish?" confirm.
     result = runner.invoke(
         cli,
-        [
-            "publish",
-            "fixture_game",
-            "-o",
-            str(package_path),
-            "--slug",
-            "fixture-game",
-            "--author",
-            "AnyZork",
-            "--description",
-            "Uploaded from the CLI.",
-            "--tagline",
-            "A tiny mystery.",
-            "--genre",
-            "mystery",
-            "--genre",
-            "short",
-        ],
+        ["publish", "fixture_game"],
+        input=(
+            "\n"                         # title — accept default
+            "AnyZork\n"                  # author
+            "Uploaded from the CLI.\n"   # description
+            "A tiny mystery.\n"          # tagline
+            "mystery, short\n"           # genres
+            "fixture-game\n"             # slug
+            "\n"                         # homepage url — skip
+            "\n"                         # cover image url — skip
+            "y\n"                        # confirm
+        ),
     )
 
     assert result.exit_code == 0, result.output
 
-    with zipfile.ZipFile(package_path) as archive:
-        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
-
+    manifest = uploaded["manifest"]
     assert manifest["listing"]["author"] == "AnyZork"
     assert manifest["listing"]["slug"] == "fixture-game"
     assert manifest["listing"]["description"] == "Uploaded from the CLI."
@@ -357,7 +377,7 @@ def test_publish_accepts_public_listing_metadata(
     assert manifest["listing"]["genres"] == ["mystery", "short"]
 
 
-def test_publish_guided_prompts_for_listing_metadata(
+def test_publish_wizard_prompts_for_listing_metadata(
     monkeypatch, tmp_path: Path, compiled_game_path: Path
 ) -> None:
     runner = CliRunner()
@@ -366,7 +386,7 @@ def test_publish_guided_prompts_for_listing_metadata(
     library_dir.mkdir()
     target_game = library_dir / "fixture_game.zork"
     target_game.write_bytes(compiled_game_path.read_bytes())
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
+    uploaded: dict[str, object] = {}
 
     class FakeConfig:
         def __init__(self, **_kwargs) -> None:
@@ -374,29 +394,40 @@ def test_publish_guided_prompts_for_listing_metadata(
             self.games_dir = library_dir
             self.saves_dir = saves_dir
 
-    monkeypatch.setattr(cli_module, "Config", FakeConfig)
+    def fake_upload_share_package(
+        package_path: Path,
+        upload_url: str,
+        **metadata: object,
+    ) -> dict[str, object]:
+        with zipfile.ZipFile(package_path) as archive:
+            uploaded["manifest"] = json.loads(archive.read("manifest.json").decode("utf-8"))
+        return {"game": {"slug": "fixture-game", "title": "Fixture Game"}}
 
+    monkeypatch.setattr(cli_module, "Config", FakeConfig)
+    monkeypatch.setattr("anyzork.sharing.upload_share_package", fake_upload_share_package)
+
+    # Wizard prompts: title, author, description, tagline, genres, slug,
+    # homepage url, cover image url, then "Ready to publish?" confirm.
     result = runner.invoke(
         cli,
-        ["publish", "fixture_game", "--guided", "-o", str(package_path)],
+        ["publish", "fixture_game"],
         input=(
-            "\n"
-            "Jaden\n"
-            "A foggy lighthouse mystery.\n"
-            "A tiny mystery.\n"
-            "mystery, short\n"
-            "fixture-game\n"
-            "https://example.com/game\n"
-            "https://example.com/cover.png\n"
+            "\n"                             # title — accept default "Fixture Game"
+            "Jaden\n"                        # author
+            "A foggy lighthouse mystery.\n"  # description
+            "A tiny mystery.\n"              # tagline
+            "mystery, short\n"               # genres
+            "fixture-game\n"                 # slug
+            "https://example.com/game\n"     # homepage url
+            "https://example.com/cover.png\n"  # cover image url
+            "y\n"                            # confirm
         ),
     )
 
     assert result.exit_code == 0, result.output
     assert "Publish Listing" in result.output
 
-    with zipfile.ZipFile(package_path) as archive:
-        manifest = json.loads(archive.read("manifest.json").decode("utf-8"))
-
+    manifest = uploaded["manifest"]
     assert manifest["listing"]["title"] == "Fixture Game"
     assert manifest["listing"]["author"] == "Jaden"
     assert manifest["listing"]["description"] == "A foggy lighthouse mystery."
@@ -561,122 +592,3 @@ def test_browse_reports_invalid_catalog_counts(monkeypatch) -> None:
     assert "invalid room_count" in result.output
 
 
-def test_upload_sends_package_to_catalog_service(
-    monkeypatch, tmp_path: Path, compiled_game_path: Path
-) -> None:
-    runner = CliRunner()
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
-    create_share_package(compiled_game_path, package_path)
-    uploaded: dict[str, object] = {}
-
-    class FakeConfig:
-        def __init__(self, **_kwargs) -> None:
-            self.narrator_enabled = False
-            self.games_dir = tmp_path / "library"
-            self.saves_dir = tmp_path / "saves"
-
-    def fake_upload_share_package(
-        package_path: Path,
-        upload_url: str,
-        **metadata: object,
-    ) -> dict[str, object]:
-        uploaded["package_path"] = str(package_path)
-        uploaded["upload_url"] = upload_url
-        uploaded["metadata"] = metadata
-        return {"game": {"slug": "fixture_game", "title": "Fixture Game"}}
-
-    monkeypatch.setattr(cli_module, "Config", FakeConfig)
-    monkeypatch.setattr("anyzork.sharing.upload_share_package", fake_upload_share_package)
-
-    result = runner.invoke(
-        cli,
-        [
-            "upload",
-            str(package_path),
-            "--author",
-            "AnyZork",
-            "--genre",
-            "mystery",
-            "--genre",
-            "short",
-        ],
-    )
-
-    assert result.exit_code == 0, result.output
-    assert uploaded["package_path"] == str(package_path.resolve())
-    assert uploaded["upload_url"] == "https://anyzork.com/api/games"
-    assert uploaded["metadata"] == {
-        "title": None,
-        "author": "AnyZork",
-        "description": None,
-        "tagline": None,
-        "genres": ["mystery", "short"],
-        "slug": None,
-        "homepage_url": None,
-        "cover_image_url": None,
-    }
-    assert "Uploaded" in result.output
-
-
-def test_upload_uses_existing_package_without_repackaging(
-    monkeypatch, tmp_path: Path, compiled_game_path: Path
-) -> None:
-    runner = CliRunner()
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
-    create_share_package(
-        compiled_game_path,
-        package_path,
-        author="AnyZork",
-        description="Uploaded from a package.",
-        genres=["mystery"],
-    )
-    uploaded: dict[str, object] = {}
-
-    class FakeConfig:
-        def __init__(self, **_kwargs) -> None:
-            self.narrator_enabled = False
-            self.games_dir = tmp_path / "library"
-            self.saves_dir = tmp_path / "saves"
-
-    def fake_upload_share_package(
-        selected_package_path: Path,
-        upload_url: str,
-        **metadata: object,
-    ) -> dict[str, object]:
-        uploaded["package_path"] = str(selected_package_path)
-        uploaded["upload_url"] = upload_url
-        uploaded["metadata"] = metadata
-        return {"game": {"slug": "fixture_game", "title": "Fixture Game"}}
-
-    monkeypatch.setattr(cli_module, "Config", FakeConfig)
-    monkeypatch.setattr("anyzork.sharing.upload_share_package", fake_upload_share_package)
-
-    result = runner.invoke(cli, ["upload", str(package_path)])
-
-    assert result.exit_code == 0, result.output
-    assert uploaded["package_path"] == str(package_path.resolve())
-    assert uploaded["upload_url"] == "https://anyzork.com/api/games"
-    assert uploaded["metadata"]["author"] is None
-
-
-def test_upload_rejects_non_package_sources(
-    monkeypatch, tmp_path: Path, compiled_game_path: Path
-) -> None:
-    runner = CliRunner()
-    library_dir = tmp_path / "library"
-    library_dir.mkdir()
-    target_game = library_dir / "fixture_game.zork"
-    target_game.write_bytes(compiled_game_path.read_bytes())
-
-    class FakeConfig:
-        def __init__(self, **_kwargs) -> None:
-            self.narrator_enabled = False
-            self.games_dir = library_dir
-            self.saves_dir = tmp_path / "saves"
-
-    monkeypatch.setattr(cli_module, "Config", FakeConfig)
-
-    result = runner.invoke(cli, ["upload", "fixture_game"])
-
-    assert result.exit_code != 0
-    assert "Upload expects a .anyzorkpkg package" in result.output

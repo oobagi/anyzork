@@ -102,8 +102,8 @@ openai = "your_key_here"
 
 ### Public Game Sharing
 
-- [ ] Public game finder — upload and share games
-- [ ] Browse, upvote, and downvote shared games
+- [x] Publish, browse, and install shared games
+- [ ] Upvote, downvote, and sort by popularity
 - [ ] Reporting and moderation for junk uploads
 
 ### Narrator Improvements
@@ -129,41 +129,35 @@ openai = "your_key_here"
 
 ## Sharing Games
 
-Package a library game or `.zork` file for sharing:
+Publish a library game to the official catalog:
 
 ```bash
-anyzork publish game.zork -o lighthouse.anyzorkpkg
+anyzork publish my_game          # wizard walks you through metadata, then uploads
 ```
 
-`publish` creates a portable `.anyzorkpkg` archive containing the compiled `game.zork` plus a small manifest. By default the manifest pulls title/description from the compiled game metadata, and you can override the public listing fields directly from the CLI:
+`publish` packages the game, walks you through listing metadata (title, author, genres, etc.), and uploads to the catalog in one step. An admin approves submissions from the dashboard before they appear publicly.
+
+Once approved, players can browse and install from the CLI:
 
 ```bash
-anyzork publish game.zork -o lighthouse.anyzorkpkg \
-  --author "Jaden" \
-  --description "A foggy lighthouse mystery." \
-  --genre mystery \
-  --genre short
+anyzork browse                   # list published games
+anyzork install clockwork_archives  # install by catalog ref
+anyzork install lighthouse.anyzorkpkg  # install a local package
 ```
 
-If you want a step-by-step walkthrough instead of flags:
+`install` accepts an official catalog ref or a local `.anyzorkpkg` file. It does not install arbitrary remote URLs or raw `.zork` files.
+
+<details>
+<summary>Self-hosted catalog</summary>
+
+Point `publish`, `browse`, and `install` at your own catalog server with env vars:
 
 ```bash
-anyzork publish game.zork --guided
+export ANYZORK_UPLOAD_URL="https://my-server.example.com/api/upload"
+export ANYZORK_CATALOG_URL="https://my-server.example.com/api/catalog"
 ```
 
-Creators can upload packages to the official catalog service, and players can browse/install from the CLI:
-
-```bash
-anyzork publish game.zork -o lighthouse.anyzorkpkg
-anyzork upload lighthouse.anyzorkpkg
-anyzork browse
-anyzork install clockwork_archives
-anyzork install lighthouse.anyzorkpkg
-```
-
-`install` is intentionally narrow: it accepts an official catalog ref or a local
-`.anyzorkpkg` file. It does not install arbitrary remote URLs or raw `.zork`
-files.
+</details>
 
 ## Contributing
 

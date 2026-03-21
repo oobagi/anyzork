@@ -14,6 +14,7 @@ from anyzork.sharing import (
     SharePackageError,
     _extract_share_package,
     _sha256_file,
+    _slugify_name,
 )
 
 
@@ -64,14 +65,6 @@ class UploadedGame:
         }
 
 
-def slugify_catalog_value(value: str) -> str:
-    """Return a filesystem-safe slug for a public listing."""
-    import re
-
-    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
-    return slug or "game"
-
-
 class CatalogStore:
     """SQLite + filesystem persistence for uploaded public games."""
 
@@ -108,7 +101,7 @@ class CatalogStore:
             or str(listing_meta.get("title") or "")
             or str(game_meta.get("title") or package_path.stem)
         ).strip()
-        normalized_slug = slugify_catalog_value(
+        normalized_slug = _slugify_name(
             slug or str(listing_meta.get("slug") or "").strip() or normalized_title
         )
         existing = self.get_game(normalized_slug)
@@ -185,8 +178,9 @@ class CatalogStore:
 
     def build_catalog(self) -> dict[str, object]:
         """Return the public catalog JSON contract."""
+        published_games = self.list_games(published_only=True)
         games = []
-        for game in self.list_games(published_only=True):
+        for game in published_games:
             games.append(
                 {
                     "slug": game.slug,
@@ -206,7 +200,7 @@ class CatalogStore:
                 }
             )
 
-        latest_update = max((game.updated_at for game in self.list_games()), default="")
+        latest_update = max((game.updated_at for game in published_games), default="")
         return {
             "format": PUBLIC_CATALOG_FORMAT,
             "title": "Published AnyZork Games",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import os
 import shutil
 import tempfile
@@ -18,6 +19,7 @@ from anyzork.config import Config
 from anyzork.sharing import SharePackageError
 
 _UPLOAD_FILENAME = "submission.anyzorkpkg"
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
@@ -66,6 +68,13 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="Game not found.")
         return game.to_api_dict()
 
+    @app.get("/api/games/{slug}/status")
+    def game_status(slug: str) -> dict[str, object]:
+        game = store.get_game(slug)
+        if game is None:
+            raise HTTPException(status_code=404, detail="Game not found.")
+        return {"slug": game.slug, "title": game.title, "published": game.published}
+
     @app.get("/api/games/{slug}/package")
     def download_game(slug: str) -> FileResponse:
         game = store.get_game(slug)
@@ -92,6 +101,9 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
         if not package.filename:
             raise HTTPException(status_code=400, detail="Upload is missing a filename.")
 
+        if package.size is not None and package.size > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Upload exceeds 50 MB limit.")
+
         genre_values = None
         if genres:
             genre_values = [value.strip() for value in genres.split(",") if value.strip()]
@@ -100,6 +112,9 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
             temp_path = Path(tmp) / f"{uuid4().hex}-{_UPLOAD_FILENAME}"
             with temp_path.open("wb") as handle:
                 shutil.copyfileobj(package.file, handle)
+
+            if temp_path.stat().st_size > MAX_UPLOAD_BYTES:
+                raise HTTPException(status_code=413, detail="Upload exceeds 50 MB limit.")
 
             try:
                 saved = store.upsert_package(
@@ -127,7 +142,7 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
 
     def _require_admin_token(x_admin_token: str | None) -> None:
         expected = os.environ.get("ANYZORK_ADMIN_TOKEN", "")
-        if not expected or x_admin_token != expected:
+        if not expected or not hmac.compare_digest(x_admin_token or "", expected):
             raise HTTPException(status_code=403, detail="Invalid or missing admin token.")
 
     @app.get("/api/admin/games")
