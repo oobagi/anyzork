@@ -2698,7 +2698,12 @@ class GameEngine:
                 config.model = self._narrator_model_override
 
             provider = create_provider(config)
-            self._narrator = Narrator(provider, self.db)
+            self._narrator = Narrator(
+                provider,
+                self.db,
+                temperature=config.narrator_temperature,
+                max_tokens=config.narrator_max_tokens,
+            )
         except Exception as exc:
             logger.debug("Could not enable narrator: %s", exc)
             self.console.print(

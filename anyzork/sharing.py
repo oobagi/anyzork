@@ -20,8 +20,6 @@ from anyzork.versioning import APP_VERSION
 SHARE_PACKAGE_FORMAT = "anyzork-share-package/v1"
 SHARE_PACKAGE_SUFFIX = ".anyzorkpkg"
 PUBLIC_CATALOG_FORMAT = "anyzork-public-catalog/v1"
-OFFICIAL_CATALOG_URL = "https://anyzork.com/catalog.json"
-OFFICIAL_UPLOAD_URL = "https://anyzork.com/api/games"
 _TRUSTED_CATALOG_DOMAIN = "anyzork.com"
 _MANIFEST_FILENAME = "manifest.json"
 _PAYLOAD_FILENAME = "game.zork"
