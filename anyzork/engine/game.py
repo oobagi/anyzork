@@ -2422,8 +2422,34 @@ class GameEngine:
                 self._emit_event("flag_set", flag=flag)
 
     def _apply_node_flags(self, node: dict) -> None:
-        """Set any flags defined in a dialogue node's set_flags field."""
+        """Set flags and execute effects defined on a dialogue node."""
         self._apply_set_flags(node)
+        self._apply_node_effects(node)
+
+    def _apply_node_effects(self, node: dict) -> None:
+        """Execute any effects defined in a dialogue node's effects field."""
+        from anyzork.engine.commands import apply_effect
+
+        effects_raw = node.get("effects")
+        if not effects_raw:
+            return
+        try:
+            effects = json.loads(effects_raw)
+        except (json.JSONDecodeError, TypeError):
+            return
+        for effect in effects:
+            try:
+                msgs = apply_effect(
+                    effect, self.db,
+                    command_id=f"dialogue:{node['id']}",
+                    emit_event=self._emit_event,
+                )
+                for msg in msgs:
+                    self.console.print(msg)
+            except Exception:
+                logger.exception(
+                    "Dialogue effect failed: %s in %s", effect, node["id"]
+                )
 
     def _apply_option_flags(self, option: dict) -> None:
         """Set any flags defined in a dialogue option's set_flags field."""

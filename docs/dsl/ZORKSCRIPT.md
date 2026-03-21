@@ -437,6 +437,8 @@ npc guard {
 
   talk bribe {
     "His eyes fix on the key. He pockets it. 'Fine. Go.'"
+    effect remove_item(silver_key)
+    effect add_score(10)
     sets [guard_bribed]
   }
 }
@@ -451,6 +453,10 @@ Talk block syntax:
   `require_item`, `set_flags`, `required_flags`, `excluded_flags`,
   `required_items`.
 - `sets [flag1, flag2]` sets flags when the dialogue node is visited.
+- `effect name(args)` executes effects when the node is visited, using
+  the same syntax and effect types as `on` and `when` blocks. Effects
+  fire before the player sees options. Multiple `effect` lines are
+  allowed.
 
 Option IDs are auto-generated as `{node_id}_opt_{index}`.
 
@@ -987,6 +993,7 @@ Compiles to `dialogue_nodes` table.
 | `content`   | string     | yes      | |
 | `is_root`   | boolean    | no       | false |
 | `set_flags` | id-list    | no       | JSON array of flag ids |
+| `effects`   | effect-list| no       | JSON array of effects (same syntax as `on`/`when` blocks) |
 
 ### `option` block
 
@@ -1468,6 +1475,7 @@ exit_mod       = "locked" | "hidden" ;
 
 talk_block     = "talk" IDENT "{" [ STRING ] { talk_field } "}" ;
 talk_field     = "content" STRING | "sets" id_list
+               | effect_line
                | "option" STRING [ "->" IDENT ] [ "{" { field } "}" ]
                | field ;
 

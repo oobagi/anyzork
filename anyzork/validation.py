@@ -1685,6 +1685,16 @@ def _check_win_condition(db: GameDB) -> list[ValidationError]:
         except (json.JSONDecodeError, TypeError):
             flags = []
         settable_flags.update(flag for flag in flags if flag)
+        # Also check effects on dialogue nodes for set_flag effects.
+        try:
+            node_effects = json.loads(node.get("effects", "[]")) if node.get("effects") else []
+        except (json.JSONDecodeError, TypeError):
+            node_effects = []
+        for eff in node_effects:
+            if eff.get("type") == "set_flag":
+                flag_name = eff.get("flag")
+                if flag_name:
+                    settable_flags.add(flag_name)
 
     for option in _all_dialogue_options(db):
         try:

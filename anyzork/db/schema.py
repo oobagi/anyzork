@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS dialogue_nodes (
     npc_id      TEXT NOT NULL REFERENCES npcs(id),
     content     TEXT NOT NULL,
     set_flags   TEXT,          -- JSON array of flags to set when this node is visited
+    effects     TEXT,          -- JSON array of effects to execute when this node is visited
     is_root     INTEGER NOT NULL DEFAULT 0
 );
 

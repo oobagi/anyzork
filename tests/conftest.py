@@ -178,6 +178,62 @@ def dialogue_game_path(tmp_path: Path, minimal_import_spec: dict) -> Path:
     return compiled_path
 
 
+@pytest.fixture
+def dialogue_effects_game_path(tmp_path: Path, minimal_import_spec: dict) -> Path:
+    """A game where an NPC gives an item via dialogue effects."""
+    spec = {
+        **minimal_import_spec,
+        "items": [
+            {
+                "id": "magic_ring",
+                "name": "Magic Ring",
+                "description": "A glowing ring.",
+                "examine_description": "It hums with power.",
+                "is_takeable": True,
+                "is_visible": False,
+            },
+        ],
+        "npcs": [
+            {
+                "id": "barkeep",
+                "name": "Barkeep",
+                "description": "A friendly barkeep.",
+                "room_id": "foyer",
+                "default_dialogue": "What'll it be?",
+            }
+        ],
+        "dialogue_nodes": [
+            {
+                "id": "barkeep_root",
+                "npc_id": "barkeep",
+                "content": "Welcome, traveler! Take this ring.",
+                "effects": [
+                    {"type": "spawn_item", "item": "magic_ring", "location": "_inventory"},
+                    {"type": "add_score", "points": 5},
+                ],
+                "set_flags": ["received_ring"],
+                "is_root": True,
+            },
+        ],
+        "dialogue_options": [
+            {
+                "id": "barkeep_root_opt_0",
+                "node_id": "barkeep_root",
+                "text": "Thanks!",
+                "next_node_id": None,
+                "sort_order": 0,
+            },
+        ],
+        "flags": [
+            *minimal_import_spec["flags"],
+            {"id": "received_ring", "value": False, "description": "Got the ring"},
+        ],
+    }
+    output_path = tmp_path / "dialogue_effects_game.zork"
+    compiled_path, _warnings = compile_import_spec(spec, output_path)
+    return compiled_path
+
+
 def assert_has_error(messages: list, needle: str) -> None:
     text = "\n".join(str(message) for message in messages)
     assert needle in text

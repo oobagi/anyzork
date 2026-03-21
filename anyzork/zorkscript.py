@@ -630,7 +630,7 @@ class _Parser:
     def _parse_talk_block(
         self, npc_id: str
     ) -> tuple[str, dict[str, Any], list[dict[str, Any]]]:
-        """Parse: talk label { content; sets; options }"""
+        """Parse: talk label { content; sets; effect; options }"""
         self._expect("IDENT", "talk")
         label_tok = self._expect("IDENT")
         label = label_tok.value
@@ -638,6 +638,7 @@ class _Parser:
 
         node: dict[str, Any] = {"is_root": False}
         options: list[dict[str, Any]] = []
+        effects: list[dict[str, Any]] = []
 
         # First string in the block is the content
         if self._at("STRING"):
@@ -655,6 +656,12 @@ class _Parser:
                 node["set_flags"] = self._parse_list()
                 continue
 
+            if tok.kind == "IDENT" and tok.value == "effect":
+                self._advance()
+                name, args = self._parse_func_call()
+                effects.append(self._compile_effect(name, args))
+                continue
+
             if tok.kind == "IDENT" and tok.value == "content":
                 self._advance()
                 node["content"] = self._parse_string()
@@ -667,6 +674,8 @@ class _Parser:
         self._expect("RBRACE")
         if "content" not in node:
             node["content"] = ""
+        if effects:
+            node["effects"] = effects
         return label, node, options
 
     def _parse_talk_option(self, npc_id: str) -> dict[str, Any]:

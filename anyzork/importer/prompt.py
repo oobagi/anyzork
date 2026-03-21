@@ -309,6 +309,17 @@ item rusty_pipe {
 # Conditions (require_item, require not_flag, etc.) go on OPTIONS, not on
 # talk node headers. Gate access to a dialogue branch by conditioning the
 # option that leads there.
+#
+# NPCs can give items or trigger effects directly in dialogue:
+#   talk give_reward {
+#     "Here, take this -- you will need it."
+#     effect spawn_item(magic_ring, _inventory)
+#     effect add_score(10)
+#     sets [received_ring]
+#     option "Thank you." -> end
+#   }
+# Effects in talk blocks use the SAME syntax as on/when blocks.
+# They fire when the node is visited, before the player sees options.
 
 npc guard {
   name        "The Guard"
@@ -339,6 +350,8 @@ npc guard {
 
   talk bribe {
     "His eyes fix on the silver key. He snatches it and pockets it. Fine. Go. I never saw you."
+    effect remove_item(silver_key)
+    effect add_score(10)
     sets [guard_bribed]
   }
 }
