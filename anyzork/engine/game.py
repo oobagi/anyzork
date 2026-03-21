@@ -1534,7 +1534,9 @@ class GameEngine:
                         return
                     if entered.strip().lower() == combo.strip().lower():
                         db.open_container(item["id"])
-                        unlock_msg = item.get("unlock_message") or item.get("open_message") or "Unlocked."
+                        unlock_msg = (
+                            item.get("unlock_message") or item.get("open_message") or "Unlocked."
+                        )
                         self.console.print(unlock_msg, style=STYLE_SUCCESS)
                         contents = db.get_container_contents(item["id"])
                         if contents:

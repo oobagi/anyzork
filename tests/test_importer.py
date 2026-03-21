@@ -81,7 +81,7 @@ def test_compile_import_spec_writes_combination_lock(
     }
 
     output_path = tmp_path / "combo_game.zork"
-    compiled_path, warnings = compile_import_spec(combo_spec, output_path)
+    compiled_path, _warnings = compile_import_spec(combo_spec, output_path)
 
     with GameDB(compiled_path) as db:
         locks = db.get_locks_in_room("foyer")
@@ -116,7 +116,7 @@ def test_compile_import_spec_writes_code_locked_container(
     }
 
     output_path = tmp_path / "container_combo_game.zork"
-    compiled_path, warnings = compile_import_spec(container_spec, output_path)
+    compiled_path, _warnings = compile_import_spec(container_spec, output_path)
 
     with GameDB(compiled_path) as db:
         item = db.find_item_by_name("Lockbox", "room", "foyer")
