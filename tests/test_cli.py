@@ -407,7 +407,7 @@ def test_publish_wizard_prompts_for_listing_metadata(
     monkeypatch.setattr("anyzork.sharing.upload_share_package", fake_upload_share_package)
 
     # Wizard prompts: title, author, description, tagline, genres, slug,
-    # homepage url, cover image url, then "Ready to publish?" confirm.
+    # then "Ready to publish?" confirm.
     result = runner.invoke(
         cli,
         ["publish", "fixture_game"],
@@ -418,8 +418,6 @@ def test_publish_wizard_prompts_for_listing_metadata(
             "A tiny mystery.\n"              # tagline
             "mystery, short\n"               # genres
             "fixture-game\n"                 # slug
-            "https://example.com/game\n"     # homepage url
-            "https://example.com/cover.png\n"  # cover image url
             "y\n"                            # confirm
         ),
     )
@@ -434,8 +432,6 @@ def test_publish_wizard_prompts_for_listing_metadata(
     assert manifest["listing"]["tagline"] == "A tiny mystery."
     assert manifest["listing"]["genres"] == ["mystery", "short"]
     assert manifest["listing"]["slug"] == "fixture-game"
-    assert manifest["listing"]["homepage_url"] == "https://example.com/game"
-    assert manifest["listing"]["cover_image_url"] == "https://example.com/cover.png"
 
 
 def test_install_adds_shared_package_to_library(

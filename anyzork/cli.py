@@ -431,8 +431,6 @@ def _resolve_publish_listing_metadata(
         "Slug",
         _slugify_name(resolved_title or source_path.stem),
     )
-    resolved_homepage = _prompt_optional_text("Homepage URL", homepage_default)
-    resolved_cover = _prompt_optional_text("Cover image URL", cover_default)
 
     return (
         resolved_title,
@@ -441,8 +439,8 @@ def _resolve_publish_listing_metadata(
         resolved_tagline,
         resolved_genres,
         resolved_slug,
-        resolved_homepage,
-        resolved_cover,
+        None,
+        None,
     )
 
 
@@ -520,7 +518,36 @@ def publish_game(game_ref: str) -> None:
         f"[bold green]Published![/bold green] [cyan]{listing_title}[/cyan]"
         + (f" [dim]as[/dim] [cyan]{uploaded_slug}[/cyan]" if uploaded_slug else "")
     )
-    console.print("[dim]It's pending review. Approve it from the admin dashboard.[/dim]")
+    console.print(f"[dim]Submitted for review. Check status with:[/dim]  anyzork status {uploaded_slug}")
+
+
+@cli.command("status")
+@click.argument("slug", type=str)
+def game_status(slug: str) -> None:
+    """Check the publish status of a submitted game."""
+    from urllib.error import HTTPError
+    from urllib.request import urlopen
+
+    import json as _json
+
+    url = _catalog_url().replace("/catalog.json", f"/api/games/{slug}/status")
+    try:
+        with urlopen(url, timeout=10) as resp:
+            data = _json.loads(resp.read().decode())
+    except HTTPError as exc:
+        if exc.code == 404:
+            console.print(f"[red]No game found for slug[/red] [cyan]{slug}[/cyan]")
+            sys.exit(1)
+        raise
+    except OSError as exc:
+        console.print(f"[red]Could not reach catalog:[/red] {exc}")
+        sys.exit(1)
+
+    title = data.get("title", slug)
+    if data.get("published"):
+        console.print(f"[bold green]Live[/bold green] — [cyan]{title}[/cyan] is published and visible in browse.")
+    else:
+        console.print(f"[yellow]Pending[/yellow] — [cyan]{title}[/cyan] is submitted but not yet approved.")
 
 
 @cli.command("import")
