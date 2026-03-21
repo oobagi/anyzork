@@ -835,6 +835,14 @@ A follow-up command for re-examining the bookshelf after the passage is revealed
 | `lock_unlocked` | `lock` | Lock is in unlocked state |
 | `puzzle_solved` | `puzzle` | Puzzle has been solved |
 | `health_above` | `threshold` | Player health > threshold |
+| `item_accessible` | `item` | Item is accessible to the player (in inventory or current room) |
+| `container_open` | `container` | Container is in open state |
+| `item_in_container` | `item`, `container` | Item is inside this container |
+| `not_item_in_container` | `item`, `container` | Item is NOT inside this container |
+| `container_has_contents` | `container` | Container has at least one item |
+| `container_empty` | `container` | Container is empty |
+| `has_quantity` | `item`, `min` | Item has at least this many charges remaining |
+| `toggle_state` | `item`, `state` | Item toggle is in this state |
 
 ### All Effect Types
 
@@ -852,6 +860,28 @@ A follow-up command for re-examining the bookshelf after the passage is revealed
 | `solve_puzzle` | `puzzle` | Mark puzzle as solved |
 | `discover_quest` | `quest` | Set a quest's discovery flag |
 | `print` | `message` | Display text to the player |
+| `open_container` | `container` | Open a container |
+| `move_item_to_container` | `item`, `container` | Place item inside container |
+| `take_item_from_container` | `item` | Remove item from its container to player inventory |
+| `consume_quantity` | `item`, `amount` | Use up consumable charges |
+| `restore_quantity` | `item`, `amount` | Refill consumable charges |
+| `set_toggle_state` | `item`, `state` | Change an item's toggle state |
+| `move_npc` | `npc`, `room` | Relocate an NPC to a different room |
+
+### Target-Aware Effects (Interaction Responses Only)
+
+These effects are only valid inside `interaction` blocks where an item is used on a target:
+
+| Type | Required Fields | Description |
+|------|----------------|-------------|
+| `kill_target` | _(none)_ | Kill the target NPC, spawning a lootable body |
+| `damage_target` | `amount` | Deal damage to the target NPC |
+| `destroy_target` | _(none)_ | Destroy the target container, scattering contents |
+| `open_target` | _(none)_ | Open the target container |
+
+### Validator Constraints
+
+Every `on` block (command) must produce at least one **effect** or include a **success message**. A command with neither will fail validation. Global fallback commands should use a `success` message that explains why the verb does nothing in the current context.
 
 ### Special Location Constants
 

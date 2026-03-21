@@ -431,18 +431,20 @@ quest side:vault_secret {
 #   consume_quantity(item, N) -- use up consumable charges
 #   restore_quantity(item, N) -- refill charges
 #   set_toggle_state(item, state)           -- change toggle state
-#   make_visible(item_id)     -- reveal a hidden item
-#   make_hidden(item_id)      -- hide an item from view
-#   make_takeable(item_id)    -- make scenery pickupable
 #   move_npc(npc_id, room_id) -- relocate an NPC
+#
+# Items that should appear later: declare the item WITHOUT an initial location
+# and use spawn_item(item_id, room_id) or spawn_item(item_id, _inventory) when
+# the reveal happens. Do not invent visibility effects.
 #
 # Tiered command pattern (highest priority fires first):
 # 1. SPECIFIC: room-scoped on blocks with exact preconditions (one-shot story moments)
 # 2. TAG-BASED: interaction responses match item tags to target categories automatically
 # 3. GLOBAL FALLBACK: an on block with no room scope catches everything else
 #
-# Always include a global fallback for custom verbs so the player never sees
-# "I don't understand that" when trying a verb the game should recognize.
+# Always include a global fallback for every custom verb. Fallbacks MUST use
+# a success message (not fail) so the player gets feedback. Without a success
+# message or effect, the command will fail validation.
 #
 # Common custom verbs to consider for your game:
 #   pull, push, ring, hit, shoot, climb, dig, pray, combine, pour, light, break
@@ -482,11 +484,11 @@ on "hit {target}" in [gate_room] {
 # "I don't understand that" -- always provide a fallback for custom verbs.
 
 on "pull {target}" {
-  fail "There's nothing here you can pull."
+  success "There's nothing here you can pull."
 }
 
 on "hit {target}" {
-  fail "You don't have anything to hit with."
+  success "You don't have anything to hit with."
 }
 
 # -- Triggers -- when event_type(arg) blocks. Same require/effect syntax.
@@ -496,6 +498,16 @@ on "hit {target}" {
 #   item_taken(item_id)    -- player takes an item
 #   item_dropped(item_id)  -- player drops an item
 #   dialogue_node(node_id) -- a dialogue node is visited
+#
+# Quest declarations may use main:/side: prefixes (quest side:lost_recipe { ... })
+# but effect references use the NORMALIZED quest id only:
+#   effect discover_quest(lost_recipe)     -- correct
+#   effect discover_quest(side:lost_recipe) -- WRONG, will fail
+#
+# Nested NPC talk blocks compile to dialogue node ids: {npc_id}_{label}.
+# When using dialogue_node triggers, reference the compiled id:
+#   when dialogue_node(cook_marta_secret)  -- correct (npc_id = cook_marta, label = secret)
+#   when dialogue_node(secret)             -- WRONG, bare label will fail
 
 when room_enter(courtyard) {
   require has_flag(guard_bribed)
@@ -576,6 +588,7 @@ Constraints:
 - Every ID must be snake_case and unique within its entity type.
 - Preserve the concept's scope. Do not reduce it to a skeleton or expand beyond request.
 - All strings in double quotes.
+- Use plain ASCII punctuation. Avoid em dashes, curly quotes, and smart punctuation.
 - Most fields are optional. Only include fields that add value. Keep declarations lean.
   Defaults: takeable true, visible true, dark false, start false, open false, locked false.
 - Do NOT author on blocks for built-in verbs: go, take, drop, examine, read, open,

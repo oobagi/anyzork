@@ -72,6 +72,7 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "consume_quantity",
         "restore_quantity",
         "set_toggle_state",
+        "move_npc",
     }
 )
 
@@ -898,6 +899,7 @@ def _validate_rule_effects(
     exit_set: set[str],
     puzzle_set: set[str],
     quest_set: set[str],
+    npc_set: set[str],
     flag_set: set[str],
     errors: list[ValidationError],
 ) -> None:
@@ -1122,6 +1124,29 @@ def _validate_rule_effects(
                         f"{label} effect set_toggle_state references unknown item '{item_val}'.",
                     )
                 )
+        elif eff_type == "move_npc":
+            npc_val = eff.get("npc", "")
+            if not _is_slot_ref(npc_val) and npc_val not in npc_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect move_npc references non-existent NPC '{npc_val}'.",
+                    )
+                )
+            room_val = eff.get("room", "")
+            if (
+                not _is_slot_ref(room_val)
+                and room_val != "_current"
+                and room_val not in room_set
+            ):
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect move_npc references non-existent room '{room_val}'.",
+                    )
+                )
 
 
 def _check_commands(db: GameDB) -> list[ValidationError]:
@@ -1226,6 +1251,7 @@ def _check_commands(db: GameDB) -> list[ValidationError]:
             exit_set=exit_set,
             puzzle_set=puzzle_set,
             quest_set=quest_set,
+            npc_set=npc_set,
             flag_set=_flag_ids(db),
             errors=errors,
         )
@@ -1522,6 +1548,7 @@ def _check_triggers(db: GameDB) -> list[ValidationError]:
             exit_set=exit_set,
             puzzle_set=puzzle_set,
             quest_set=quest_set,
+            npc_set=npc_set,
             flag_set=flag_set,
             errors=errors,
         )

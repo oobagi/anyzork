@@ -27,11 +27,11 @@ It is ordered by leverage and risk reduction, not by novelty.
 
 ### Fix Now
 
-- [ ] Align the parser, importer template, validator, and runtime around one authoritative DSL contract
-- [ ] Remove current effect-type drift so authored mechanics are never accepted by one layer and rejected by another
+- [x] Align the parser, importer template, validator, and runtime around one authoritative DSL contract
+- [x] Remove current effect-type drift so authored mechanics are never accepted by one layer and rejected by another
 - [ ] Make command execution meaningfully atomic, or narrow the docs to match real behavior until atomic writes are implemented
-- [ ] Tighten the most misleading docs/spec mismatches so contributors can trust the public contract again
-- [ ] Add explicit alignment tests that fail when parser/runtime/validator vocab diverges
+- [x] Tighten the most misleading docs/spec mismatches so contributors can trust the public contract again
+- [x] Add explicit alignment tests that fail when parser/runtime/validator vocab diverges
 
 **Likely files:**
 
