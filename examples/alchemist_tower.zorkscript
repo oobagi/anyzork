@@ -1,0 +1,506 @@
+game {
+  title          "The Alchemist's Tower"
+  author         "A bundled AnyZork example."
+  intro_text     "You wake on the cold floor of a moonlit study. The only door is sealed — no lock, no handle, just a shallow basin carved into the wood and a note pinned above: POUR TO LEAVE."
+  win_text       "You tip the vial. Violet liquid pools in the basin, the ward dissolves in a hiss of steam, and the door swings open to a starlit road. You are free."
+  lose_text      "The tower grows quiet. No one is coming to help."
+  max_score      100
+  realism        "medium"
+  win_conditions [escaped]
+  lose_conditions [raven_killed]
+}
+
+player {
+  start_room study
+  hp         100
+  max_hp     100
+}
+
+# ═══════════════════════════════════════════════════
+#   ROOMS
+# ═══════════════════════════════════════════════════
+
+room study {
+  name              "Alchemist's Study"
+  description       "Moonlight falls through a cracked window onto cluttered bookshelves and a heavy oak desk. The sealed door is east. Stone steps spiral up and down."
+  short_description "The moonlit study."
+  region            "tower"
+  is_start          true
+  exit up -> laboratory "Stone steps spiral upward."
+  exit down -> cellar "Worn steps descend into darkness."
+}
+
+room laboratory {
+  name              "Laboratory"
+  description       "A vaulted chamber thick with the smell of sulfur. A stone workbench dominates the center and a locked glass cabinet hangs on the far wall. Steps lead down."
+  short_description "The sulfur-scented lab."
+  region            "tower"
+  exit down -> study "Steps lead down to the study."
+  exit up -> garden "A ladder climbs through a hatch to open sky."
+}
+
+room garden {
+  name              "Rooftop Garden"
+  description       "Wind tugs at overgrown planters under the night sky. Pale flowers glow among the weeds. A large raven watches you from a broken chimney. A ladder leads down."
+  short_description "The windswept rooftop."
+  region            "tower"
+  exit down -> laboratory "The ladder descends into the laboratory."
+}
+
+room cellar {
+  name              "Cellar"
+  description       "A damp root cellar. Fungus creeps along the stone walls and something glows faintly in a far corner. A thick spider web stretches across the ceiling. Steps lead up."
+  short_description "The damp cellar."
+  region            "tower"
+  is_dark           true
+  exit up -> study "Steps climb back to the study."
+}
+
+room vault {
+  name              "Hidden Vault"
+  description       "A cramped chamber behind the bookshelf. Dust covers everything. A small chest sits in the corner and a folded letter rests on a stone shelf."
+  short_description "The hidden vault."
+  region            "tower"
+  exit east -> study "Back through the bookshelf passage."
+}
+
+# Hidden exit: revealed by pulling the red book
+exit study_vault {
+  from        study
+  to          vault
+  direction   west
+  description "A narrow passage behind the bookshelf."
+  is_hidden   true
+}
+
+# ═══════════════════════════════════════════════════
+#   ITEMS
+# ═══════════════════════════════════════════════════
+
+# ── Study items ──
+
+item journal {
+  name              "Leather Journal"
+  description       "A cracked leather journal with dog-eared pages."
+  examine           "The last entry is circled in red ink: 'Ward-breaker: one moonpetal, one cave mushroom, ground together in the mortar. Pour — POUR, not drink — the result into the basin. Remember the candle for the cellar. And leave the raven alone.'"
+  room_id           study
+  room_description  "A leather journal lies open on a bookshelf."
+  is_takeable       true
+  is_visible        true
+}
+
+item tattered_map {
+  name              "Tattered Map"
+  description       "A faded map pinned to the wall above the desk."
+  examine           "Most of the ink has faded, but you can make out the tower's cross-section. Four floors: cellar, study, laboratory, garden. A fifth space is drawn behind the study bookshelf with a dotted line and the words 'pull red book.'"
+  room_id           study
+  room_description  "A tattered map is pinned to the wall."
+  is_takeable       false
+  is_visible        true
+}
+
+item brass_key {
+  name              "Brass Key"
+  description       "A small brass key with a glass-cut bow."
+  examine           "Tiny letters etched into the shaft read CAB-7."
+  room_id           study
+  room_description  "A brass key sits in the open desk drawer."
+  is_takeable       true
+  is_visible        true
+}
+
+item candle {
+  name              "Tallow Candle"
+  description       "A stubby tallow candle with a blackened wick."
+  examine           "Enough wax left for a few hours of light."
+  room_id           study
+  room_description  "A stubby candle rests on the desk."
+  is_takeable       true
+  is_visible        true
+  toggle            true
+  toggle_default    "off"
+  on_msg            "You strike a match and the candle sputters to life. Warm light pushes back the shadows."
+  off_msg           "You pinch the flame out. Darkness closes in."
+  tags              ["light_source"]
+}
+
+item dagger {
+  name              "Rusty Dagger"
+  description       "A short, rust-spotted dagger."
+  examine           "The blade is dull but the point is still sharp enough to do damage."
+  room_id           study
+  room_description  "A rusty dagger lies at the back of the desk drawer."
+  is_takeable       true
+  is_visible        true
+  tags              ["weapon"]
+}
+
+# ── Laboratory items ──
+
+item cabinet {
+  name              "Glass Cabinet"
+  description       "A wall-mounted glass cabinet with a small brass lock."
+  examine           "Through the dusty glass you can see a stone mortar and pestle."
+  room_id           laboratory
+  room_description  "A locked glass cabinet hangs on the wall."
+  is_takeable       false
+  is_visible        true
+  container         true
+  has_lid           true
+  locked            true
+  key               brass_key
+  consume_key       true
+  unlock_msg        "The brass key turns with a satisfying click."
+  open_msg          "The glass door swings open, revealing a stone mortar inside."
+}
+
+item mortar {
+  name              "Stone Mortar"
+  description       "A heavy stone mortar and pestle stained with old residue."
+  examine           "Deep grooves in the bowl — this has seen hundreds of ingredients."
+  in                cabinet
+  room_description  "A stone mortar and pestle sit in the cabinet."
+  is_takeable       true
+  is_visible        true
+}
+
+# ── Garden items ──
+
+item moonpetal {
+  name              "Moonpetal"
+  description       "A luminous white flower with silver-veined petals."
+  examine           "It pulses faintly, cool to the touch."
+  room_id           garden
+  room_description  "A pale flower glows among the overgrown planters."
+  is_takeable       true
+  is_visible        true
+}
+
+# ── Cellar items ──
+
+item mushroom {
+  name              "Cave Mushroom"
+  description       "A squat mushroom with a blue-green cap."
+  examine           "It gives off a faint bioluminescent glow."
+  room_id           cellar
+  room_description  "A glowing mushroom sprouts from a crack in the wall."
+  is_takeable       true
+  is_visible        true
+}
+
+# ── Vault items ──
+
+item chest {
+  name              "Small Chest"
+  description       "A dust-covered wooden chest with no lock."
+  examine           "The wood is warped with age but the hinges still move."
+  room_id           vault
+  room_description  "A small chest sits in the corner."
+  is_takeable       false
+  is_visible        true
+  container         true
+  has_lid           true
+  open_msg          "The lid creaks open. Inside: a gold coin and a dark glass bottle."
+}
+
+item old_coin {
+  name              "Old Coin"
+  description       "A heavy gold coin stamped with an eye."
+  examine           "The eye seems to follow you when you tilt it. Very old — possibly worth a fortune."
+  in                chest
+  room_description  "A gold coin glints inside the chest."
+  is_takeable       true
+  is_visible        true
+}
+
+item dusty_bottle {
+  name              "Dusty Bottle"
+  description       "A dark glass bottle with a cracked wax seal."
+  examine           "A label in spidery handwriting reads: 'BANE — lethal. Do NOT drink. I mean it.'"
+  in                chest
+  room_description  "A dark glass bottle sits in the chest."
+  is_takeable       true
+  is_visible        true
+}
+
+item last_letter {
+  name              "Alchemist's Letter"
+  description       "A folded letter on yellowed paper."
+  examine           "The shaky handwriting reads: 'If you are reading this, then I did not return. The ward on the door was meant to keep things out, not lock anyone in. I am sorry. The recipe works — I tested it myself. Trust the raven. He is older than he looks and wiser than you think. —Aldric'"
+  room_id           vault
+  room_description  "A folded letter rests on the stone shelf."
+  is_takeable       true
+  is_visible        true
+}
+
+# ═══════════════════════════════════════════════════
+#   NPC
+# ═══════════════════════════════════════════════════
+
+npc raven {
+  name              "Raven"
+  description       "A large black raven perches on the chimney, watching you with one bright eye."
+  examine           "Its feathers are glossy and its gaze is unnervingly sharp. This bird is old — very old."
+  room_id           garden
+  dialogue          "The raven tilts its head and croaks."
+  category          "character"
+
+  talk start {
+    "The raven tilts its head. 'Another one awake in the old man's tower. Looking for the way out?'"
+    option "Yes — do you know how?" -> recipe_hint
+    option "Who are you?" -> identity
+    option "Leave me alone." -> end
+  }
+
+  talk identity {
+    "'I am no one. Just a bird on a chimney. But I watched the old man work for thirty years, and I remember things.'"
+    option "What do you remember?" -> recipe_hint
+    option "Thirty years?" -> old_bird
+    option "Alright." -> end
+  }
+
+  talk old_bird {
+    "'Give or take. Time is different for my kind.' The raven ruffles its feathers. 'Do you want to leave this place or not?'"
+    option "Tell me how." -> recipe_hint
+    option "Not yet." -> end
+  }
+
+  talk recipe_hint {
+    "'The old man had a recipe. Ward-breaker, he called it. Two ingredients from this tower — one from up here, one from below. Ground together in a mortar and poured into the basin on the door.'"
+    option "What grows up here?" -> flowers
+    option "What's below?" -> cellar_tip
+    option "Where's the mortar?" -> mortar_tip
+    option "Thanks." -> end
+    sets [raven_talked]
+  }
+
+  talk flowers {
+    "'Moonpetals. The pale ones in the planters. Pluck one — they do not mind.'"
+    option "And the cellar?" -> cellar_tip
+    option "Where's the mortar?" -> mortar_tip
+    option "Got it." -> end
+  }
+
+  talk cellar_tip {
+    "'A cave mushroom. Grows in the damp below. But the cellar is dark — very dark. Bring a light or you will grope uselessly.'"
+    option "Where can I find a light?" -> candle_tip
+    option "Where's the mortar?" -> mortar_tip
+    option "Got it." -> end
+  }
+
+  talk candle_tip {
+    "'The old man kept a candle on his desk. Stubby thing, but it does the job.'"
+    option "Thanks." -> end
+  }
+
+  talk mortar_tip {
+    "'Locked in the glass cabinet upstairs. The key should be somewhere in the study — the old man was always losing it in that desk of his.'"
+    option "Thanks." -> end
+  }
+}
+
+# ═══════════════════════════════════════════════════
+#   FLAGS
+# ═══════════════════════════════════════════════════
+
+flag recipe_known "Player has read the journal recipe."
+flag potion_brewed "Escape potion has been brewed."
+flag escaped "Player escaped the tower."
+flag raven_killed "Player killed the raven — lose condition."
+flag raven_talked "Player had a full conversation with the raven."
+flag vault_found "Player discovered the hidden vault."
+flag vault_explored "Player found the treasure in the vault."
+flag read_letter "Player read the alchemist's farewell."
+
+# ═══════════════════════════════════════════════════
+#   QUESTS
+# ═══════════════════════════════════════════════════
+
+quest main:escape_tower {
+  name        "Escape the Tower"
+  description "Break the ward on the sealed door and find your way out."
+  completion  escaped
+
+  objective "Find the recipe" -> recipe_known
+  objective "Brew the escape potion" -> potion_brewed
+  objective "Escape the tower" -> escaped
+}
+
+quest side:alchemists_secret {
+  name        "The Alchemist's Secret"
+  description "Find whatever the alchemist hid behind the bookshelf."
+  discovery   vault_found
+  completion  vault_explored
+
+  objective "Find the hidden vault" -> vault_found
+  objective "Search the vault" -> vault_explored
+}
+
+# ═══════════════════════════════════════════════════
+#   COMMANDS — Critical Path
+# ═══════════════════════════════════════════════════
+
+on "read journal" {
+  require has_item(journal)
+  effect set_flag(recipe_known)
+  effect add_score(10)
+  success "You read the circled entry: 'Ward-breaker: one moonpetal, one cave mushroom, ground together in the mortar. Pour the result into the basin.'"
+  fail "You don't have a journal."
+  done "You already know the recipe by heart."
+  once
+}
+
+on "brew potion" in [laboratory] {
+  require has_item(mortar)
+  require has_item(moonpetal)
+  require has_item(mushroom)
+  effect remove_item(moonpetal)
+  effect remove_item(mushroom)
+  effect set_flag(potion_brewed)
+  effect add_score(25)
+  success "You drop the moonpetal and mushroom into the mortar and grind. The paste flares violet, crackling with energy. You scrape it into a vial. The escape potion is ready."
+  fail "You need the mortar and both ingredients — a moonpetal and a cave mushroom."
+  done "You already brewed the potion."
+  once
+}
+
+on "use mortar" in [laboratory] {
+  require has_item(mortar)
+  require has_item(moonpetal)
+  require has_item(mushroom)
+  effect remove_item(moonpetal)
+  effect remove_item(mushroom)
+  effect set_flag(potion_brewed)
+  effect add_score(25)
+  success "You drop the moonpetal and mushroom into the mortar and grind. The paste flares violet, crackling with energy. You scrape it into a vial. The escape potion is ready."
+  fail "You need both ingredients — a moonpetal and a cave mushroom."
+  done "You already brewed the potion."
+  once
+}
+
+on "pour potion" in [study] {
+  require has_flag(potion_brewed)
+  effect set_flag(escaped)
+  effect add_score(25)
+  success "You tip the vial over the basin. Violet liquid pools in the hollow and the ward dissolves in a hiss of steam. The door swings open."
+  fail "You have nothing to pour."
+  done "The door is already open."
+  once
+}
+
+# ═══════════════════════════════════════════════════
+#   COMMANDS — Hidden Vault
+# ═══════════════════════════════════════════════════
+
+on "pull book" in [study] {
+  effect reveal_exit(study_vault)
+  effect set_flag(vault_found)
+  effect discover_quest(alchemists_secret)
+  effect add_score(15)
+  success "You tug at a red-spined book. It tilts forward with a click and the bookshelf swings inward, revealing a narrow passage west."
+  done "The passage is already open."
+  once
+}
+
+on "read letter" {
+  require has_item(last_letter)
+  effect set_flag(read_letter)
+  effect add_score(5)
+  success "The shaky handwriting reads: 'If you are reading this, then I did not return. The ward was meant to keep things out, not lock anyone in. I am sorry. The recipe works. Trust the raven. He is older than he looks. —Aldric'"
+  fail "You don't have a letter."
+  done "You remember Aldric's words."
+  once
+}
+
+# ═══════════════════════════════════════════════════
+#   COMMANDS — Fail Paths
+# ═══════════════════════════════════════════════════
+
+# Killing the raven triggers the lose condition.
+# The journal warns you. Aldric's letter warns you.
+# The raven is the only one who remembers the recipe.
+
+on "attack raven" in [garden] {
+  effect set_flag(raven_killed)
+  success "You lunge at the raven. It shrieks — a sound far too human — and falls from the chimney in a burst of black feathers. The flowers in the planters dim and wilt. A cold dread settles over you. You have made a terrible mistake."
+  once
+}
+
+on "kill raven" in [garden] {
+  effect set_flag(raven_killed)
+  success "You lunge at the raven. It shrieks — a sound far too human — and falls from the chimney in a burst of black feathers. The flowers in the planters dim and wilt. A cold dread settles over you. You have made a terrible mistake."
+  once
+}
+
+# Drinking the potion kills you.
+# The intro says POUR TO LEAVE. The journal says POUR, not drink.
+# The ward-breaker is meant for the door, not your throat.
+
+on "drink potion" {
+  require has_flag(potion_brewed)
+  effect change_health(-100)
+  success "You raise the vial to your lips and drink. Violet fire tears through your chest. The ward-breaker was meant for the door, not for a human throat. The world goes dark."
+  fail "You have no potion to drink."
+  once
+}
+
+# The bane bottle in the vault is clearly labeled as lethal.
+# Reading the examine text warns you. Drinking it anyway is on you.
+
+on "drink bottle" {
+  require has_item(dusty_bottle)
+  effect change_health(-100)
+  effect remove_item(dusty_bottle)
+  success "You crack the wax seal and take a swig. The liquid burns like swallowing a lit match. Your vision swims. The label said BANE and it meant it. You crumple to the floor."
+  fail "You have nothing to drink."
+  once
+}
+
+on "drink bane" {
+  require has_item(dusty_bottle)
+  effect change_health(-100)
+  effect remove_item(dusty_bottle)
+  success "You crack the wax seal and take a swig. The liquid burns like swallowing a lit match. Your vision swims. The label said BANE and it meant it. You crumple to the floor."
+  fail "You have nothing to drink."
+  once
+}
+
+# ═══════════════════════════════════════════════════
+#   TRIGGERS
+# ═══════════════════════════════════════════════════
+
+# Atmospheric: first visit to each non-start room
+
+when room_enter(laboratory) {
+  message "The air here is thick and acrid — sulfur and dried herbs."
+  once
+}
+
+when room_enter(garden) {
+  message "Cold wind hits your face. The night sky opens above you, vast and clear."
+  once
+}
+
+when room_enter(cellar) {
+  message "Your footsteps echo on damp stone. The darkness here is absolute."
+  once
+}
+
+when room_enter(vault) {
+  message "Stale air and dust. This room has not been opened in a very long time."
+  once
+}
+
+# Reward: finding the treasure completes the side quest
+
+when item_taken(old_coin) {
+  effect set_flag(vault_explored)
+  effect add_score(10)
+  message "The coin is heavier than it looks. The alchemist clearly valued it."
+}
+
+# Reward: having a full conversation with the raven
+
+when flag_set(raven_talked) {
+  effect add_score(10)
+}
