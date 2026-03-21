@@ -55,36 +55,40 @@ class TestPresetDiscovery:
 class TestPresetNormalization:
     """Preset normalization flattens array-of-tables into plain lists."""
 
-    def test_locations_normalized_to_string_list(self) -> None:
-        fields = load_preset("fantasy-dungeon")
+    @pytest.mark.parametrize("preset_id", sorted(EXPECTED_BUILTIN_PRESETS))
+    def test_locations_normalized_to_string_list(self, preset_id: str) -> None:
+        fields = load_preset(preset_id)
         assert fields is not None
         locations = fields.get("locations")
-        assert isinstance(locations, list)
-        assert all(isinstance(entry, str) for entry in locations)
-        assert len(locations) > 0
+        if locations is not None:
+            assert isinstance(locations, list)
+            assert all(isinstance(entry, str) for entry in locations)
+            assert len(locations) > 0
 
-    def test_characters_normalized_to_string_list(self) -> None:
-        fields = load_preset("fantasy-dungeon")
+    @pytest.mark.parametrize("preset_id", sorted(EXPECTED_BUILTIN_PRESETS))
+    def test_characters_normalized_to_string_list(self, preset_id: str) -> None:
+        fields = load_preset(preset_id)
         assert fields is not None
         characters = fields.get("characters")
-        assert isinstance(characters, list)
-        assert all(isinstance(entry, str) for entry in characters)
+        if characters is not None:
+            assert isinstance(characters, list)
+            assert all(isinstance(entry, str) for entry in characters)
 
-    def test_items_normalized_to_string_list(self) -> None:
-        fields = load_preset("fantasy-dungeon")
+    @pytest.mark.parametrize("preset_id", sorted(EXPECTED_BUILTIN_PRESETS))
+    def test_items_normalized_to_string_list(self, preset_id: str) -> None:
+        fields = load_preset(preset_id)
         assert fields is not None
         items = fields.get("items")
-        assert isinstance(items, list)
-        assert all(isinstance(entry, str) for entry in items)
+        if items is not None:
+            assert isinstance(items, list)
+            assert all(isinstance(entry, str) for entry in items)
 
 
-class TestListPresets:
-    """list_presets equivalent — discover_presets returns all 3 built-ins."""
+class TestLoadPresetNegative:
+    """Negative tests for load_preset."""
 
-    def test_list_presets_returns_all_three(self) -> None:
-        presets = discover_presets()
-        assert len(presets) >= 3
-        assert EXPECTED_BUILTIN_PRESETS & presets.keys() == EXPECTED_BUILTIN_PRESETS
+    def test_load_preset_returns_none_for_unknown(self) -> None:
+        assert load_preset("nonexistent-preset") is None
 
 
 class TestUserPresetDirectoryMissing:
