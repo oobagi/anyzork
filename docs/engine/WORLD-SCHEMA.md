@@ -131,6 +131,13 @@ Key fields:
 - baseline dialogue: `default_dialogue`
 - optional combat stats: `hp`, `damage`
 - `category`
+- Placement and prose: `home_room_id`, `room_description`, `drop_description`
+
+Room prose (identical to items): when the NPC is in its `home_room_id`, the
+engine renders `room_description` as authored prose blended into the room
+body. When the NPC is away from home, `drop_description` is used, or the
+engine falls back to "Nearby, {name} lingers." When `home_room_id` is set,
+`room_description` is required (compile-time validation error).
 
 ### `dialogue_nodes`
 
