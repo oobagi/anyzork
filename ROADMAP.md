@@ -7,7 +7,7 @@ This roadmap orders open work by leverage and dependency. Each item links to a G
 Stabilize the shipped `generate -> import -> play` pipeline before adding features.
 
 - [x] [#8 Atomic command execution or narrowed docs](https://github.com/oobagi/anyzork/issues/8)
-- [ ] [#9 Split importer.py into clearer layers](https://github.com/oobagi/anyzork/issues/9)
+- [x] [#9 Split importer.py into clearer layers](https://github.com/oobagi/anyzork/issues/9)
 - [ ] [#10 config.toml: support full practical config surface](https://github.com/oobagi/anyzork/issues/10)
 - [ ] [#14 Canonical contract/alignment test suite for presets and authoring](https://github.com/oobagi/anyzork/issues/14)
 
