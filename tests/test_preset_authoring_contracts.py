@@ -84,15 +84,16 @@ class TestListPresets:
     def test_list_presets_returns_all_three(self) -> None:
         presets = discover_presets()
         assert len(presets) >= 3
-        assert EXPECTED_BUILTIN_PRESETS == EXPECTED_BUILTIN_PRESETS & presets.keys()
+        assert EXPECTED_BUILTIN_PRESETS & presets.keys() == EXPECTED_BUILTIN_PRESETS
 
 
 class TestUserPresetDirectoryMissing:
     """User preset directory doesn't crash when missing."""
 
     def test_discover_presets_survives_missing_user_dir(self, monkeypatch) -> None:
-        from anyzork.wizard import presets as presets_module
         from pathlib import Path
+
+        from anyzork.wizard import presets as presets_module
 
         monkeypatch.setattr(
             presets_module,
