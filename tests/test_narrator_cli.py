@@ -2,18 +2,11 @@
 
 from __future__ import annotations
 
-import textwrap
-
 import anyzork.config as config_module
 from anyzork.config import (
-    CONFIG_DIR,
-    CONFIG_FILE,
-    LLMProvider,
     _format_toml,
-    load_config_file,
     save_config_file,
 )
-
 
 # ------------------------------------------------------------------
 # _format_toml

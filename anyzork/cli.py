@@ -853,26 +853,10 @@ def doctor(fix: bool) -> None:
 @cli.command("narrator")
 def narrator_cmd() -> None:
     """View and configure narrator settings."""
-    import os
-
-    from anyzork.config import (
-        LLMProvider,
-        _DEFAULT_MODELS,
-        _PROVIDER_TO_KEY_TYPE,
-        load_config_file,
-        save_config_file,
-        validate_api_key,
-    )
+    from anyzork.config import save_config_file
 
     cfg = Config()
     has_key = cfg.get_api_key() is not None
-
-    # --- Auto-detect available provider keys from env ---
-    _ENV_VARS: dict[str, str] = {
-        "claude": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-        "gemini": "GOOGLE_API_KEY",
-    }
 
     if not has_key:
         # No key configured — run setup wizard.
@@ -933,18 +917,18 @@ def _narrator_setup_wizard(cfg: Config) -> None:
     import os
 
     from anyzork.config import (
-        LLMProvider,
         _PROVIDER_TO_KEY_TYPE,
+        LLMProvider,
         save_config_file,
         validate_api_key,
     )
 
-    _ENV_VARS: dict[str, str] = {
+    env_vars: dict[str, str] = {
         "claude": "ANTHROPIC_API_KEY",
         "openai": "OPENAI_API_KEY",
         "gemini": "GOOGLE_API_KEY",
     }
-    _KEY_URLS: dict[str, str] = {
+    key_urls: dict[str, str] = {
         "claude": "https://console.anthropic.com/settings/keys",
         "openai": "https://platform.openai.com/api-keys",
         "gemini": "https://aistudio.google.com/apikey",
@@ -956,7 +940,7 @@ def _narrator_setup_wizard(cfg: Config) -> None:
 
     # Auto-detect available keys.
     detected: list[tuple[str, str]] = []
-    for provider_name, env_var in _ENV_VARS.items():
+    for provider_name, env_var in env_vars.items():
         if os.environ.get(env_var):
             detected.append((provider_name, env_var))
 
@@ -993,13 +977,13 @@ def _narrator_setup_wizard(cfg: Config) -> None:
     key_type = _PROVIDER_TO_KEY_TYPE[selected]
 
     # Check if env var already provides the key.
-    env_var = _ENV_VARS[selected.value]
+    env_var = env_vars[selected.value]
     env_key = os.environ.get(env_var)
     if env_key:
         console.print(f"\n[dim]Using key from {env_var}.[/dim]")
         api_key = env_key
     else:
-        url = _KEY_URLS.get(selected.value, "")
+        url = key_urls.get(selected.value, "")
         console.print(f"\nGet your API key: [cyan]{url}[/cyan]")
         api_key = click.prompt("Paste your API key", type=str, hide_input=True).strip()
         if not api_key:
@@ -1088,13 +1072,13 @@ def _narrator_update_key(cfg: Config) -> None:
         validate_api_key,
     )
 
-    _KEY_URLS: dict[str, str] = {
+    key_urls: dict[str, str] = {
         "claude": "https://console.anthropic.com/settings/keys",
         "openai": "https://platform.openai.com/api-keys",
         "gemini": "https://aistudio.google.com/apikey",
     }
 
-    url = _KEY_URLS.get(cfg.provider.value, "")
+    url = key_urls.get(cfg.provider.value, "")
     console.print(f"\nGet your API key: [cyan]{url}[/cyan]")
     api_key = click.prompt("Paste your API key", type=str, hide_input=True).strip()
     if not api_key:
