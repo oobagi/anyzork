@@ -97,6 +97,21 @@ class TestRepairCliWithErrors:
         assert "error" in result.output.lower()
 
 
+class TestRepairCliEmptyInput:
+    def test_repair_cli_empty_stdin(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["repair", "-"], input="")
+        assert result.exit_code == 0
+        assert "No input provided" in result.output
+
+    def test_repair_cli_whitespace_only_stdin(self) -> None:
+        runner = CliRunner()
+        result = runner.invoke(cli, ["repair", "-"], input="   \n\n  ")
+        assert result.exit_code == 0
+        assert "No input provided" in result.output
+        assert "error" not in result.output.lower()
+
+
 class TestImportFailureShowsDoctorHint:
     def test_import_failure_shows_doctor_hint(self, tmp_path: Path) -> None:
         src = tmp_path / "broken.zork"

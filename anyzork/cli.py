@@ -724,6 +724,10 @@ def repair(source: str) -> None:
     else:
         raw_text = Path(resolved_source).read_text(encoding="utf-8")
 
+    if not raw_text.strip():
+        console.print("No input provided.")
+        return
+
     result = collect_diagnostics(raw_text)
 
     if not result.diagnostics:
