@@ -23,7 +23,7 @@ Make it easier to write, fix, and iterate on games.
 
 Improve the optional LLM layer and provider onboarding.
 
-- [ ] [#11 Improve narrator/provider UX for bring-your-own-key users](https://github.com/oobagi/anyzork/issues/11)
+- [x] [#11 Improve narrator/provider UX for bring-your-own-key users](https://github.com/oobagi/anyzork/issues/11)
 - [ ] [#22 Narrator immersive mode](https://github.com/oobagi/anyzork/issues/22)
 
 ## 4. Packaging and Distribution

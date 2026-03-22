@@ -176,8 +176,8 @@ class GameEngine:
             self.db.init_player(start_room["id"])
             player = self.db.get_player()
 
-        # Initialize narrator if requested via CLI flag, env var, or saved preference.
-        if self._narrator_requested or self.db.has_flag("_narrator_enabled"):
+        # Initialize narrator if requested via CLI flag or env var.
+        if self._narrator_requested:
             self._init_narrator()
 
         # Initialize quest state: auto-discover main quest and cache objectives.
@@ -374,30 +374,6 @@ class GameEngine:
                 "for a fresh replay of a managed save slot.",
                 style=STYLE_SYSTEM,
             )
-            return self._can_continue()
-
-        if verb == "narrator" and len(tokens) >= 2:
-            if tokens[1] == "on":
-                if self._narrator is None:
-                    self._init_narrator()
-                if self._narrator is not None:
-                    self.console.print("Narrator mode enabled.", style=STYLE_SYSTEM)
-                    self.db.set_flag("_narrator_enabled", "true")
-                else:
-                    self.console.print(
-                        "Cannot enable narrator: no API key configured.",
-                        style=STYLE_SYSTEM,
-                    )
-            elif tokens[1] == "off":
-                self._narrator = None
-                self.console.print("Narrator mode disabled.", style=STYLE_SYSTEM)
-                self.db.set_flag("_narrator_enabled", "false")
-            else:
-                status = "ON" if self._narrator is not None else "OFF"
-                self.console.print(
-                    f"Narrator: {status}. Use 'narrator on' or 'narrator off'.",
-                    style=STYLE_SYSTEM,
-                )
             return self._can_continue()
 
         if verb in ("quests", "journal", "quest", "j") and len(tokens) == 1:
@@ -2855,7 +2831,9 @@ class GameEngine:
         except Exception as exc:
             logger.debug("Could not enable narrator: %s", exc)
             self.console.print(
-                f"Could not enable narrator: {exc}", style=STYLE_SYSTEM
+                f"Could not enable narrator: {exc}\n"
+                "Run 'anyzork narrator' to configure your provider and API key.",
+                style=STYLE_SYSTEM,
             )
             self._narrator = None
 
