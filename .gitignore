@@ -44,6 +44,8 @@ htmlcov/
 # AnyZork local data
 .anyzork/
 
-# Generated game projects
-**/manifest.toml
-!anyzork/**/manifest.toml
+# Generated game projects (created by anyzork generate)
+# Ignore .zorkscript files at repo root (not inside anyzork/ package)
+/*.zorkscript
+/*/*.zorkscript
+/*/manifest.toml
