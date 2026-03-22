@@ -75,7 +75,7 @@ def from_validation_error(ve: ValidationError) -> Diagnostic:
 **Why `hint` is `str | None` and not a structured object:** Hints are for human consumption. A plain string ("Did you mean 'forest_clearing'?") is sufficient. If we later want machine-actionable fixes (auto-correct), that's a different feature with different data needs.
 
 
-### 2. `anyzork doctor` Command
+### 2. `anyzork repair` Command
 
 #### What It Checks
 

@@ -77,22 +77,22 @@ class TestBuildFixPromptIncludesHints:
         assert "## Errors" in prompt
 
 
-class TestDoctorCliNoErrors:
-    def test_doctor_cli_no_errors(self, tmp_path: Path, minimal_zorkscript: str) -> None:
+class TestRepairCliNoErrors:
+    def test_repair_cli_no_errors(self, tmp_path: Path, minimal_zorkscript: str) -> None:
         src = tmp_path / "good.zork"
         src.write_text(minimal_zorkscript, encoding="utf-8")
         runner = CliRunner()
-        result = runner.invoke(cli, ["doctor", str(src)])
+        result = runner.invoke(cli, ["repair", str(src)])
         assert result.exit_code == 0
         assert "should import cleanly" in result.output
 
 
-class TestDoctorCliWithErrors:
-    def test_doctor_cli_with_errors(self, tmp_path: Path) -> None:
+class TestRepairCliWithErrors:
+    def test_repair_cli_with_errors(self, tmp_path: Path) -> None:
         src = tmp_path / "broken.zork"
         src.write_text(_BROKEN_PARSE, encoding="utf-8")
         runner = CliRunner()
-        result = runner.invoke(cli, ["doctor", str(src)])
+        result = runner.invoke(cli, ["repair", str(src)])
         assert result.exit_code == 0
         assert "error" in result.output.lower()
 
@@ -103,4 +103,4 @@ class TestImportFailureShowsDoctorHint:
         src.write_text(_BROKEN_PARSE, encoding="utf-8")
         runner = CliRunner()
         result = runner.invoke(cli, ["import", str(src)])
-        assert "anyzork doctor" in result.output
+        assert "anyzork repair" in result.output

@@ -183,11 +183,11 @@ class TestCliImportArchive:
 
 
 
-class TestCliDoctorArchive:
-    def test_doctor_archive(self, tmp_path: Path) -> None:
+class TestCliRepairArchive:
+    def test_repair_archive(self, tmp_path: Path) -> None:
         project_dir = _make_project(tmp_path)
         archive_path = pack_project(project_dir)
         runner = CliRunner()
-        result = runner.invoke(cli, ["doctor", str(archive_path)])
+        result = runner.invoke(cli, ["repair", str(archive_path)])
         assert result.exit_code == 0
         assert "should import cleanly" in result.output

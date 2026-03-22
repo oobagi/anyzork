@@ -71,12 +71,12 @@ anyzork import game.zorkscript -o mygame.zork
 anyzork import --print-template
 ```
 
-### `doctor`
+### `repair`
 
 Check a ZorkScript source file for errors without compiling it, and generate a fix prompt for LLM-assisted repair.
 
 ```
-anyzork doctor [SPEC_SOURCE]
+anyzork repair [SPEC_SOURCE]
 ```
 
 | Option | Description |
@@ -87,10 +87,10 @@ Output is diagnostics grouped by severity with a summary count. Exit code is `0`
 
 ```bash
 # Check a file
-anyzork doctor game.zorkscript
+anyzork repair game.zorkscript
 
 # Check from stdin
-cat game.zorkscript | anyzork doctor -
+cat game.zorkscript | anyzork repair -
 ```
 
 ---
@@ -126,6 +126,30 @@ anyzork play haunted-lighthouse --slot speedrun --new
 
 # Play with AI narrator
 anyzork play haunted-lighthouse --narrator --provider claude
+```
+
+---
+
+## Environment
+
+### `doctor`
+
+Run health checks on the local anyzork environment. Scans for orphaned save directories (saves whose source game has been removed from the library) and empty save directories.
+
+```
+anyzork doctor [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--fix` | Auto-clean issues found (delete orphaned/empty save dirs). |
+
+```bash
+# Check for issues
+anyzork doctor
+
+# Auto-fix issues
+anyzork doctor --fix
 ```
 
 ---

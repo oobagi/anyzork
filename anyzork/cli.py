@@ -689,9 +689,9 @@ def import_game(
 
 
 
-@cli.command("doctor")
+@cli.command("repair")
 @click.argument("source", required=False, default="-")
-def doctor(source: str) -> None:
+def repair(source: str) -> None:
     """Diagnose ZorkScript errors, get an LLM fix, and re-import."""
     from anyzork.services.doctor import build_fix_prompt, collect_diagnostics, copy_to_clipboard
 
@@ -808,7 +808,46 @@ def doctor(source: str) -> None:
     except Exception as exc:
         console.print(f"  [yellow]⚠[/yellow] Still has errors: {exc}")
         _show_error_context(corrected, exc)
-        console.print(f"[dim]Run doctor again:[/dim]  anyzork doctor {source}")
+        console.print(f"[dim]Run repair again:[/dim]  anyzork repair {source}")
+
+
+@cli.command("doctor")
+@click.option("--fix", is_flag=True, help="Auto-fix issues found (delete orphaned/empty saves).")
+def doctor(fix: bool) -> None:
+    """Run health checks on the local anyzork environment."""
+    from rich.table import Table
+
+    from anyzork.services.health import fix_issues, run_health_checks
+
+    cfg = Config()
+    issues = run_health_checks(cfg)
+
+    if not issues:
+        console.print("[bold green]All clear![/bold green] No issues found.")
+        return
+
+    table = Table(title="Health Check Results", show_lines=False)
+    table.add_column("Issue", style="bold")
+    table.add_column("Path", style="cyan")
+    table.add_column("Detail", style="dim")
+
+    for issue in issues:
+        table.add_row(issue.kind, str(issue.path), issue.detail)
+
+    console.print(table)
+    console.print(f"\n[yellow]{len(issues)} issue(s) found.[/yellow]")
+
+    if not fix:
+        console.print("[dim]Run with --fix to auto-clean.[/dim]")
+        return
+
+    cleaned = fix_issues(issues, cfg)
+    if cleaned:
+        for msg in cleaned:
+            console.print(f"  [green]Cleaned:[/green] {msg}")
+        console.print(f"\n[bold green]Fixed {len(cleaned)} issue(s).[/bold green]")
+    else:
+        console.print("[dim]Nothing to fix.[/dim]")
 
 
 @cli.command("install")
@@ -961,9 +1000,9 @@ def _looks_like_catalog_ref(value: str) -> bool:
 
 
 def _print_doctor_hint(source_ref: str) -> None:
-    """Suggest running 'anyzork doctor' after an import failure."""
+    """Suggest running 'anyzork repair' after an import failure."""
     console.print(
-        f"[dim]Run 'anyzork doctor {source_ref}' to generate a fix prompt "
+        f"[dim]Run 'anyzork repair {source_ref}' to generate a fix prompt "
         f"for your LLM.[/dim]"
     )
 
@@ -1208,7 +1247,7 @@ def generate(
             console.print(f"  [yellow]⚠[/yellow] Import failed: {exc}")
             _show_error_context(project.text, exc)
             console.print(
-                f"[dim]Fix with:[/dim]  anyzork doctor {project_dir}"
+                f"[dim]Fix with:[/dim]  anyzork repair {project_dir}"
             )
 
 
