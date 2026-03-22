@@ -254,10 +254,10 @@ class TestCliImportProject:
 
 
 
-class TestCliDoctorProject:
-    def test_doctor_project_dir(self, tmp_path: Path) -> None:
+class TestCliRepairProject:
+    def test_repair_project_dir(self, tmp_path: Path) -> None:
         project_dir = _make_project(tmp_path)
         runner = CliRunner()
-        result = runner.invoke(cli, ["doctor", str(project_dir)])
+        result = runner.invoke(cli, ["repair", str(project_dir)])
         assert result.exit_code == 0
         assert "should import cleanly" in result.output

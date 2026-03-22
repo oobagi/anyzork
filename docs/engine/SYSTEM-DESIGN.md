@@ -30,7 +30,8 @@ Current commands:
 
 - `anyzork generate [prompt]` — build a ZorkScript authoring prompt (freeform, guided wizard, or preset)
 - `anyzork import <file|->` — compile ZorkScript into a `.zork` game file
-- `anyzork doctor <file|->` — check a ZorkScript source file for errors and generate a fix prompt
+- `anyzork repair <file|->` — check a ZorkScript source file for errors and generate a fix prompt
+- `anyzork doctor` — run health checks on the local anyzork environment
 - `anyzork publish <game>` — package a library game and upload it to the catalog
 - `anyzork publish --status <slug>` — check the publish status of a submitted game
 - `anyzork install <source>` — install a game from the catalog or a local `.zork` package
@@ -178,7 +179,7 @@ Diagnostics are produced by [anyzork/diagnostics.py](../../anyzork/diagnostics.p
 
 The main consumers are:
 
-- `anyzork doctor` — runs `lint_spec()`, prints results grouped by severity with a summary count, and generates a fix prompt for LLM-assisted repair. Exits 0 if no errors (warnings are OK), 1 if errors are found.
+- `anyzork repair` — runs `lint_spec()`, prints results grouped by severity with a summary count, and generates a fix prompt for LLM-assisted repair. Exits 0 if no errors (warnings are OK), 1 if errors are found.
 
 ### 2.11 ZorkScript Parser
 
