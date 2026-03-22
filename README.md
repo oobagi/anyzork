@@ -5,8 +5,6 @@
   <p>
     <a href="#quickstart"><strong>Quickstart</strong></a>
     ·
-    <a href="examples/"><strong>Examples</strong></a>
-    ·
     <a href="#docs"><strong>Docs</strong></a>
     ·
     <a href="#contributing"><strong>Contributing</strong></a>

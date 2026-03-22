@@ -80,6 +80,9 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "lock_exit",
         "hide_exit",
         "change_description",
+        "make_visible",
+        "make_hidden",
+        "make_takeable",
     }
 )
 

@@ -467,10 +467,16 @@ quest side:vault_secret {
 #   lock_exit(exit_id)        -- re-lock a previously unlocked exit
 #   hide_exit(exit_id)        -- re-hide a previously revealed exit
 #   change_description(entity_id, "new text") -- change item/room description at runtime
+#   make_visible(item_id)     -- reveal a hidden item (visible false -> true)
+#   make_hidden(item_id)      -- hide a visible item at runtime
+#   make_takeable(item_id)    -- make a non-takeable item takeable at runtime
 #
-# Items that should appear later: declare the item WITHOUT an initial location
-# and use spawn_item(item_id, room_id) or spawn_item(item_id, _inventory) when
-# the reveal happens. Do not invent visibility effects.
+# Hidden items: two approaches.
+# 1. SPAWN: declare item with NO location, then spawn_item(id, room_id) later.
+# 2. VISIBILITY: declare item with visible false, then make_visible(id) later.
+#    Use this when the item is physically present but not yet noticed (e.g.,
+#    a key hidden under debris that becomes visible after searching).
+# Both work. Choose whichever fits the narrative.
 #
 # Tiered command pattern (highest priority fires first):
 # 1. SPECIFIC: room-scoped on blocks with exact preconditions (one-shot story moments)
@@ -557,8 +563,23 @@ when room_enter(courtyard) {
 
 when room_enter(cellar) {
   require not_flag(found_brass_key)
+  require not_flag(lantern_lit)
 
   message "The darkness presses in around you. If only you had a light source."
+  once
+}
+
+# Visibility example: brass_key starts hidden (visible false). When the player
+# enters the cellar with a lit lantern, make_visible reveals it.
+when room_enter(cellar) {
+  require toggle_state(oil_lantern, "on")
+  require not_flag(found_brass_key)
+
+  effect make_visible(brass_key)
+  effect set_flag(found_brass_key)
+  effect discover_quest(vault_secret)
+
+  message "Your lantern light catches a glint on the floor -- a small brass key."
   once
 }
 

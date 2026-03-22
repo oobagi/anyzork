@@ -933,6 +933,64 @@ Changes the description text of any entity (room, item, NPC).
 }
 ```
 
+### 4.30 `kill_target` (Interaction Only)
+
+Kills the target NPC in an interaction response. Spawns a lootable body container.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"kill_target"` |
+
+```json
+{
+  "type": "kill_target"
+}
+```
+
+### 4.31 `damage_target` (Interaction Only)
+
+Deals damage to the target NPC in an interaction response.
+
+| Field    | Type    | Required | Description |
+|----------|---------|----------|-------------|
+| `type`   | string  | yes      | `"damage_target"` |
+| `amount` | integer | yes      | Amount of damage to deal. |
+
+```json
+{
+  "type": "damage_target",
+  "amount": 25
+}
+```
+
+### 4.32 `destroy_target` (Interaction Only)
+
+Destroys the target container in an interaction response, scattering its contents into the room.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"destroy_target"` |
+
+```json
+{
+  "type": "destroy_target"
+}
+```
+
+### 4.33 `open_target` (Interaction Only)
+
+Opens the target container in an interaction response.
+
+| Field  | Type   | Required | Description |
+|--------|--------|----------|-------------|
+| `type` | string | yes      | `"open_target"` |
+
+```json
+{
+  "type": "open_target"
+}
+```
+
 ### Slot References in Effects
 
 Just as with preconditions, any string field in an effect can use `{slot_name}` to reference a value captured from the pattern. The engine substitutes the resolved value before execution.
