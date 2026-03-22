@@ -196,6 +196,28 @@ def resolve_game_reference(game_ref: str, cfg: Config | None = None) -> Path:
     if len(library_matches) > 1:
         raise ValueError(f"Multiple library games match '{game_ref}'. Use an explicit path.")
 
+    # --- Numeric index (1-based, matching alphabetical order from `anyzork list`) ---
+    if game_ref.isdigit():
+        all_games = sorted(cfg.games_dir.glob("*.zork"))
+        idx = int(game_ref) - 1
+        if 0 <= idx < len(all_games):
+            return all_games[idx].resolve()
+        raise ValueError(
+            f"Index {game_ref} out of range (library has {len(all_games)} game(s))."
+        )
+
+    # --- Prefix / substring matching (case-insensitive) ---
+    all_games = sorted(cfg.games_dir.glob("*.zork"))
+    needle = game_ref.lower()
+    fuzzy_matches = [g for g in all_games if needle in g.stem.lower()]
+    if len(fuzzy_matches) == 1:
+        return fuzzy_matches[0].resolve()
+    if fuzzy_matches:
+        refs = ", ".join(g.stem for g in fuzzy_matches)
+        raise ValueError(
+            f"Ambiguous game ref '{game_ref}' matches: {refs}"
+        )
+
     raise ValueError(f"No game found for '{game_ref}'.")
 
 
