@@ -15,8 +15,10 @@ env/
 .env
 .env.*
 
-# Local AI / editor settings
-.claude/
+# Local AI / editor settings — keep shared agents and skills tracked
+.claude/*
+!.claude/agents/
+!.claude/skills/
 
 # SQLite / game files
 *.db

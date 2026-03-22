@@ -50,18 +50,15 @@ No LLM is required at runtime unless the player explicitly enables narrator mode
 
 ## Agents
 
-Specialized agents live in `.Codex/agents/`:
+| Agent | Role |
+|-------|------|
+| ZorkScript Author | Game generation, CLI management, publishing |
 
-| Agent | File | Role |
-|-------|------|------|
-| Game Designer | `.Codex/agents/game-designer.md` | Mechanics, gameplay loops, balance |
-| Narrative Designer | `.Codex/agents/narrative-designer.md` | Story, world-building, prompt tone |
-| Level Designer | `.Codex/agents/level-designer.md` | Room layout, pacing, spatial flow |
-| Software Architect | `.Codex/agents/engineering-software-architect.md` | System design, ADRs, integration |
-| Code Reviewer | `.Codex/agents/engineering-code-reviewer.md` | Code quality, regressions, safety |
-| Reality Checker | `.Codex/agents/testing-reality-checker.md` | Validation and production readiness |
-| Technical Artist | `.Codex/agents/technical-artist.md` | Presentation polish |
-| Game Audio Engineer | `.Codex/agents/game-audio-engineer.md` | Audio design ideas |
+### Skills
+
+| Skill | Trigger |
+|-------|---------|
+| `/zork` | `/zork <concept>` — generate a game or manage library |
 
 ## Key Features
 
