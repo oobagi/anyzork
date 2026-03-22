@@ -245,7 +245,8 @@ class GameEngine:
             if intro:
                 display_intro = intro
                 if self._narrator is not None:
-                    with self.console.status("[dim italic]the narrator contemplates...[/]", spinner="dots"):
+                    status_msg = "[dim italic]the narrator contemplates...[/]"
+                    with self.console.status(status_msg, spinner="dots"):
                         narrated_intro = self._narrator.narrate_action(
                             "intro", None, [intro]
                         )
@@ -1233,7 +1234,9 @@ class GameEngine:
             for quest in side_quests:
                 self._format_quest_entry(quest, lines)
                 lines.append("")
-                plain_parts.append(f"Side: {quest['name']} ({quest['status']}): {quest['description']}")
+                plain_parts.append(
+                    f"Side: {quest['name']} ({quest['status']}): {quest['description']}"
+                )
 
         lines.append(f"[{STYLE_ROOM_NAME}]{'=' * 39}[/]")
 

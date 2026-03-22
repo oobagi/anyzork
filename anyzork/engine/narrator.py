@@ -293,10 +293,7 @@ class Narrator:
         Never raises -- all exceptions are caught and logged.
         """
         # Build the system prompt with the output-type variant appended.
-        if variant:
-            system = self._system_prompt + variant
-        else:
-            system = self._system_prompt
+        system = self._system_prompt + variant if variant else self._system_prompt
 
         ctx = NarratorContext(
             system_prompt=system,
