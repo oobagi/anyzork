@@ -25,6 +25,26 @@ from anyzork.sharing import (
 from anyzork.versioning import RUNTIME_COMPAT_VERSION
 
 console = Console()
+
+
+def _complete_game_ref(
+    ctx: click.Context, param: click.Parameter, incomplete: str
+) -> list[click.shell_completion.CompletionItem]:
+    """Shell completion for game_ref arguments."""
+    try:
+        cfg = Config()
+        if not cfg.games_dir.exists():
+            return []
+        refs = sorted(p.stem for p in cfg.games_dir.glob("*.zork"))
+        return [
+            click.shell_completion.CompletionItem(ref)
+            for ref in refs
+            if ref.startswith(incomplete)
+        ]
+    except Exception:
+        return []
+
+
 CLI_VERSION = (
     f"{__version__} "
     f"(runtime {RUNTIME_COMPAT_VERSION}, prompt {current_prompt_system_version()})"
@@ -36,7 +56,7 @@ def cli() -> None:
 
 
 @cli.command()
-@click.argument("game_ref", type=str, required=False)
+@click.argument("game_ref", type=str, required=False, shell_complete=_complete_game_ref)
 @click.option(
     "--save",
     "slot",
@@ -400,7 +420,7 @@ def _resolve_publish_listing_metadata(
 
 
 @cli.command("publish")
-@click.argument("game_ref", type=str, required=False)
+@click.argument("game_ref", type=str, required=False, shell_complete=_complete_game_ref)
 @click.option(
     "--status", "status_slug", type=str, default=None,
     help="Check publish status for a catalog slug.",
@@ -1576,17 +1596,19 @@ def list_games(saves: bool) -> None:
 
     if not saves:
         library_table = Table(title="Game Library", show_lines=False)
+        library_table.add_column("#", style="dim", justify="right")
         library_table.add_column("Ref", style="cyan", no_wrap=True)
         library_table.add_column("Title", style="bold")
         library_table.add_column("Version", style="dim")
         library_table.add_column("Active Saves", justify="right", style="green")
         library_table.add_column("Latest Run", style="dim")
 
-        for game in overview.games:
+        for idx, game in enumerate(overview.games, 1):
             version_label = game.version or ""
             version_str = version_label
 
             library_table.add_row(
+                str(idx),
                 game.ref,
                 game.title,
                 version_str,
@@ -1651,7 +1673,7 @@ def list_games(saves: bool) -> None:
 
 
 @cli.command("delete")
-@click.argument("game_ref", type=str)
+@click.argument("game_ref", type=str, shell_complete=_complete_game_ref)
 @click.option(
     "--save", "slot", default=None,
     help="Delete only this save instead of the whole game.",
