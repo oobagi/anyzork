@@ -30,15 +30,16 @@ Current commands:
 
 - `anyzork generate [prompt]` — build a ZorkScript authoring prompt (freeform, guided wizard, or preset)
 - `anyzork import <file|->` — compile ZorkScript into a `.zork` game file
-- `anyzork repair <file|->` — check a ZorkScript source file for errors and generate a fix prompt
+- `anyzork repair <file|->` — diagnose ZorkScript errors and generate an LLM fix prompt
 - `anyzork doctor` — run health checks on the local anyzork environment
+- `anyzork narrator` — view and configure narrator settings
 - `anyzork publish <game>` — package a library game and upload it to the catalog
 - `anyzork publish --status <slug>` — check the publish status of a submitted game
 - `anyzork install <source>` — install a game from the catalog or a local `.zork` package
 - `anyzork browse` — browse the public catalog
 - `anyzork play [game]` — play a library game or `.zork` file
 - `anyzork list` — list library games and their active saves
-- `anyzork list --saves` — also show detailed managed save slots
+- `anyzork list --saves` — show managed save slots instead of the games table
 - `anyzork delete <game>` — delete a library game and all its saves
 
 The CLI handles argument parsing, import/export UX, package creation, catalog publishing and status tracking, install flows, catalog browsing, and launching the runtime engine.
@@ -179,7 +180,7 @@ Diagnostics are produced by [anyzork/diagnostics.py](../../anyzork/diagnostics.p
 
 The main consumers are:
 
-- `anyzork repair` — runs `lint_spec()`, prints results grouped by severity with a summary count, and generates a fix prompt for LLM-assisted repair. Exits 0 if no errors (warnings are OK), 1 if errors are found.
+- `anyzork repair` — collects diagnostics via `lint_spec()`, prints results grouped by severity, generates a fix prompt for LLM-assisted repair (copies to clipboard when possible), and provides an interactive paste-back flow to apply corrected ZorkScript and re-import.
 
 ### 2.11 ZorkScript Parser
 

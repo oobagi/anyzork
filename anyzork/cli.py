@@ -22,6 +22,7 @@ from anyzork.sharing import (
     SHARE_PACKAGE_SUFFIX,
     SharePackageError,
 )
+from anyzork.ui import confirm_or_abort, fatal_error, pick_from_menu, print_error
 from anyzork.versioning import RUNTIME_COMPAT_VERSION
 
 console = Console()
@@ -201,22 +202,10 @@ def _prompt_for_play_target(cfg: Config) -> Path | None:
 
     console.print(table)
 
-    while True:
-        choice = click.prompt("Choose a game number", type=str).strip().lower()
-        if choice in {"q", "quit", "exit"}:
-            console.print("[dim]Canceled.[/dim]")
-            return None
-
-        try:
-            index = int(choice)
-        except ValueError:
-            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
-            continue
-
-        if 1 <= index <= len(entries):
-            return entries[index - 1]
-
-        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+    index = pick_from_menu(console, "Choose a game number", count=len(entries))
+    if index is None:
+        return None
+    return entries[index - 1]
 
 
 def _read_paste(console: Console) -> str:
@@ -319,25 +308,15 @@ def _pick_save_slot(source_path: Path, cfg: Config) -> tuple[str, bool] | None:
     new_index = len(entries) + 1
     console.print(f"  [cyan]{new_index}[/cyan]. [dim]New game[/dim]")
 
-    while True:
-        choice = click.prompt("Choose a save", type=str).strip().lower()
-        if choice in {"q", "quit", "exit"}:
-            return None
+    index = pick_from_menu(console, "Choose a save", count=new_index)
+    if index is None:
+        return None
 
-        try:
-            index = int(choice)
-        except ValueError:
-            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
-            continue
+    if index == new_index:
+        new_slot = click.prompt("Name for new save", default="default", type=str)
+        return (new_slot.strip() or "default", True)
 
-        if index == new_index:
-            new_slot = click.prompt("Name for new save", default="default", type=str)
-            return (new_slot.strip() or "default", True)
-
-        if 1 <= index <= len(entries):
-            return (entries[index - 1][0], False)
-
-        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+    return (entries[index - 1][0], False)
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -489,8 +468,7 @@ def _do_publish(source_path: Path, cfg: Config) -> None:
     ) = _resolve_publish_listing_metadata(source_path)
 
     console.print()
-    if not click.confirm("Ready to publish?", default=True):
-        console.print("[dim]Canceled.[/dim]")
+    if not confirm_or_abort("Ready to publish?", default=True, console=console):
         return
 
     with tempfile.TemporaryDirectory(prefix="anyzork-publish-") as tmp:
@@ -510,8 +488,7 @@ def _do_publish(source_path: Path, cfg: Config) -> None:
                 cover_image_url=cover_image_url,
             )
         except SharePackageError as exc:
-            console.print(f"[red]Publish failed:[/red] {exc}")
-            sys.exit(1)
+            fatal_error(console, "Publish failed", exc)
 
         listing_title = str(
             manifest.get("listing", {}).get("title")
@@ -526,8 +503,7 @@ def _do_publish(source_path: Path, cfg: Config) -> None:
                 cfg.upload_url,
             )
         except SharePackageError as exc:
-            console.print(f"[red]Upload failed:[/red] {exc}")
-            sys.exit(1)
+            fatal_error(console, "Upload failed", exc)
 
     game = dict(payload.get("game") or {})
     uploaded_slug = str(game.get("slug") or slug or "")
@@ -554,12 +530,10 @@ def _check_publish_status(slug: str) -> None:
             data = _json.loads(resp.read().decode())
     except HTTPError as exc:
         if exc.code == 404:
-            console.print(f"[red]No game found for slug[/red] [cyan]{slug}[/cyan]")
-            sys.exit(1)
+            fatal_error(console, "Not found", f"no game for slug [cyan]{slug}[/cyan]")
         raise
     except OSError as exc:
-        console.print(f"[red]Could not reach catalog:[/red] {exc}")
-        sys.exit(1)
+        fatal_error(console, "Could not reach catalog", exc)
 
     title = data.get("title", slug)
     if data.get("published"):
@@ -618,8 +592,7 @@ def import_game(
             project = load_project(source_path)
             spec = parse_zorkscript(project.text)
         except ManifestError as exc:
-            console.print(f"[red]Project error:[/red] {exc}")
-            sys.exit(1)
+            fatal_error(console, "Project error", exc)
         except ZorkScriptError as exc:
             from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
 
@@ -654,7 +627,7 @@ def import_game(
                 _print_doctor_hint(spec_source)
                 sys.exit(1)
             except ImportSpecError as exc:
-                console.print(f"[red]Import failed:[/red] {exc}")
+                print_error(console, "Import failed", exc)
                 _print_doctor_hint(spec_source)
                 sys.exit(1)
     else:
@@ -668,7 +641,7 @@ def import_game(
             _print_doctor_hint(spec_source)
             sys.exit(1)
         except ImportSpecError as exc:
-            console.print(f"[red]Import failed:[/red] {exc}")
+            print_error(console, "Import failed", exc)
             _print_doctor_hint(spec_source)
             sys.exit(1)
 
@@ -680,11 +653,11 @@ def import_game(
             cfg=cfg,
         )
     except ImportSpecError as exc:
-        console.print(f"[red]Import failed:[/red] {exc}")
+        print_error(console, "Import failed", exc)
         _print_doctor_hint(spec_source)
         sys.exit(1)
     except Exception as exc:
-        console.print(f"[red]Import failed:[/red] {exc}")
+        print_error(console, "Import failed", exc)
         _print_doctor_hint(spec_source)
         sys.exit(1)
 
@@ -727,8 +700,7 @@ def repair(source: str) -> None:
         try:
             project_src = load_project(source_path)
         except ManifestError as exc:
-            console.print(f"[red]Project error:[/red] {exc}")
-            sys.exit(1)
+            fatal_error(console, "Project error", exc)
         raw_text = project_src.text
         is_project = True
     elif source_path.is_file():
@@ -983,20 +955,10 @@ def _narrator_setup_wizard(cfg: Config) -> None:
         console.print(f"  [cyan]{i}[/cyan]. {label}{suffix}")
     console.print()
 
-    while True:
-        choice = click.prompt("Choose a provider", type=str).strip()
-        if choice in {"q", "quit", "exit"}:
-            console.print("[dim]Canceled.[/dim]")
-            return
-        try:
-            index = int(choice)
-        except ValueError:
-            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
-            continue
-        if 1 <= index <= len(providers):
-            selected = providers[index - 1]
-            break
-        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+    index = pick_from_menu(console, "Choose a provider", count=len(providers))
+    if index is None:
+        return
+    selected = providers[index - 1]
 
     key_type = _PROVIDER_TO_KEY_TYPE[selected]
 
@@ -1048,27 +1010,18 @@ def _narrator_change_provider(cfg: Config) -> None:
         console.print(f"  [cyan]{i}[/cyan]. {label}{current}")
     console.print()
 
-    while True:
-        choice = click.prompt("Choose a provider", type=str).strip()
-        if choice in {"q", "quit", "exit"}:
-            return
-        try:
-            index = int(choice)
-        except ValueError:
-            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
-            continue
-        if 1 <= index <= len(providers):
-            selected = providers[index - 1]
-            save_config_file(provider=selected.value)
-            console.print(f"[green]Provider set to {selected.value}.[/green]")
+    index = pick_from_menu(console, "Choose a provider", count=len(providers))
+    if index is None:
+        return
+    selected = providers[index - 1]
+    save_config_file(provider=selected.value)
+    console.print(f"[green]Provider set to {selected.value}.[/green]")
 
-            # Check if key exists for new provider.
-            new_cfg = Config()
-            if not new_cfg.get_api_key():
-                console.print("[yellow]No API key configured for this provider.[/yellow]")
-                _narrator_update_key(new_cfg)
-            return
-        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+    # Check if key exists for new provider.
+    new_cfg = Config()
+    if not new_cfg.get_api_key():
+        console.print("[yellow]No API key configured for this provider.[/yellow]")
+        _narrator_update_key(new_cfg)
 
 
 def _narrator_change_model(cfg: Config) -> None:
@@ -1147,8 +1100,7 @@ def install_game(source: str, force: bool) -> None:
             )
             allow_remote = True
         except SharePackageError as exc:
-            console.print(f"[red]Install failed:[/red] {exc}")
-            sys.exit(1)
+            fatal_error(console, "Install failed", exc)
     else:
         source_path = Path(source).expanduser()
         if not source_path.exists() or source_path.suffix != SHARE_PACKAGE_SUFFIX:
@@ -1197,8 +1149,7 @@ def browse_games(limit: int) -> None:
     try:
         catalog = load_public_catalog(cfg.catalog_url)
     except SharePackageError as exc:
-        console.print(f"[red]Browse failed:[/red] {exc}")
-        sys.exit(1)
+        fatal_error(console, "Browse failed", exc)
 
     games = sorted(
         catalog["games"],
@@ -1718,11 +1669,10 @@ def delete_game(game_ref: str, slot: str | None, yes: bool) -> None:
     save_count = len(list(save_dir.glob("*.zork"))) if save_dir.exists() else 0
 
     if not yes:
-        prompt = (
+        confirm_msg = (
             f"Delete library game '{source_path.stem}' and {save_count} managed save(s)?"
         )
-        if not click.confirm(prompt, default=False):
-            console.print("[dim]Delete cancelled.[/dim]")
+        if not confirm_or_abort(confirm_msg, console=console):
             return
 
     source_path.unlink()
