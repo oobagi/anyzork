@@ -1,0 +1,6 @@
+room test_chamber {
+name        "The Test Chamber"
+description "A vast, white-tiled cube bathed in the sterile glow of a ceiling_light. A security_camera tracks your every move from the northwest corner. To the north, a heavy_door stands flush against the wall. A sleek terminal and a pedestal with a red_button occupy the center of the floor, while a glass_window looks out onto a darkened gallery."
+short       "A sterile white testing room."
+first_visit "The hum of air filtration is the only sound as the lights flicker to life. You are alone."
+start       true

@@ -59,12 +59,12 @@ anyzork play lighthouse.zork
 | [World Schema](docs/engine/WORLD-SCHEMA.md) | `.zork` database reference |
 | [ZorkScript Spec](docs/dsl/ZORKSCRIPT.md) | Authoring language reference |
 | [Command DSL Spec](docs/dsl/COMMANDS.md) | Runtime rule vocabulary |
-| [Author Tooling](docs/design/AUTHOR-TOOLING.md) | Lint, import diagnostics, and `--report` design |
+| [Author Tooling](docs/design/AUTHOR-TOOLING.md) | Lint and import diagnostics design |
 | [CLI Reference](docs/guides/CLI.md) | All commands, flags, and options |
 | [Configuration](docs/guides/CONFIGURATION.md) | Config file, env vars, and provider setup |
 | [Narrator Mode](docs/guides/NARRATOR.md) | Optional LLM prose layer |
 | [Sharing Games](docs/server/SHARING.md) | Publishing, browsing, and installing |
-| [ADR-001: SQLite Storage](docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md) | Why `.zork` files are SQLite |
+| [ADR-001: SQLite Storage](docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md) | Original SQLite rationale (superseded — `.zork` files are now zip archives) |
 | [Roadmap](ROADMAP.md) | Ordered plan and milestone tracking |
 
 ## How It Works
@@ -72,13 +72,13 @@ anyzork play lighthouse.zork
 ```
  You describe a world        Any LLM writes           AnyZork compiles it       You play it
  ───────────────────   ──>   ZorkScript code   ──>    into a .zork file    ──>  deterministically
- "haunted lighthouse         (rooms, items,           (SQLite database)         No AI at runtime.
+ "haunted lighthouse         (rooms, items,           (zip archive)             No AI at runtime.
   on a cliff"                 NPCs, puzzles)                                    Pure engine.
 ```
 
 1. **Generate** — `anyzork generate` builds a structured prompt from your idea (freeform or wizard-guided).
 2. **Author** — You paste that prompt into any LLM. It returns [ZorkScript](docs/dsl/ZORKSCRIPT.md) — a human-readable DSL for rooms, items, NPCs, puzzles, dialogue trees, and commands.
-3. **Compile** — `anyzork import` compiles ZorkScript into a `.zork` file (a SQLite database). Lint and validation catch errors before you play.
+3. **Compile** — `anyzork import` compiles ZorkScript into a `.zork` file (a game archive). Lint and validation catch errors before you play.
 4. **Play** — The deterministic engine evaluates commands, preconditions, and effects with no LLM involved. Game state is always consistent and reproducible.
 
 The optional [Narrator Mode](docs/guides/NARRATOR.md) adds an LLM prose layer on top — it rewrites descriptions for atmosphere but never touches game state.

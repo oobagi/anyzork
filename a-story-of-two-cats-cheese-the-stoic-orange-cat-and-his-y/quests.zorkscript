@@ -1,0 +1,19 @@
+quest main:churu_heist {
+name        "Operation: Tasty Tube"
+description "Bugs and Cheese must coordinate to steal the Churu from the top of the fridge."
+completion  heist_complete
+score       50
+
+objective "Motivate Cheese with catnip" -> cheese_awake
+objective "Distract the Tall One" -> tall_one_distracted
+objective "Secure the Churu" -> heist_complete
+}
+
+quest side:chaos_points {
+name        "Chaotic Bobtail Energy"
+description "Prove you are the most chaotic cat in Chico."
+completion  plant_chewed
+score       15
+
+objective "Taste the forbidden balcony plant" -> plant_chewed
+}

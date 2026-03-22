@@ -1,0 +1,117 @@
+flag has_knife "Player has the sharp knife"
+flag found_hollow "Player found the hollow"
+flag found_parachute "Player found the parachute"
+
+# --- Custom Verbs ---
+
+on "wait" in [pedestal] {
+  require not_flag(gong_sounded)
+  effect set_flag(gong_sounded)
+  effect unlock(crate_lock)
+  success "BONG! The gong echoes across the plain. The landmines are deactivated. Go!"
+}
+
+on "wait" {
+  success "Time passes slowly in the arena. You listen for the sound of cannons."
+}
+
+on "climb {target}" in [pine_forest] {
+  require item_in_room(tracker_jacker_nest, pine_forest)
+  success "You climb the tree cautiously, keeping your distance from the Tracker Jacker nest."
+}
+
+on "climb {target}" {
+  success "There isn't anything sturdy enough to climb here."
+}
+
+on "cut {target}" in [pine_forest] {
+  require has_item(sharp_knife)
+  require item_in_room(tracker_jacker_nest, pine_forest)
+  
+  effect set_flag(cato_dead)
+  effect kill_npc(cato)
+  effect add_score(30)
+  success "You saw through the branch holding the Wasp Nest. It falls and shatters! Below, you hear Cato's screams as the Tracker Jackers swarm him. He won't be bothering anyone again."
+  once
+}
+
+on "cut {target}" {
+  require has_item(sharp_knife)
+  success "You hack at the {target}, but it doesn't do much."
+}
+
+# --- Triggers ---
+
+when room_enter(cornucopia) {
+  require not_flag(gong_sounded)
+  effect change_health(-100)
+  effect set_flag(dead_by_landmine)
+  message "BOOM! You stepped off the pedestal before the gong. The landmine vaporizes you instantly."
+}
+
+when item_taken(sharp_knife) {
+  effect set_flag(has_knife)
+  message "This blade is your best chance at survival."
+}
+
+when room_enter(stream_bank) {
+  effect set_flag(water_found)
+  message "You've found a water source. This is a major victory."
+  once
+}
+
+when room_enter(hidden_hollow) {
+  require has_flag(rue_allied)
+  effect set_flag(found_hollow)
+  effect make_visible(silver_parachute)
+  message "Following Rue's advice, you find a small hollow. A silver parachute hangs here!"
+  once
+}
+
+when item_taken(silver_parachute) {
+  effect set_flag(found_parachute)
+  effect add_score(20)
+  once
+}
+
+when flag_set(cato_dead) {
+  effect set_flag(is_victor)
+  effect complete_quest(survive_bloodbath)
+  message "With the strongest tribute gone, the remaining players flee. The Gamemakers declare you the victor."
+}
+
+# --- Interaction Responses ---
+
+interaction weapon_on_character {
+  tag      "weapon"
+  target   "character"
+  response "You lash out at {target} with your {item}! They scream and retreat into the woods."
+  effect   damage_target(40)
+}
+
+interaction tool_on_fixture {
+  tag      "blunt"
+  target   "fixture"
+  response "You use the {item} to knock the {target} loose."
+  effect   set_flag(cato_dead)
+}
+
+interaction medicine_on_player {
+  tag      "medicine"
+  target   "*"
+  response "You apply the {item}. The cooling sensation is instant, and your wounds begin to close."
+  consumes 1
+  effect   change_health(50)
+}
+
+interaction weapon_on_default {
+  tag      "weapon"
+  target   "*"
+  response "You strike the {target} with your {item}, but it's not very effective."
+}
+
+interaction tool_on_default {
+  tag      "tool"
+  target   "*"
+  response "You try to use the {item} on the {target}, but nothing happens."
+}

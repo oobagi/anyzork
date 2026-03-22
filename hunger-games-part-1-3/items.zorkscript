@@ -1,0 +1,143 @@
+item golden_horn {
+  name        "Golden Horn"
+  description "The massive Cornucopia structure itself, curved and gleaming."
+  examine     "It's made of a strange, indestructible gold-colored metal. It's hollow and packed with gear."
+  in          inside_cornucopia
+  takeable    false
+  tags        ["scenery"]
+  category    "furniture"
+  room_desc   "The massive Golden Horn looms over everything."
+}
+
+item silver_crate {
+  name        "Silver Crate"
+  description "A sleek metal crate with the Capitol seal."
+  examine     "It's locked with a digital keypad. A small note is taped to the side."
+  in          inside_cornucopia
+  takeable    false
+  container   true
+  locked      true
+  code        "1221"
+  tags        ["container"]
+  category    "container"
+  room_desc   "A Silver Crate sits at the very back of the horn."
+  lock_msg    "The crate requires a four-digit code."
+}
+
+item orange_backpack {
+  name        "Orange Backpack"
+  description "A sturdy nylon bag in a bright, visible orange."
+  examine     "It's surprisingly heavy. It has 'District 12' scrawled on the strap."
+  in          cornucopia_fringe
+  takeable    true
+  home        cornucopia_fringe
+  tags        ["bag", "storage"]
+  category    "container"
+  container   true
+  room_desc   "An Orange Backpack lies abandoned in the dirt."
+  drop_desc   "The orange backpack sits on the ground."
+  take_msg    "You sling the orange backpack over your shoulder."
+}
+
+item plastic_tarp {
+  name        "Plastic Tarp"
+  description "A folded sheet of black plastic."
+  examine     "Essential for catching rainwater or making a shelter."
+  in          orange_backpack
+  takeable    true
+  home        meadow
+  tags        ["tool", "survival"]
+  category    "tool"
+  room_desc   "A black plastic tarp is crumpled here."
+  drop_desc   "A plastic tarp lies here."
+}
+
+item hunting_knife {
+  name        "Hunting Knife"
+  description "A serrated steel blade with a rubber grip."
+  examine     "Razor sharp and perfectly balanced. A deadly tool."
+  in          silver_crate
+  takeable    true
+  home        inside_cornucopia
+  tags        ["weapon", "sharp"]
+  category    "weapon"
+  room_desc   "A glinting hunting knife is here."
+  drop_desc   "A hunting knife lies on the ground."
+  take_msg    "You grip the knife firmly. You feel slightly safer."
+}
+
+item dried_strips {
+  name        "Dried Beef"
+  description "Salty, preserved strips of meat."
+  examine     "High in protein. It won't taste good, but it will keep you moving."
+  in          orange_backpack
+  takeable    true
+  quantity    4
+  max_quantity 4
+  quantity_unit "strips"
+  depleted_msg "You have no food left."
+  tags        ["food"]
+  category    "food"
+  room_desc   "Some dried beef strips are scattered here."
+}
+
+item water_bottle {
+  name        "Water Bottle"
+  description "A clear plastic bottle with a sport cap."
+  examine     "It's currently empty. You'll need to find a source soon."
+  in          orange_backpack
+  takeable    true
+  home        meadow
+  tags        ["tool", "liquid_container"]
+  category    "tool"
+  room_desc   "An empty water bottle sits in the grass."
+}
+
+item coded_note {
+  name        "Coded Note"
+  description "A small scrap of paper with scrawled numbers."
+  examine     "It looks like a date: 12/21."
+  read_text   "The note simply says: 1221."
+  in          cornucopia_fringe
+  takeable    true
+  tags        ["document", "clue"]
+  category    "document"
+  room_desc   "A small scrap of paper flutters in the dust."
+}
+
+item flashlight {
+  name        "Flashlight"
+  description "A heavy-duty LED flashlight."
+  examine     "The casing is shockproof. It has a simple toggle switch."
+  in          hills
+  takeable    true
+  toggle      true
+  toggle_state "off"
+  on_msg      "The flashlight beam cuts through the gloom."
+  off_msg     "You click the flashlight off."
+  tags        ["light_source"]
+  category    "tool"
+  room_desc   "A black flashlight lies among the rocks."
+}
+
+item wooden_spear {
+  name        "Wooden Spear"
+  description "A long shaft of wood tipped with a stone head."
+  examine     "Crude but effective. It has been sharpened recently."
+  in          rocky_outcrop
+  takeable    true
+  tags        ["weapon", "reach"]
+  category    "weapon"
+  room_desc   "A wooden spear leans against a boulder."
+}
+
+item large_boulder {
+  name        "Large Boulder"
+  description "A massive hunk of granite."
+  examine     "There are strange markings scratched into the side. One looks like a sun."
+  in          rocky_outcrop
+  takeable    false
+  tags        ["scenery"]
+  category    "furniture"
+  room_desc   "A large boulder dominates the outcrop."
+}

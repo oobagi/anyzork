@@ -1,0 +1,38 @@
+npc bugs {
+  name         "Bugs"
+  description  "A sleek black-and-white cat with frantic eyes and a twitching tail."
+  examine      "He is three years younger than you and has ten times the energy."
+  in           kitchen
+  home         kitchen
+  room_desc    "Bugs is pacing back and forth near the kitchen table, looking for trouble."
+  drop_desc    "Bugs is sitting here, waiting for your next move."
+  category     "character"
+
+  talk root {
+    "Hey Cheese! Are we doing it? Are we going to the shed today?"
+    option "We need to find the way out first." -> search_advice
+    option "Calm down, Bugs. You're being chaotic." -> chaotic_reply
+    option "I'm working on it. Just stay close."
+    option "Goodbye."
+  }
+
+  talk search_advice {
+    "The human always keeps the back porch locked. I saw them hide a shiny brass key somewhere in the hallway earlier!"
+    option "I'll go look in the hallway then."
+    option "Did you see exactly where?" -> key_hint
+    option "Never mind."
+  }
+
+  talk key_hint {
+    "In the wicker basket! It's full of soft things, perfect for hiding keys."
+    option "Got it. Stay here."
+    option "Goodbye."
+  }
+
+  talk chaotic_reply {
+    "Chaos is the only way to live, big brother! If we don't move fast, the humans will catch us and put us in the carrier!"
+    option "You're probably right about the carrier."
+    option "Just don't break anything yet."
+    option "Never mind."
+  }
+}

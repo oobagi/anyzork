@@ -1,8 +1,12 @@
 # ADR-001: SQLite as Game Storage Format
 
+> **Status: Superseded.** As of the game projects refactor, `.zork` files are zip archives
+> containing `manifest.toml` + `.zorkscript` source files. SQLite is now used internally
+> as a compilation cache (`~/.anyzork/cache/*.db`) and for save files (`~/.anyzork/saves/`).
+
 ## Status
 
-Accepted
+Accepted (see superseded notice above)
 
 ## Context
 

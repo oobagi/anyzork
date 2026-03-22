@@ -1,0 +1,33 @@
+lock station_gate {
+  exit      justice_building_square -> tribute_train north
+  type      "flag"
+  flags     [volunteered]
+  locked    "Peacekeepers block the way to the train. You aren't a tribute yet."
+  unlocked  "The Peacekeepers step aside for the new tribute."
+}
+
+lock arena_lift {
+  exit      training_center -> arena_pedestal up
+  type      "flag"
+  flags     [training_done]
+  locked    "The lift is deactivated until training is complete."
+  unlocked  "The lift hums to life, ready to take you to the Arena."
+}
+
+puzzle volunteer_puzzle {
+  name        "The Reaping"
+  description "Save your sister from being taken by the Capitol."
+  in          justice_building_square
+  score       25
+  steps       ["Talk to Effie", "Wait for Prim's name", "Volunteer"]
+  hint        "You must volunteer as tribute to save Prim."
+}
+
+puzzle training_puzzle {
+  name        "Impress the Gamemakers"
+  description "Complete your training and get to the Arena."
+  in          training_center
+  score       30
+  steps       ["Take the sword", "Pull the emergency lever to show off"]
+  hint        "Maybe a bold action with the lever will end your session with a bang."
+}

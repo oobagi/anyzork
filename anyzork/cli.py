@@ -3,14 +3,10 @@
 from __future__ import annotations
 
 import contextlib
-import re
 import shutil
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
 from urllib.parse import urlparse
-from uuid import uuid4
 
 import click
 from rich.console import Console
@@ -33,12 +29,6 @@ CLI_VERSION = (
     f"{__version__} "
     f"(runtime {RUNTIME_COMPAT_VERSION}, prompt {current_prompt_system_version()})"
 )
-T = TypeVar("T")
-
-if TYPE_CHECKING:
-    from anyzork.db.schema import GameDB
-
-
 @click.group()
 @click.version_option(version=CLI_VERSION, prog_name="anyzork")
 def cli() -> None:
@@ -48,17 +38,18 @@ def cli() -> None:
 @cli.command()
 @click.argument("game_ref", type=str, required=False)
 @click.option(
-    "--slot",
+    "--save",
+    "slot",
     type=str,
     default="default",
     show_default=True,
-    help="Managed save slot name. Progress is written to ~/.anyzork/saves/<game>/<slot>.zork.",
+    help="Save name. Progress is written to ~/.anyzork/saves/<game>/<save>.zork.",
 )
 @click.option(
     "--new",
     "restart",
     is_flag=True,
-    help="Start the selected managed save slot over from the library copy.",
+    help="Start a fresh save from the library copy.",
 )
 @click.option(
     "--restart",
@@ -74,7 +65,9 @@ def cli() -> None:
     help="LLM provider for narrator mode (overrides ANYZORK_PROVIDER).",
 )
 @click.option("--model", type=str, default=None, help="Model for narrator mode.")
+@click.pass_context
 def play(
+    ctx: click.Context,
     game_ref: str | None,
     slot: str,
     restart: bool,
@@ -106,6 +99,12 @@ def play(
         if source_path is None:
             return
 
+    # Detect whether --save was explicitly provided by the user.
+    slot_explicitly_set = ctx.get_parameter_source("slot") not in (
+        None,
+        click.core.ParameterSource.DEFAULT,
+    )
+
     if library_service.is_within(source_path, cfg.saves_dir):
         if restart:
             raise click.UsageError(
@@ -114,11 +113,18 @@ def play(
         play_path = source_path
         console.print(f"[dim]Resuming save:[/dim] [cyan]{play_path}[/cyan]")
     else:
+        # When --save was not explicitly provided, check for multiple saves
+        # and prompt the user to choose (interactive TTY only).
+        if not slot_explicitly_set and not restart and sys.stdin.isatty():
+            picked = _pick_save_slot(source_path, cfg)
+            if picked is not None:
+                slot, restart = picked
+
         play_path, action = library_service.prepare_managed_save(source_path, slot, restart, cfg)
         action_label = {
-            "created": "Started save slot",
-            "reset": "Restarted save slot",
-            "resume": "Resuming save slot",
+            "created": "Started save",
+            "reset": "Restarted save",
+            "resume": "Resuming save",
         }[action]
         console.print(
             f"[dim]{action_label}[/dim] [cyan]{slot}[/cyan] "
@@ -150,7 +156,7 @@ def _prompt_for_play_target(cfg: Config) -> Path | None:
             f"[dim]No library games found in {cfg.games_dir}[/dim]"
         )
         if overview.saves:
-            console.print("[dim]Use anyzork saves to inspect existing save files.[/dim]")
+            console.print("[dim]Use anyzork list --saves to inspect existing save files.[/dim]")
             console.print("[dim]Or pass a direct .zork path to anyzork play.[/dim]")
             return None
         console.print("[dim]Create an authoring prompt with:[/dim]  anyzork generate")
@@ -193,158 +199,125 @@ def _prompt_for_play_target(cfg: Config) -> Path | None:
         console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
 
 
-def _slugify_name(value: str) -> str:
-    """Return a filesystem-friendly slug for save directories / slots."""
-    slug = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
-    return slug or "game"
+def _read_paste(console: Console) -> str:
+    """Read pasted input using bracket paste mode to detect and summarize pastes."""
+    import termios
+    import tty
 
+    console.print("[dim]Paste the LLM's response, then press Enter:[/dim]")
 
-def _sanitize_slot_name(value: str) -> str:
-    """Return a save-slot filename stem while preserving readable punctuation."""
-    slot = value.strip().replace("/", "_").replace("\\", "_")
-    return slot or "default"
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
 
+    # Enable bracket paste mode: terminal wraps pastes in \e[200~ ... \e[201~
+    sys.stdout.write("\033[?2004h")
+    sys.stdout.flush()
 
-def _copy_zork_file(source: Path, destination: Path) -> None:
-    """Copy a .zork file to a new location, replacing old sidecars first."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.unlink(missing_ok=True)
-    Path(f"{destination}-wal").unlink(missing_ok=True)
-    Path(f"{destination}-shm").unlink(missing_ok=True)
-    shutil.copy2(source, destination)
-
-
-def _is_within(path: Path, root: Path) -> bool:
-    """Return True when path lives underneath root."""
+    # Simple approach: read everything in raw mode, then strip escape sequences after
     try:
-        path.resolve().relative_to(root.resolve())
-    except ValueError:
-        return False
-    return True
+        tty.setraw(fd)
+
+        raw_chars: list[str] = []
+        while True:
+            ch = sys.stdin.read(1)
+            if not ch or ch == "\x03" or ch == "\x04":
+                break
+            raw_chars.append(ch)
+            # Check for Enter after paste end sequence (submit)
+            raw = "".join(raw_chars)
+            if "\x1b[201~" in raw and ch in ("\r", "\n"):
+                break
+
+    except (EOFError, KeyboardInterrupt):
+        pass
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        sys.stdout.write("\033[?2004l")
+        sys.stdout.flush()
+
+    # Extract paste content: everything between \x1b[200~ and \x1b[201~
+    raw = "".join(raw_chars)
+    import re as _paste_re
+    pastes = _paste_re.findall(r"\x1b\[200~(.*?)\x1b\[201~", raw, _paste_re.DOTALL)
+    text = "\n".join(pastes) if pastes else raw
+
+    # Normalize line endings
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+    char_count = len(text.strip())
+    line_count = text.strip().count("\n") + 1 if text.strip() else 0
+    if char_count:
+        console.print(f"  [dim]\\[pasted {char_count} chars, {line_count} lines][/dim]")
+
+    return text
 
 
-def _read_zork_metadata(path: Path) -> dict | None:
-    """Return metadata for a .zork file, or None on read errors."""
-    return _read_game_data(path, lambda db: db.get_all_meta())
+def _show_error_context(source_text: str, exc: Exception) -> None:
+    """Print the lines around a parse error for debugging."""
+    import re as _re
+
+    match = _re.search(r"line (\d+)", str(exc))
+    if not match:
+        return
+    error_line = int(match.group(1))
+    lines = source_text.split("\n")
+    start = max(0, error_line - 3)
+    end = min(len(lines), error_line + 2)
+    console.print()
+    for i in range(start, end):
+        marker = "[red]>>>[/red] " if i + 1 == error_line else "    "
+        safe = lines[i].replace("[", "\\[")
+        console.print(f"  {marker}[dim]{i + 1:4d}[/dim] {safe}")
+    console.print()
 
 
-def _read_player_state(path: Path) -> dict | None:
-    """Return player state for a .zork file, or None on read errors."""
-    return _read_game_data(path, lambda db: db.get_player())
+def _pick_save_slot(source_path: Path, cfg: Config) -> tuple[str, bool] | None:
+    """Prompt the user to choose a save slot or start a new game.
 
+    Returns ``(slot_name, restart)`` or ``None`` to cancel.
+    """
+    save_dir = cfg.saves_dir / source_path.stem
+    save_files = library_service.sorted_save_files(save_dir) if save_dir.exists() else []
 
-def _read_game_data(path: Path, reader: Callable[[GameDB], T]) -> T | None:
-    """Read derived data from a .zork file while tolerating failures."""
-    from anyzork.db.schema import GameDB
+    console.print()
+    console.print("[bold]Saves:[/bold]" if save_files else "[bold]No saves yet.[/bold]")
+    entries: list[tuple[str, str]] = []
+    for save_file in save_files:
+        save_meta = library_service.read_zork_metadata(save_file) or {}
+        player = library_service.read_player_state(save_file) or {}
+        slot_name = str(save_meta.get("save_slot") or save_file.stem)
+        state = str(player.get("game_state", "?"))
+        score = int(player.get("score", 0))
+        moves = int(player.get("moves", 0))
+        updated = library_service.format_save_last_played(save_file)
+        label = f"{slot_name} ({state}, score {score}, moves {moves})"
+        if updated:
+            label += f" [{updated}]"
+        entries.append((slot_name, label))
+        console.print(f"  [cyan]{len(entries)}[/cyan]. {label}")
 
-    try:
-        with GameDB(path) as db:
-            return reader(db)
-    except Exception:
-        return None
+    new_index = len(entries) + 1
+    console.print(f"  [cyan]{new_index}[/cyan]. [dim]New game[/dim]")
 
+    while True:
+        choice = click.prompt("Choose a save", type=str).strip().lower()
+        if choice in {"q", "quit", "exit"}:
+            return None
 
-def _save_last_played_timestamp(path: Path) -> str:
-    """Return the raw last-played timestamp used for save ordering."""
-    return str((_read_zork_metadata(path) or {}).get("last_played_at") or "")
-
-
-def _format_save_last_played(path: Path) -> str:
-    """Return a compact display string for the save timestamp."""
-    timestamp = _save_last_played_timestamp(path)
-    return timestamp[:16].replace("T", " ") if timestamp else ""
-
-
-def _sorted_save_files(save_dir: Path) -> list[Path]:
-    """Return save files sorted by descending last-played timestamp."""
-    return sorted(save_dir.glob("*.zork"), key=_save_last_played_timestamp, reverse=True)
-
-
-def _format_metadata_versions(meta: dict | None) -> str:
-    """Format runtime and prompt-system versions for library/save displays."""
-    if not meta:
-        return "?"
-
-    runtime_version = str(meta.get("version") or "?")
-    prompt_version = meta.get("prompt_system_version")
-    if prompt_version:
-        return f"{runtime_version} / {prompt_version}"
-    return runtime_version
-
-
-def _resolve_game_reference(game_ref: str, cfg: Config) -> Path:
-    """Resolve a CLI game reference to a concrete .zork path."""
-    candidate = Path(game_ref).expanduser()
-    if candidate.exists():
-        return candidate.resolve()
-
-    direct_name = candidate.name if candidate.name.endswith(".zork") else f"{candidate.name}.zork"
-    direct_library_path = (cfg.games_dir / direct_name).resolve()
-    if direct_library_path.exists():
-        return direct_library_path
-
-    library_matches: list[Path] = []
-    target_slug = _slugify_name(candidate.stem)
-    for zork_path in sorted(cfg.games_dir.glob("*.zork")):
-        meta = _read_zork_metadata(zork_path) or {}
-        if game_ref == meta.get("game_id"):
-            return zork_path.resolve()
-        if zork_path.stem == candidate.stem:
-            library_matches.append(zork_path.resolve())
+        try:
+            index = int(choice)
+        except ValueError:
+            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
             continue
-        if _slugify_name(str(meta.get("title", ""))) == target_slug:
-            library_matches.append(zork_path.resolve())
 
-    if len(library_matches) == 1:
-        return library_matches[0]
-    if len(library_matches) > 1:
-        raise click.BadParameter(
-            f"Multiple library games match '{game_ref}'. Use an explicit path.",
-            param_hint="game_ref",
-        )
+        if index == new_index:
+            new_slot = click.prompt("Name for new save", default="default", type=str)
+            return (new_slot.strip() or "default", True)
 
-    raise click.BadParameter(
-        f"No game found for '{game_ref}'. Use 'anyzork list' or pass a .zork path.",
-        param_hint="game_ref",
-    )
+        if 1 <= index <= len(entries):
+            return (entries[index - 1][0], False)
 
-
-def _prepare_managed_save(
-    source_path: Path,
-    slot: str,
-    restart: bool,
-    cfg: Config,
-) -> tuple[Path, str]:
-    """Return the managed save path for a source game, cloning when needed."""
-    from anyzork.db.schema import GameDB
-
-    source_meta = _read_zork_metadata(source_path) or {}
-    source_game_id = source_meta.get("game_id") or _slugify_name(source_path.stem)
-    slot_slug = _sanitize_slot_name(slot)
-    save_path = cfg.saves_dir / source_game_id / f"{slot_slug}.zork"
-
-    if restart or not save_path.exists():
-        _copy_zork_file(source_path, save_path)
-        with GameDB(save_path) as db:
-            db.set_meta("game_id", str(uuid4()))
-            db.set_meta("source_game_id", str(source_game_id))
-            db.set_meta("source_path", str(source_path))
-            db.set_meta("save_slot", slot)
-            db.set_meta("is_template", 0)
-            db.touch_last_played()
-        return save_path, "reset" if restart else "created"
-
-    with GameDB(save_path) as db:
-        db.set_meta("save_slot", slot)
-        db.touch_last_played()
-    return save_path, "resume"
-
-
-def _library_game_id(path: Path) -> str | None:
-    """Return the stable library game id for a .zork file."""
-    meta = _read_zork_metadata(path) or {}
-    game_id = meta.get("game_id")
-    return str(game_id) if game_id else None
+        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
 
 
 def _normalize_optional_text(value: str | None) -> str | None:
@@ -411,7 +384,7 @@ def _resolve_publish_listing_metadata(
     resolved_genres = _prompt_optional_genres(genres_default)
     resolved_slug = _prompt_optional_text(
         "Slug",
-        _slugify_name(resolved_title or source_path.stem),
+        library_service.slugify_name(resolved_title or source_path.stem),
     )
 
     return (
@@ -427,20 +400,62 @@ def _resolve_publish_listing_metadata(
 
 
 @cli.command("publish")
-@click.argument("game_ref", type=str)
-def publish_game(game_ref: str) -> None:
-    """Package and upload a library game to the catalog."""
+@click.argument("game_ref", type=str, required=False)
+@click.option(
+    "--status", "status_slug", type=str, default=None,
+    help="Check publish status for a catalog slug.",
+)
+def publish_game(game_ref: str | None, status_slug: str | None) -> None:
+    """Package and upload a .zork archive or project directory to the catalog."""
+    if status_slug is not None:
+        _check_publish_status(status_slug)
+        return
+
+    if game_ref is None:
+        raise click.UsageError("Missing argument 'GAME_REF'.")
+
+    import tempfile
+
+    from anyzork.archive import is_zork_archive, pack_project
+
+    cfg = Config()
+
+    # Accept project directories, .zork archive paths, or library refs.
+    candidate = Path(game_ref).expanduser()
+    if candidate.is_dir() and (candidate / "manifest.toml").exists():
+        # Project directory — pack it into a .zork archive first.
+        with tempfile.TemporaryDirectory(prefix="anyzork-pack-") as tmp:
+            source_path = pack_project(candidate, Path(tmp) / f"{candidate.name}.zork")
+            return _do_publish(source_path, cfg)
+    elif candidate.is_file() and is_zork_archive(candidate):
+        source_path = candidate.resolve()
+    else:
+        try:
+            source_path = library_service.resolve_game_reference(game_ref, cfg)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="game_ref") from exc
+
+    if library_service.is_within(source_path, cfg.saves_dir):
+        raise click.BadParameter(
+            "Publish a library game or .zork archive, not a managed save.",
+            param_hint="game_ref",
+        )
+
+    # Verify the source is a valid .zork archive.
+    if not is_zork_archive(source_path):
+        raise click.BadParameter(
+            "Publish expects a .zork archive or project directory.",
+            param_hint="game_ref",
+        )
+
+    _do_publish(source_path, cfg)
+
+
+def _do_publish(source_path: Path, cfg: Config) -> None:
+    """Run the publish wizard and upload for a .zork archive."""
     import tempfile
 
     from anyzork.sharing import create_share_package, upload_share_package
-
-    cfg = Config()
-    source_path = _resolve_game_reference(game_ref, cfg)
-    if _is_within(source_path, cfg.saves_dir):
-        raise click.BadParameter(
-            "Publish a library game or original .zork file, not a managed save slot.",
-            param_hint="game_ref",
-        )
 
     (
         title,
@@ -502,13 +517,11 @@ def publish_game(game_ref: str) -> None:
     )
     console.print(
         f"[dim]Submitted for review. Check status with:[/dim]"
-        f"  anyzork status {uploaded_slug}"
+        f"  anyzork publish --status {uploaded_slug}"
     )
 
 
-@cli.command("status")
-@click.argument("slug", type=str)
-def game_status(slug: str) -> None:
+def _check_publish_status(slug: str) -> None:
     """Check the publish status of a submitted game."""
     import json as _json
     from urllib.error import HTTPError
@@ -555,9 +568,8 @@ def game_status(slug: str) -> None:
     is_flag=True,
     help="Print the public AnyZork ZorkScript authoring template and exit.",
 )
-@click.option("--report", is_flag=True, help="Print detailed import diagnostics.")
 def import_game(
-    spec_source: str, output: Path | None, print_template: bool, report: bool
+    spec_source: str, output: Path | None, print_template: bool
 ) -> None:
     """Compile ZorkScript into a .zork game."""
     from anyzork.importer import ZORKSCRIPT_AUTHORING_TEMPLATE, ImportSpecError, load_import_source
@@ -571,139 +583,76 @@ def import_game(
     resolved_source = _resolve_import_source(spec_source)
 
     # -- Parse spec ----------------------------------------------------------
-    try:
-        spec = load_import_source(resolved_source)
-    except ZorkScriptError as exc:
-        from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
+    # Check for project directory or archive
+    source_path = Path(resolved_source).expanduser()
+    spec = None
 
-        diag = from_zorkscript_error(exc)
-        if report:
-            _print_early_failure_report(diag, exc)
-        else:
-            render_diagnostic(diag, console)
-        sys.exit(1)
-    except ImportSpecError as exc:
-        if report:
-            from anyzork.diagnostics import from_import_spec_error
+    from anyzork.project import is_project_dir
 
-            diag = from_import_spec_error(exc)
-            _print_early_failure_report(diag, exc)
-            sys.exit(1)
-        else:
-            console.print(f"[red]Import failed:[/red] {exc}")
-            sys.exit(1)
-
-    # -- Report mode ---------------------------------------------------------
-    if report:
-        from anyzork.diagnostics import (
-            Diagnostic,
-            from_import_spec_error,
-            from_validation_error,
-            render_diagnostic,
-        )
-        from anyzork.lint import lint_spec
-
-        title = spec.get("game", {}).get("title", "Untitled")
-        lint_diagnostics = lint_spec(spec)
-
-        n_rooms = len(spec.get("rooms", []))
-        n_exits = len(spec.get("exits", []))
-        n_items = len(spec.get("items", []))
-        n_npcs = len(spec.get("npcs", []))
-        n_commands = len(spec.get("commands", []))
-        n_quests = len(spec.get("quests", []))
-
-        compile_ok = False
-        compile_error_msg: str | None = None
-        compile_diag: Diagnostic | None = None
-        result_path: Path | None = None
-        validation_diagnostics: list[Diagnostic] = []
+    if is_project_dir(source_path):
+        from anyzork.manifest import ManifestError
+        from anyzork.project import load_project
+        from anyzork.zorkscript import parse_zorkscript
 
         try:
-            result = importing_service.import_zorkscript_spec(
-                spec=spec,
-                output_path=output,
-                cfg=cfg,
-            )
-            compile_ok = True
-            result_path = result.output_path
-            if result.warnings:
-                from anyzork.validation import ValidationError
-
-                for warning_str in result.warnings:
-                    ve = ValidationError(
-                        severity="warning", category="compile", message=warning_str,
-                    )
-                    validation_diagnostics.append(from_validation_error(ve))
-        except ImportSpecError as exc:
-            compile_error_msg = str(exc)
-            compile_diag = from_import_spec_error(exc)
-        except Exception as exc:
-            compile_error_msg = str(exc)
-            compile_diag = Diagnostic(
-                severity="error",
-                category="compile",
-                message=str(exc),
-                line=None,
-                hint=None,
-            )
-
-        # -- Print report ----------------------------------------------------
-        console.print()
-        console.print(f"=== Import Report: {title} ===")
-        console.print()
-        console.print(
-            f"Entities: {n_rooms} rooms, {n_exits} exits, {n_items} items, "
-            f"{n_npcs} NPCs, {n_commands} commands, {n_quests} quests"
-        )
-        console.print()
-
-        console.print("--- Lint (spec-level) ---")
-        if lint_diagnostics:
-            for diag in lint_diagnostics:
-                render_diagnostic(diag, console)
-        else:
-            console.print("No issues found.")
-        console.print()
-
-        console.print("--- Compile ---")
-        if compile_ok:
-            console.print(f"OK -> {result_path}")
-        else:
-            console.print(f"FAILED: {compile_error_msg}")
-        console.print()
-
-        console.print("--- Validation (post-import) ---")
-        if compile_diag:
-            render_diagnostic(compile_diag, console)
-        elif validation_diagnostics:
-            for diag in validation_diagnostics:
-                render_diagnostic(diag, console)
-        else:
-            console.print("No issues found.")
-        console.print()
-
-        all_diagnostics = lint_diagnostics + validation_diagnostics
-        if compile_diag:
-            all_diagnostics.append(compile_diag)
-        n_errors = sum(1 for d in all_diagnostics if d.severity == "error")
-        n_warnings = sum(1 for d in all_diagnostics if d.severity == "warning")
-
-        console.print("--- Totals ---")
-        console.print(f"{n_errors} errors, {n_warnings} warnings")
-
-        if compile_ok and result_path is not None:
-            play_ref: Path | str = result_path
-            if result_path.parent.resolve() == cfg.games_dir.resolve():
-                play_ref = result_path.stem
-            console.print()
-            console.print(f"Play it with:  anyzork play {play_ref}")
-
-        if n_errors > 0:
+            project = load_project(source_path)
+            spec = parse_zorkscript(project.text)
+        except ManifestError as exc:
+            console.print(f"[red]Project error:[/red] {exc}")
             sys.exit(1)
-        return
+        except ZorkScriptError as exc:
+            from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
 
-    # -- Normal (non-report) mode --------------------------------------------
+            diag = from_zorkscript_error(exc)
+            render_diagnostic(diag, console)
+            _print_doctor_hint(spec_source)
+            sys.exit(1)
+    elif source_path.is_file():
+        from anyzork.archive import is_zork_archive, load_project_from_archive
+
+        if is_zork_archive(source_path):
+            from anyzork.zorkscript import parse_zorkscript
+
+            try:
+                project = load_project_from_archive(source_path)
+                spec = parse_zorkscript(project.text)
+            except ZorkScriptError as exc:
+                from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
+
+                diag = from_zorkscript_error(exc)
+                render_diagnostic(diag, console)
+                _print_doctor_hint(spec_source)
+                sys.exit(1)
+        else:
+            try:
+                spec = load_import_source(resolved_source)
+            except ZorkScriptError as exc:
+                from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
+
+                diag = from_zorkscript_error(exc)
+                render_diagnostic(diag, console)
+                _print_doctor_hint(spec_source)
+                sys.exit(1)
+            except ImportSpecError as exc:
+                console.print(f"[red]Import failed:[/red] {exc}")
+                _print_doctor_hint(spec_source)
+                sys.exit(1)
+    else:
+        try:
+            spec = load_import_source(resolved_source)
+        except ZorkScriptError as exc:
+            from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
+
+            diag = from_zorkscript_error(exc)
+            render_diagnostic(diag, console)
+            _print_doctor_hint(spec_source)
+            sys.exit(1)
+        except ImportSpecError as exc:
+            console.print(f"[red]Import failed:[/red] {exc}")
+            _print_doctor_hint(spec_source)
+            sys.exit(1)
+
+    # -- Compile -------------------------------------------------------------
     try:
         result = importing_service.import_zorkscript_spec(
             spec=spec,
@@ -712,9 +661,11 @@ def import_game(
         )
     except ImportSpecError as exc:
         console.print(f"[red]Import failed:[/red] {exc}")
+        _print_doctor_hint(spec_source)
         sys.exit(1)
     except Exception as exc:
         console.print(f"[red]Import failed:[/red] {exc}")
+        _print_doctor_hint(spec_source)
         sys.exit(1)
 
     result_path = result.output_path
@@ -737,46 +688,127 @@ def import_game(
     console.print(f"[dim]Play it with:[/dim]  anyzork play {play_ref}")
 
 
-@cli.command()
+
+@cli.command("doctor")
 @click.argument("source", required=False, default="-")
-def lint(source: str) -> None:
-    """Check ZorkScript for errors without importing."""
-    from anyzork.diagnostics import from_zorkscript_error, render_diagnostic
-    from anyzork.lint import lint_spec
-    from anyzork.zorkscript import ZorkScriptError, parse_zorkscript
+def doctor(source: str) -> None:
+    """Diagnose ZorkScript errors, get an LLM fix, and re-import."""
+    from anyzork.services.doctor import build_fix_prompt, collect_diagnostics, copy_to_clipboard
 
     resolved_source = _resolve_import_source(source)
 
-    # Read the raw text
-    if resolved_source == "-":
+    # Read raw text (handle project directory and archive)
+    source_path = Path(resolved_source).expanduser()
+    is_project = False
+    if source_path.is_dir():
+        from anyzork.manifest import ManifestError
+        from anyzork.project import load_project
+
+        try:
+            project_src = load_project(source_path)
+        except ManifestError as exc:
+            console.print(f"[red]Project error:[/red] {exc}")
+            sys.exit(1)
+        raw_text = project_src.text
+        is_project = True
+    elif source_path.is_file():
+        from anyzork.archive import is_zork_archive, load_project_from_archive
+
+        if is_zork_archive(source_path):
+            project_src = load_project_from_archive(source_path)
+            raw_text = project_src.text
+        else:
+            raw_text = source_path.read_text(encoding="utf-8")
+    elif resolved_source == "-":
         raw_text = sys.stdin.read()
     else:
         raw_text = Path(resolved_source).read_text(encoding="utf-8")
 
-    # Parse
-    try:
-        spec = parse_zorkscript(raw_text)
-    except ZorkScriptError as exc:
-        diag = from_zorkscript_error(exc)
-        render_diagnostic(diag, console)
-        console.print()
-        console.print("1 error, 0 warnings")
-        sys.exit(1)
+    result = collect_diagnostics(raw_text)
 
-    # Lint
-    diagnostics = lint_spec(spec)
+    if not result.diagnostics:
+        console.print("No errors found — this script should import cleanly.")
+        return
 
-    if diagnostics:
-        for diag in diagnostics:
-            render_diagnostic(diag, console)
-        console.print()
-        n_errors = sum(1 for d in diagnostics if d.severity == "error")
-        n_warnings = sum(1 for d in diagnostics if d.severity == "warning")
-        console.print(f"{n_errors} errors, {n_warnings} warnings")
-        if n_errors > 0:
-            sys.exit(1)
+    n_errors = sum(1 for d in result.diagnostics if d.severity == "error")
+    n_warnings = sum(1 for d in result.diagnostics if d.severity == "warning")
+    console.print(f"Found {n_errors} error(s) and {n_warnings} warning(s).", highlight=False)
+
+    file_list = project_src.manifest.source_files if is_project else None
+    prompt = build_fix_prompt(raw_text, result.diagnostics, source_files=file_list)
+
+    if copy_to_clipboard(prompt):
+        console.print("Fix prompt copied to clipboard.")
     else:
-        console.print("No issues found.")
+        console.print()
+        console.print(prompt, highlight=False)
+        console.print()
+
+    if not sys.stdin.isatty():
+        return
+
+    # Paste-back flow: user pastes corrected output, we save and re-import
+    console.print("[dim]Paste into your LLM, then paste the corrected output back here.[/dim]")
+    pasted = _read_paste(console)
+
+    if not pasted.strip():
+        return
+
+    # Save the corrected output
+    corrected = pasted.strip()
+    if is_project:
+        from anyzork.services.paste_splitter import split_pasted_output
+
+        manifest = project_src.manifest
+        files = split_pasted_output(corrected, manifest.source_files)
+        saved_files: list[str] = []
+        for filename, content in files.items():
+            (source_path / filename).write_text(content + "\n", encoding="utf-8")
+            saved_files.append(filename)
+            console.print(f"  [green]✓[/green] Updated {filename}")
+        # Update manifest if file list changed
+        if saved_files and set(saved_files) != set(manifest.source_files):
+            files_toml = ", ".join(f'"{f}"' for f in saved_files)
+            project = manifest
+            manifest_content = (
+                "[project]\n"
+                f'title = "{project.title}"\n'
+                f'slug = "{project.slug}"\n'
+                f'author = "{project.author}"\n'
+                f'description = "{project.description}"\n'
+                "tags = []\n\n"
+                "[source]\n"
+                f"files = [{files_toml}]\n"
+            )
+            (source_path / "manifest.toml").write_text(manifest_content, encoding="utf-8")
+    elif source_path.is_file():
+        source_path.write_text(corrected + "\n", encoding="utf-8")
+        console.print(f"  [green]✓[/green] Updated {source_path.name}")
+
+    # Re-import
+    console.print()
+    console.print("[dim]Compiling...[/dim]")
+    try:
+        from anyzork.zorkscript import parse_zorkscript
+
+        if is_project:
+            from anyzork.project import load_project as _lp
+            project_reloaded = _lp(source_path)
+            spec = parse_zorkscript(project_reloaded.text)
+        else:
+            spec = parse_zorkscript(corrected)
+
+        importing_service.import_zorkscript_spec(spec=spec, cfg=Config())
+        console.print(f"  [green]✓[/green] Imported: {source_path.stem}")
+        console.print()
+        console.print(
+            f"[bold green]Fixed![/bold green] Play it with:"
+            f"  anyzork play {source_path.stem}"
+        )
+    except Exception as exc:
+        console.print(f"  [yellow]⚠[/yellow] Still has errors: {exc}")
+        _show_error_context(corrected, exc)
+        console.print(f"[dim]Run doctor again:[/dim]  anyzork doctor {source}")
 
 
 @cli.command("install")
@@ -809,7 +841,7 @@ def install_game(source: str, force: bool) -> None:
         source_path = Path(source).expanduser()
         if not source_path.exists() or source_path.suffix != SHARE_PACKAGE_SUFFIX:
             raise click.BadParameter(
-                "Install expects an official catalog ref or a local .anyzorkpkg package.",
+                "Install expects an official catalog ref or a local .zork package.",
                 param_hint="source",
             )
         resolved_source = str(source_path.resolve())
@@ -921,39 +953,20 @@ def _looks_like_catalog_ref(value: str) -> bool:
     if parsed.scheme and parsed.scheme != "file":
         return False
 
-    suffixes = {".zork", ".anyzorkpkg", ".json"}
+    suffixes = {".zork", ".json"}
     if Path(value).suffix.lower() in suffixes:
         return False
 
     return not ("/" in value or "\\" in value)
 
 
-def _print_early_failure_report(
-    diag: object,
-    exc: Exception,
-    *,
-    _console: Console | None = None,
-) -> None:
-    """Print the --report skeleton when parsing/compilation fails before lint runs.
+def _print_doctor_hint(source_ref: str) -> None:
+    """Suggest running 'anyzork doctor' after an import failure."""
+    console.print(
+        f"[dim]Run 'anyzork doctor {source_ref}' to generate a fix prompt "
+        f"for your LLM.[/dim]"
+    )
 
-    Both the ZorkScriptError and ImportSpecError handlers in ``import_game``
-    share the same report structure; this helper deduplicates them.
-    """
-    from anyzork.diagnostics import Diagnostic, render_diagnostic
-
-    assert isinstance(diag, Diagnostic)
-    c = _console or console
-    c.print()
-    c.print("=== Import Report ===")
-    c.print()
-    c.print("--- Lint (spec-level) ---")
-    render_diagnostic(diag, c)
-    c.print()
-    c.print("--- Compile ---")
-    c.print(f"FAILED: {exc}")
-    c.print()
-    c.print("--- Totals ---")
-    c.print("1 error, 0 warnings")
 
 
 def _resolve_import_source(spec_source: str) -> str:
@@ -1022,7 +1035,7 @@ def _write_authoring_prompt(
     "-o",
     type=click.Path(path_type=Path),
     default=None,
-    help="Write the external authoring prompt to a file instead of stdout.",
+    help="Write the generation prompt to a file (non-interactive).",
 )
 @click.option(
     "--realism",
@@ -1039,18 +1052,17 @@ def generate(
     output: Path | None,
     realism: str,
 ) -> None:
-    """Build a ZorkScript authoring prompt for a new AnyZork game.
+    """Build a ZorkScript authoring prompt and paste back the LLM response.
 
     \b
     Usage modes:
-      anyzork generate "prompt"          Build a ZorkScript authoring prompt
+      anyzork generate "prompt"          Generate from a freeform concept
       anyzork generate                   Launch the interactive wizard
       anyzork generate --guided          Launch the wizard explicitly
       anyzork generate --preset zombie-survival   Load a preset, preview, confirm
       anyzork generate --list-presets    List available presets
+      anyzork generate "prompt" -o out   Write the prompt to a file (scripting)
     """
-    from anyzork.importer import build_zorkscript_prompt
-
     # ── List presets and exit ──────────────────────────────────────────
     if list_presets:
         from anyzork.wizard.presets import list_presets as _list_presets
@@ -1066,12 +1078,138 @@ def generate(
     resolved_prompt, resolved_realism, authoring_fields = resolved
     realism = resolved_realism or realism
 
-    authoring_prompt = build_zorkscript_prompt(
+    # ── Create project directory ──────────────────────────────────────
+    from anyzork.manifest import _slugify
+    from anyzork.services.doctor import copy_to_clipboard
+    from anyzork.services.stepgen import OUTPUT_FILES, build_generation_prompt
+
+    concept_slug = _slugify(
+        str(authoring_fields.get("world_description", resolved_prompt))[:30]
+    )
+    project_dir = Path(concept_slug)
+
+    # Handle existing directory
+    if project_dir.exists():
+        i = 2
+        while Path(f"{concept_slug}-{i}").exists():
+            i += 1
+        project_dir = Path(f"{concept_slug}-{i}")
+
+    project_dir.mkdir()
+    console.print(f"[bold green]Created project:[/bold green] {project_dir}/")
+    console.print()
+
+    # ── Build prompt ─────────────────────────────────────────────────
+    generation_prompt = build_generation_prompt(
         resolved_prompt,
         realism=realism,
         authoring_fields=authoring_fields,
     )
-    _write_authoring_prompt(authoring_prompt, output=output)
+
+    # ── Non-interactive: write prompt to file ────────────────────────
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(generation_prompt, encoding="utf-8")
+        # Write manifest with all expected files
+        all_files = OUTPUT_FILES
+        files_toml = ", ".join(f'"{f}"' for f in all_files)
+        title_escaped = resolved_prompt[:80].replace(chr(34), chr(39))
+        manifest_content = (
+            "[project]\n"
+            f'title = "{title_escaped}"\n'
+            f'slug = "{project_dir.name}"\n'
+            'author = ""\n'
+            'description = ""\n'
+            "tags = []\n"
+            "\n"
+            "[source]\n"
+            f"files = [{files_toml}]\n"
+        )
+        (project_dir / "manifest.toml").write_text(manifest_content, encoding="utf-8")
+        console.print(
+            f"[bold green]Done![/bold green] Prompt written to [cyan]{output}[/cyan]"
+        )
+        console.print(f"[dim]Import with:[/dim]  anyzork import {project_dir}")
+        return
+
+    # ── Interactive: copy prompt, paste back, auto-import ────────────
+    if copy_to_clipboard(generation_prompt):
+        console.print("Prompt copied to clipboard.")
+    else:
+        console.print(generation_prompt, highlight=False)
+
+    console.print(
+        "[dim]Paste into your LLM. Copy the entire response back"
+        " (including file headers).[/dim]"
+    )
+
+    if sys.stdin.isatty():
+        pasted_text = _read_paste(console)
+
+        while not pasted_text.strip():
+            console.print("[yellow]No input received. Try pasting again.[/yellow]")
+            pasted_text = _read_paste(console)
+
+        from anyzork.services.paste_splitter import split_pasted_output
+
+        files = split_pasted_output(pasted_text, OUTPUT_FILES)
+        saved_files: list[str] = []
+
+        for filename, content in files.items():
+            file_path = project_dir / filename
+            file_path.write_text(content + "\n", encoding="utf-8")
+            saved_files.append(filename)
+            line_count = content.count("\n") + 1
+            console.print(f"  [green]✓[/green] Saved {filename} ({line_count} lines)")
+
+        # Write manifest with actual saved files
+        if saved_files:
+            files_toml = ", ".join(f'"{f}"' for f in saved_files)
+            title_escaped = resolved_prompt[:80].replace(chr(34), chr(39))
+            manifest_content = (
+                "[project]\n"
+                f'title = "{title_escaped}"\n'
+                f'slug = "{project_dir.name}"\n'
+                'author = ""\n'
+                'description = ""\n'
+                "tags = []\n"
+                "\n"
+                "[source]\n"
+                f"files = [{files_toml}]\n"
+            )
+            (project_dir / "manifest.toml").write_text(manifest_content, encoding="utf-8")
+
+        # Auto-import
+        console.print()
+        console.print("[dim]Compiling...[/dim]")
+        try:
+            from anyzork.archive import pack_project
+            from anyzork.project import load_project
+            from anyzork.zorkscript import parse_zorkscript
+
+            project = load_project(project_dir)
+            spec = parse_zorkscript(project.text)
+            cfg = Config()
+
+            # Compile
+            importing_service.import_zorkscript_spec(spec=spec, cfg=cfg)
+
+            # Pack archive into games_dir so `play` can find it
+            cfg.games_dir.mkdir(parents=True, exist_ok=True)
+            pack_project(project_dir, cfg.games_dir / f"{project_dir.name}.zork")
+
+            console.print(f"  [green]✓[/green] Imported: {project_dir.name}")
+            console.print()
+            console.print(
+                f"[bold green]Done![/bold green] Play it with:"
+                f"  anyzork play {project_dir.name}"
+            )
+        except Exception as exc:
+            console.print(f"  [yellow]⚠[/yellow] Import failed: {exc}")
+            _show_error_context(project.text, exc)
+            console.print(
+                f"[dim]Fix with:[/dim]  anyzork doctor {project_dir}"
+            )
 
 
 def _resolve_generation_inputs(
@@ -1125,9 +1263,12 @@ def _resolve_generation_inputs(
     return run_wizard(console)
 
 @cli.command("list")
-def list_games() -> None:
-    """List library games and summarize their active saves."""
+@click.option("--saves", is_flag=True, help="Show managed saves instead of games.")
+def list_games(saves: bool) -> None:
+    """List library games, or managed saves with --saves."""
     from rich.table import Table
+
+    from anyzork.archive import is_zork_archive
 
     cfg = Config()
     overview = library_service.list_library_overview(cfg)
@@ -1141,120 +1282,91 @@ def list_games() -> None:
         console.print("[dim]Then compile returned ZorkScript with:[/dim]  anyzork import -")
         return
 
-    library_table = Table(title="Game Library", show_lines=False)
-    library_table.add_column("Ref", style="cyan", no_wrap=True)
-    library_table.add_column("Title", style="bold")
-    library_table.add_column("Version", style="dim")
-    library_table.add_column("Active Saves", justify="right", style="green")
-    library_table.add_column("Latest Run", style="dim")
+    if not saves:
+        library_table = Table(title="Game Library", show_lines=False)
+        library_table.add_column("Ref", style="cyan", no_wrap=True)
+        library_table.add_column("Title", style="bold")
+        library_table.add_column("Version", style="dim")
+        library_table.add_column("Active Saves", justify="right", style="green")
+        library_table.add_column("Latest Run", style="dim")
 
-    for game in overview.games:
-        meta = library_service.read_zork_metadata(game.path)
-        save_ver = str(meta.get("version", "?")) if meta else "?"
-        version_label = game.version
-        if save_ver != RUNTIME_COMPAT_VERSION:
-            version_str = f"[yellow]{version_label}[/yellow]"
-        else:
+        for game in overview.games:
+            version_label = game.version or ""
             version_str = version_label
 
-        library_table.add_row(
-            game.ref,
-            game.title,
-            version_str,
-            str(game.active_saves),
-            game.latest_run,
-        )
-
-    console.print(library_table)
-
-
-@cli.command("saves")
-@click.argument("game_ref", type=str, required=False)
-def list_saves(game_ref: str | None) -> None:
-    """List managed save slots for all games or a single library game."""
-    from rich.table import Table
-
-    cfg = Config()
-    title = "Managed Saves"
-    game_filter_path: Path | None = None
-    if game_ref is not None:
-        try:
-            game_filter_path = library_service.resolve_game_reference(game_ref, cfg)
-        except ValueError as exc:
-            raise click.BadParameter(str(exc), param_hint="game_ref") from exc
-
-        if library_service.is_within(game_filter_path, cfg.saves_dir):
-            raise click.BadParameter(
-                "Pass a library game, not an individual save file.",
-                param_hint="game_ref",
+            library_table.add_row(
+                game.ref,
+                game.title,
+                version_str,
+                str(game.active_saves),
+                game.latest_run,
             )
 
-        meta = library_service.read_zork_metadata(game_filter_path) or {}
-        game_id = meta.get("game_id")
-        title = f"Managed Saves for {meta.get('title', game_filter_path.stem)}"
-        if not game_id:
-            console.print(f"[red]Missing game_id metadata in {game_filter_path}[/red]")
-            return
-        save_files = library_service.sorted_save_files(cfg.saves_dir / str(game_id))
-    else:
+        console.print(library_table)
+        return
+
+    if saves:
         save_files = sorted(
             cfg.saves_dir.glob("*/*.zork"),
             key=library_service.save_last_played_timestamp,
             reverse=True,
         ) if cfg.saves_dir.exists() else []
 
-    if not save_files:
-        if game_ref is not None and game_filter_path is not None:
-            console.print(
-                f"[dim]No managed saves found for[/dim] [cyan]{game_filter_path.stem}[/cyan]"
-            )
-        else:
+        if not save_files:
+            console.print()
             console.print(f"[dim]No managed saves found in {cfg.saves_dir}[/dim]")
-        return
+            return
 
-    title_by_source_game_id: dict[str, str] = {}
-    ref_by_source_game_id: dict[str, str] = {}
-    library_files = sorted(cfg.games_dir.glob("*.zork")) if cfg.games_dir.exists() else []
-    for zork_file in library_files:
-        meta = library_service.read_zork_metadata(zork_file) or {}
-        source_game_id = meta.get("game_id")
-        if source_game_id:
-            title_by_source_game_id[str(source_game_id)] = str(meta.get("title") or zork_file.stem)
-            ref_by_source_game_id[str(source_game_id)] = zork_file.stem
+        # Build slug-to-title mapping from library games
+        title_by_slug: dict[str, str] = {}
+        library_files = sorted(cfg.games_dir.glob("*.zork")) if cfg.games_dir.exists() else []
+        for zork_file in library_files:
+            slug = zork_file.stem
+            if is_zork_archive(zork_file):
+                ameta = library_service.read_archive_metadata(zork_file) or {}
+                title_by_slug[slug] = str(ameta.get("title") or slug)
+            else:
+                lmeta = library_service.read_zork_metadata(zork_file) or {}
+                title_by_slug[slug] = str(lmeta.get("title") or slug)
 
-    table = Table(title=title, show_lines=False)
-    table.add_column("Ref", style="cyan", no_wrap=True)
-    table.add_column("Title", style="bold")
-    table.add_column("Slot", style="bold")
-    table.add_column("State", style="dim")
-    table.add_column("Score", justify="right", style="green")
-    table.add_column("Moves", justify="right", style="green")
-    table.add_column("Updated", style="dim")
+        saves_table = Table(title="Managed Saves", show_lines=False)
+        saves_table.add_column("Ref", style="cyan", no_wrap=True)
+        saves_table.add_column("Title", style="bold")
+        saves_table.add_column("Save", style="bold")
+        saves_table.add_column("State", style="dim")
+        saves_table.add_column("Score", justify="right", style="green")
+        saves_table.add_column("Moves", justify="right", style="green")
+        saves_table.add_column("Updated", style="dim")
 
-    for save_file in save_files:
-        save_meta = library_service.read_zork_metadata(save_file) or {}
-        player = library_service.read_player_state(save_file) or {}
-        source_game_id = str(save_meta.get("source_game_id") or "")
-        game_ref = ref_by_source_game_id.get(source_game_id, save_file.parent.name)
-        game_label = title_by_source_game_id.get(source_game_id, save_file.parent.name)
-        table.add_row(
-            game_ref,
-            game_label,
-            str(save_meta.get("save_slot") or save_file.stem),
-            str(player.get("game_state", "?")),
-            str(player.get("score", 0)),
-            str(player.get("moves", 0)),
-            library_service.format_save_last_played(save_file),
-        )
+        for save_file in save_files:
+            save_meta = library_service.read_zork_metadata(save_file) or {}
+            player = library_service.read_player_state(save_file) or {}
+            save_slug = save_file.parent.name
+            game_label = title_by_slug.get(save_slug, save_slug)
+            saves_table.add_row(
+                save_slug,
+                game_label,
+                str(save_meta.get("save_slot") or save_file.stem),
+                str(player.get("game_state", "?")),
+                str(player.get("score", 0)),
+                str(player.get("moves", 0)),
+                library_service.format_save_last_played(save_file),
+            )
 
-    console.print(table)
+        console.print()
+        console.print(saves_table)
 
 
-@cli.command("delete-save")
+
+@cli.command("delete")
 @click.argument("game_ref", type=str)
-@click.option("--slot", required=True, help="Managed save slot to delete.")
-def delete_save(game_ref: str, slot: str) -> None:
-    """Delete a managed save slot for a library game."""
+@click.option(
+    "--save", "slot", default=None,
+    help="Delete only this save instead of the whole game.",
+)
+@click.option("--yes", is_flag=True, help="Delete without prompting for confirmation.")
+def delete_game(game_ref: str, slot: str | None, yes: bool) -> None:
+    """Delete a library game (and saves), or a single save with --save."""
     cfg = Config()
     try:
         source_path = library_service.resolve_game_reference(game_ref, cfg)
@@ -1267,49 +1379,29 @@ def delete_save(game_ref: str, slot: str) -> None:
             param_hint="game_ref",
         )
 
-    game_id = library_service.library_game_id(source_path)
-    if not game_id:
-        console.print(f"[red]Missing game_id metadata in {source_path}[/red]")
-        return
+    game_slug = source_path.stem
 
-    save_path = cfg.saves_dir / game_id / f"{library_service.sanitize_slot_name(slot)}.zork"
-    if not save_path.exists():
+    # Delete a single save
+    if slot is not None:
+        save_path = cfg.saves_dir / game_slug / f"{library_service.sanitize_slot_name(slot)}.zork"
+        if not save_path.exists():
+            console.print(
+                f"[dim]No save named[/dim] [cyan]{slot}[/cyan] "
+                f"[dim]for[/dim] [cyan]{source_path.stem}[/cyan]"
+            )
+            return
+        save_path.unlink()
         console.print(
-            f"[dim]No save slot named[/dim] [cyan]{slot}[/cyan] "
+            f"[green]Deleted save[/green] [cyan]{slot}[/cyan] "
             f"[dim]for[/dim] [cyan]{source_path.stem}[/cyan]"
         )
+        with contextlib.suppress(OSError):
+            save_path.parent.rmdir()
         return
 
-    save_path.unlink()
-    console.print(
-        f"[green]Deleted save slot[/green] [cyan]{slot}[/cyan] "
-        f"[dim]for[/dim] [cyan]{source_path.stem}[/cyan]"
-    )
-
-    with contextlib.suppress(OSError):
-        save_path.parent.rmdir()
-
-
-@cli.command("delete")
-@click.argument("game_ref", type=str)
-@click.option("--yes", is_flag=True, help="Delete without prompting for confirmation.")
-def delete_game(game_ref: str, yes: bool) -> None:
-    """Delete a library game and all of its managed save slots."""
-    cfg = Config()
-    try:
-        source_path = library_service.resolve_game_reference(game_ref, cfg)
-    except ValueError as exc:
-        raise click.BadParameter(str(exc), param_hint="game_ref") from exc
-
-    if library_service.is_within(source_path, cfg.saves_dir):
-        raise click.BadParameter(
-            "Delete the library game, not an individual save file. Use delete-save for slots.",
-            param_hint="game_ref",
-        )
-
-    game_id = library_service.library_game_id(source_path)
-    save_dir = cfg.saves_dir / game_id if game_id else None
-    save_count = len(list(save_dir.glob("*.zork"))) if save_dir and save_dir.exists() else 0
+    # Delete the whole game + all saves
+    save_dir = cfg.saves_dir / game_slug
+    save_count = len(list(save_dir.glob("*.zork"))) if save_dir.exists() else 0
 
     if not yes:
         prompt = (
@@ -1327,6 +1419,8 @@ def delete_game(game_ref: str, yes: bool) -> None:
         f"[green]Deleted library game[/green] [cyan]{source_path.stem}[/cyan] "
         f"[dim]and {save_count} managed save(s).[/dim]"
     )
+
+
 
 def main() -> None:
     """Entry point wired in pyproject.toml."""

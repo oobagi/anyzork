@@ -1,0 +1,81 @@
+flag escaped_bloodbath "Player reached safety"
+flag has_pack "Player has a backpack"
+flag has_machete "Player has the machete"
+flag looted_crate "Player opened the crate"
+flag found_all_gear "Player found all items"
+flag ate_poison "Player ate nightlock"
+
+interaction weapon_on_character {
+  tag      "weapon"
+  target   "character"
+  response "You swing the {item} at {target}! They cry out in pain."
+  effect   damage_target(40)
+  effect   set_flag(cato_defeated)
+}
+
+interaction weapon_on_furniture {
+  tag      "weapon"
+  target   "furniture"
+  response "You use the {item} to pry open the {target}."
+  effect   open_target()
+  effect   set_flag(looted_crate)
+}
+
+interaction food_on_character {
+  tag      "food"
+  target   "character"
+  response "You offer the {item} to {target}."
+  effect   set_flag(fed_rue)
+  print    "She smiles tentatively."
+}
+
+interaction weapon_on_default {
+  tag      "weapon"
+  target   "*"
+  response "You strike the {target} with your {item}, but it does nothing."
+}
+
+on "climb {target}" in [rocky_gully] {
+  success "You scramble up the shale-covered slope to the cliff edge."
+  effect move_player(cliff_edge)
+}
+
+on "climb {target}" {
+  success "There is nothing here worth climbing."
+}
+
+on "hide" in [pine_forest] {
+  success "You duck behind a thick pine tree, holding your breath as a tribute runs past."
+  effect add_score(5)
+  once
+}
+
+on "hide" {
+  success "There's not enough cover here to hide effectively."
+}
+
+when item_taken(orange_backpack) {
+  effect set_flag(has_pack)
+  message "You've secured some basic supplies. Better than nothing."
+}
+
+when item_taken(sharp_machete) {
+  effect set_flag(has_machete)
+  message "The weight of the steel is reassuring."
+}
+
+when flag_set(cato_attack) {
+  effect change_health(-30)
+  print "Cato slashes you with his spear! You're bleeding."
+}
+
+when room_enter(deep_woods) {
+  effect set_flag(escaped_bloodbath)
+  effect add_score(30)
+  message "You have made it to the deep woods. The sounds of the bloodbath are gone."
+}
+
+when flag_set(ate_poison) {
+  effect change_health(-100)
+  message "The berries are sweet, but your throat closes up instantly. Nightlock."
+  once

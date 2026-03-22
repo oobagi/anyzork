@@ -71,6 +71,7 @@ def load_config_file() -> dict:
         "narrator_max_tokens",
         "games_dir",
         "saves_dir",
+        "cache_dir",
         "public_catalog_dir",
         "catalog_url",
         "upload_url",
@@ -126,6 +127,7 @@ class Config(BaseSettings):
     # --- Paths ---
     games_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "games")
     saves_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "saves")
+    cache_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "cache")
     public_catalog_dir: Path = Field(
         default_factory=lambda: Path.home() / ".anyzork" / "public_catalog"
     )
@@ -160,6 +162,7 @@ class Config(BaseSettings):
         """Resolve managed AnyZork directories to absolute paths."""
         self.games_dir = self.games_dir.expanduser().resolve()
         self.saves_dir = self.saves_dir.expanduser().resolve()
+        self.cache_dir = self.cache_dir.expanduser().resolve()
         self.public_catalog_dir = self.public_catalog_dir.expanduser().resolve()
         return self
 

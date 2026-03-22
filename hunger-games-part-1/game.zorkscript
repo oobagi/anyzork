@@ -1,0 +1,15 @@
+game {
+  title      "The 74th Hunger Games: The Bloodbath"
+  author     "Survival in the Arena. Grab what you can. Live."
+  intro      "You stand upon a metal pedestal. Around you, eleven other tributes wait in a circle. In the center lies the Cornucopia, a golden horn overflowing with life-saving supplies. The countdown reaches zero. The gong sounds. Run or die."
+  win_text   "You have survived the initial bloodbath and vanished into the treeline. The Games have truly begun."
+  lose_text  "A cannon fires in the distance. Your vision fades as the Capitol cheers your demise."
+  max_score  100
+  realism    "medium"
+  win        [escaped_bloodbath]
+}
+
+player {
+  start  pedestal
+  hp     100
+}

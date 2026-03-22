@@ -1,0 +1,61 @@
+room seam_house {
+  name        "Everdeen House"
+  description "A small, cramped house in the Seam. The floorboards are worn smooth, and a thin layer of coal dust coats the windowsills."
+  short       "Your home in the Seam."
+  start       true
+
+  exit east -> dusty_lane "An unpaved path leads out toward the Square."
+}
+
+room dusty_lane {
+  name        "Dusty Lane"
+  description "A narrow path between sagging houses. Men with gray skin and slumped shoulders shuffle toward the mines."
+  short       "A lane in the Seam."
+
+  exit west -> seam_house "Your house is to the west."
+  exit east -> justice_building_square "The lane opens into the Justice Building Square."
+}
+
+room justice_building_square {
+  name        "Justice Building Square"
+  description "A large paved area surrounded by shops. High-rise banners of Panem hang from the Justice Building. A temporary stage has been erected for the Reaping."
+  short       "The Reaping Square."
+  first_visit "Thousands of people are gathered here, kept in place by rope dividers and Peacekeepers."
+
+  exit west -> dusty_lane "The path back to the Seam."
+  exit north -> tribute_train (locked) "A heavily guarded train waits on the tracks."
+}
+
+room tribute_train {
+  name        "The Tribute Train"
+  description "A marvel of Capitol engineering. The interior is plush, filled with velvet chairs, crystal decanters, and more food than you have seen in your life."
+  short       "The luxury train."
+  
+  exit south -> justice_building_square "The station platform."
+  exit north -> training_center "The train arrives at the sprawling Training Center."
+}
+
+room training_center {
+  name        "The Training Center"
+  description "A massive gymnasium filled with various stations: knot-tying, camouflage, wrestling, and weapons training. Tall windows overlook the Capitol skyline."
+  short       "The training gym."
+
+  exit south -> tribute_train "The train back to the district (now locked)."
+  exit up -> arena_pedestal (locked) "The elevator to the arena launchers."
+}
+
+room arena_pedestal {
+  name        "The Pedestal"
+  description "You stand on a cold metal plate. To your front is the Cornucopia, a giant golden horn filled with supplies. To your sides, other tributes wait for the countdown."
+  short       "The Arena start."
+  first_visit "The sun is blinding. Sixty seconds. If you step off early, you die."
+
+  exit north -> cornucopia "The golden horn lies ahead."
+}
+
+room cornucopia {
+  name        "The Cornucopia"
+  description "A chaotic pile of crates, weapons, and orange backpacks. The ground is littered with the supplies of the fallen."
+  short       "The center of the Arena."
+  dark        false
+}

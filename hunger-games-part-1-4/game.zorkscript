@@ -1,0 +1,18 @@
+game {
+  title      "The 74th Hunger Games: The Bloodbath"
+  author     "Survival in the Arena. Secure supplies, avoid Careers, and endure."
+  intro      "The gong sounds. A shimmering heat rises from the forest floor. You stand upon a metal pedestal, the Cornucopia gleaming with lethal promise before you. Sixty seconds of silence have ended. The Games have begun."
+  win_text   "The cannon fires for the final time. You are the victor of the 74th Hunger Games."
+  lose_text  "Your vision fades as the sound of a cannon echoes in the distance. You have fallen."
+  max_score  150
+  realism    "medium"
+  win        [is_victor]
+}
+
+player {
+  start pedestal
+  hp    100
+}
+
+flag is_victor "The player has won the games"
+flag dead_by_landmine "The player stepped off the pedestal too early"

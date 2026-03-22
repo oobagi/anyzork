@@ -20,7 +20,7 @@ env/
 !.claude/agents/
 !.claude/skills/
 
-# SQLite / game files
+# Game archives and SQLite cache/save files
 *.db
 *.sqlite
 *.sqlite3
@@ -43,3 +43,7 @@ htmlcov/
 
 # AnyZork local data
 .anyzork/
+
+# Generated game projects
+**/manifest.toml
+!anyzork/**/manifest.toml

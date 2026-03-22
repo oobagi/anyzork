@@ -121,6 +121,26 @@ def sorted_save_files(save_dir: Path) -> list[Path]:
     return sorted(save_dir.glob("*.zork"), key=save_last_played_timestamp, reverse=True)
 
 
+def read_archive_metadata(path: Path) -> dict | None:
+    """Read metadata from a .zork archive's manifest.toml."""
+    try:
+        import tomllib
+        import zipfile
+
+        with zipfile.ZipFile(path, "r") as zf, zf.open("manifest.toml") as f:
+            data = tomllib.load(f)
+        project = data.get("project", {})
+        return {
+            "title": project.get("title", "Untitled"),
+            "author": project.get("author", ""),
+            "slug": project.get("slug", path.stem),
+            "description": project.get("description", ""),
+            "tags": project.get("tags", []),
+        }
+    except Exception:
+        return None
+
+
 def format_metadata_versions(meta: dict | None) -> str:
     """Format runtime and prompt-system versions for display."""
     if not meta:
@@ -135,6 +155,8 @@ def format_metadata_versions(meta: dict | None) -> str:
 
 def resolve_game_reference(game_ref: str, cfg: Config | None = None) -> Path:
     """Resolve a CLI/TUI game reference to a concrete .zork path."""
+    from anyzork.archive import is_zork_archive
+
     cfg = cfg or Config()
     candidate = Path(game_ref).expanduser()
     if candidate.exists():
@@ -145,16 +167,28 @@ def resolve_game_reference(game_ref: str, cfg: Config | None = None) -> Path:
     if direct_library_path.exists():
         return direct_library_path
 
+    # Search by slug/title in library archives
     library_matches: list[Path] = []
     target_slug = slugify_name(candidate.stem)
     for zork_path in sorted(cfg.games_dir.glob("*.zork")):
-        meta = read_zork_metadata(zork_path) or {}
-        if game_ref == meta.get("game_id"):
-            return zork_path.resolve()
+        if is_zork_archive(zork_path):
+            meta = read_archive_metadata(zork_path)
+            if meta:
+                if meta.get("slug") == candidate.stem:
+                    library_matches.append(zork_path.resolve())
+                    continue
+                if slugify_name(str(meta.get("title", ""))) == target_slug:
+                    library_matches.append(zork_path.resolve())
+                    continue
+        else:
+            # Non-archive .zork files (saves, direct paths)
+            meta = read_zork_metadata(zork_path) or {}
+            if game_ref == meta.get("game_id"):
+                return zork_path.resolve()
+            if slugify_name(str(meta.get("title", ""))) == target_slug:
+                library_matches.append(zork_path.resolve())
+                continue
         if zork_path.stem == candidate.stem:
-            library_matches.append(zork_path.resolve())
-            continue
-        if slugify_name(str(meta.get("title", ""))) == target_slug:
             library_matches.append(zork_path.resolve())
 
     if len(library_matches) == 1:
@@ -172,19 +206,26 @@ def prepare_managed_save(
     cfg: Config | None = None,
 ) -> tuple[Path, str]:
     """Return the managed save path for a source game, cloning when needed."""
+    from anyzork.archive import is_zork_archive
     from anyzork.db.schema import GameDB
+    from anyzork.services.cache import ensure_compiled
 
     cfg = cfg or Config()
-    source_meta = read_zork_metadata(source_path) or {}
-    source_game_id = source_meta.get("game_id") or slugify_name(source_path.stem)
+    source_slug = source_path.stem
     slot_slug = sanitize_slot_name(slot)
-    save_path = cfg.saves_dir / source_game_id / f"{slot_slug}.zork"
+    save_path = cfg.saves_dir / source_slug / f"{slot_slug}.zork"
 
     if restart or not save_path.exists():
-        copy_zork_file(source_path, save_path)
+        # Determine the compiled .db to copy from
+        if is_zork_archive(source_path):
+            compiled_path = ensure_compiled(source_path, cfg)
+        else:
+            compiled_path = source_path  # already a .db or direct file
+
+        copy_zork_file(compiled_path, save_path)
         with GameDB(save_path) as db:
             db.set_meta("game_id", str(uuid4()))
-            db.set_meta("source_game_id", str(source_game_id))
+            db.set_meta("source_game_id", source_slug)
             db.set_meta("source_path", str(source_path))
             db.set_meta("save_slot", slot)
             db.set_meta("is_template", 0)
@@ -206,23 +247,29 @@ def library_game_id(path: Path) -> str | None:
 
 def list_library_overview(cfg: Config | None = None) -> LibraryOverview:
     """Return combined summaries for library games and managed saves."""
+    from anyzork.archive import is_zork_archive
+
     cfg = cfg or Config()
     library_files = sorted(cfg.games_dir.glob("*.zork")) if cfg.games_dir.exists() else []
     save_files = sorted(cfg.saves_dir.glob("*/*.zork")) if cfg.saves_dir.exists() else []
 
     games: list[GameSummary] = []
     saves: list[SaveSummary] = []
-    title_by_source_game_id: dict[str, str] = {}
 
     for zork_file in library_files:
-        meta = read_zork_metadata(zork_file) or {}
-        game_id = meta.get("game_id")
-        if game_id:
-            title_by_source_game_id[str(game_id)] = zork_file.stem
+        game_slug = zork_file.stem
 
-        slot_files = []
-        if game_id:
-            slot_files = sorted((cfg.saves_dir / str(game_id)).glob("*.zork"))
+        if is_zork_archive(zork_file):
+            meta = read_archive_metadata(zork_file) or {}
+            title = str(meta.get("title", "Untitled"))
+            version = ""  # archives don't have runtime version in manifest
+        else:
+            meta = read_zork_metadata(zork_file) or {}
+            title = str(meta.get("title", "Untitled"))
+            version = format_metadata_versions(meta)
+
+        slot_dir = cfg.saves_dir / game_slug
+        slot_files = sorted(slot_dir.glob("*.zork")) if slot_dir.exists() else []
         latest_desc = "new"
         active_saves = 0
         if slot_files:
@@ -238,10 +285,10 @@ def list_library_overview(cfg: Config | None = None) -> LibraryOverview:
 
         games.append(
             GameSummary(
-                ref=zork_file.stem,
-                title=str(meta.get("title", "Untitled")),
+                ref=game_slug,
+                title=title,
                 path=zork_file.resolve(),
-                version=format_metadata_versions(meta),
+                version=version,
                 runs=len(slot_files),
                 active_saves=active_saves,
                 latest_run=latest_desc,
@@ -249,14 +296,13 @@ def list_library_overview(cfg: Config | None = None) -> LibraryOverview:
         )
 
     for save_file in sorted(save_files, key=save_last_played_timestamp, reverse=True):
-        meta = read_zork_metadata(save_file) or {}
+        save_meta = read_zork_metadata(save_file) or {}
         player = read_player_state(save_file) or {}
-        source_game_id = str(meta.get("source_game_id") or "")
-        game_label = title_by_source_game_id.get(source_game_id, save_file.parent.name)
+        game_label = save_file.parent.name
         saves.append(
             SaveSummary(
                 game=game_label,
-                slot=str(meta.get("save_slot") or save_file.stem),
+                slot=str(save_meta.get("save_slot") or save_file.stem),
                 state=str(player.get("game_state", "?")),
                 score=int(player.get("score", 0)),
                 moves=int(player.get("moves", 0)),

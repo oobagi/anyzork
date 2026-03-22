@@ -12,7 +12,7 @@ AnyZork ships a simple authoring-to-runtime loop:
 
 1. `anyzork generate` builds a ZorkScript authoring prompt.
 2. An external LLM returns ZorkScript.
-3. `anyzork import` compiles that ZorkScript into a portable SQLite `.zork` file.
+3. `anyzork import` compiles that ZorkScript into a portable `.zork` archive.
 4. `anyzork play` runs the game with a deterministic engine.
 
 No LLM is required at runtime unless the player explicitly enables narrator mode.
@@ -38,13 +38,13 @@ No LLM is required at runtime unless the player explicitly enables narrator mode
 | Configuration | [docs/guides/CONFIGURATION.md](docs/guides/CONFIGURATION.md) | Config file, env vars, providers |
 | Narrator Mode | [docs/guides/NARRATOR.md](docs/guides/NARRATOR.md) | Optional LLM prose layer |
 | Sharing Games | [docs/server/SHARING.md](docs/server/SHARING.md) | Publishing, browsing, installing |
-| ADR-001: SQLite | [docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md](docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md) | Why `.zork` files are SQLite |
+| ADR-001: SQLite | [docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md](docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md) | Original SQLite rationale (superseded) |
 
 ## Tech Stack
 
 - Python 3.11+
 - `click` + `rich` CLI
-- SQLite `.zork` files for game and save state
+- `.zork` archives (zip) for game distribution; SQLite for compilation cache and save state
 - `pydantic-settings` config with `ANYZORK_` env vars
 - Claude / OpenAI / Gemini support for optional narrator mode
 
@@ -62,7 +62,7 @@ No LLM is required at runtime unless the player explicitly enables narrator mode
 
 ## Key Features
 
-- Deterministic runtime with SQLite-backed world state
+- Deterministic runtime with archive-backed world data and SQLite compilation cache
 - ZorkScript-based authoring and local compilation
 - Structured command DSL for game logic
 - Quest, trigger, container, dialogue, and item-state systems

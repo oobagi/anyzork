@@ -1,0 +1,20 @@
+quest main:escape_the_atrium {
+name        "The Final Resonance"
+description "Gather all three shards and activate the Resonance Gate to escape."
+completion  gate_powered
+score       20
+
+objective "Acquire the Sapphire Shard" -> sapphire_found
+objective "Acquire the Ruby Shard" -> ruby_found
+objective "Acquire the Emerald Shard" -> emerald_found
+}
+
+quest side:feed_the_echoes {
+name        "Mercy for the Dead"
+description "The Echo Guardian is hungry. Find him something to eat."
+completion  guardian_satisfied
+score       10
+
+objective "Find food in the atrium" -> item_taken(dried_meat)
+objective "Give food to the guardian" -> guardian_satisfied
+}

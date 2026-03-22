@@ -1,0 +1,22 @@
+quest main:shed_odyssey {
+  name        "The Shed Odyssey"
+  description "Cheese and Bugs must navigate the house and the garden to reach the safety of the old shed."
+  completion  reached_shed
+  score       50
+
+  objective "Find the batteries in the kitchen" -> found_batteries
+  objective "Power up the small flashlight" -> flashlight_powered
+  objective "Retrieve the brass key from the hallway" -> found_key
+  objective "Unlock the path to the garden" -> porch_unlocked
+  objective "Reach the sanctuary of the old shed" -> reached_shed
+}
+
+quest side:snack_attack {
+  name        "Snack Attack"
+  description "Chaos requires fuel. Find and enjoy some treats."
+  completion  ate_treats
+  score       20
+
+  objective "Locate the bag of salmon treats" -> found_treats
+  objective "Enjoy a well-deserved snack" -> ate_treats
+}

@@ -127,9 +127,15 @@ class _Parser:
     # -- Helpers --
 
     def _peek(self) -> _Token:
+        if self._pos >= len(self._tokens):
+            line = self._tokens[-1].line if self._tokens else 0
+            raise ZorkScriptError("unexpected end of input", line)
         return self._tokens[self._pos]
 
     def _advance(self) -> _Token:
+        if self._pos >= len(self._tokens):
+            line = self._tokens[-1].line if self._tokens else 0
+            raise ZorkScriptError("unexpected end of input", line)
         tok = self._tokens[self._pos]
         self._pos += 1
         return tok

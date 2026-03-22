@@ -1,0 +1,144 @@
+flag manual_read "The subject has read the instruction manual"
+flag test_complete "The test has been successfully concluded"
+flag camera_smashed "Surveillance has been neutralized"
+flag terminal_hacked "The sleek terminal has been bypassed"
+flag npc_killed "A facility entity has been neutralized"
+flag bot_powered "The maintenance bot is active"
+
+--- SPECIFIC Commands ---
+on "push {target}" in [test_chamber] {
+require is_item(red_button)
+require not_flag(button_pushed)
+
+effect set_flag(button_pushed)
+effect add_score(10)
+effect print("A loud buzz echoes. The metal_crate lid pops open.")
+
+success "You depress the red_button firmly."
+}
+
+on "pull {target}" in [test_chamber] {
+require is_item(floor_grate)
+require not_flag(code_found)
+
+effect make_visible(metal_pipe)
+effect set_flag(code_found)
+effect add_score(5)
+
+success "You heave the floor_grate aside. A metal_pipe and a scratched code '042' are revealed beneath."
+}
+
+on "smash {target}" in [test_chamber] {
+require is_item(security_camera)
+require has_item(metal_pipe)
+require not_flag(camera_smashed)
+
+effect set_flag(camera_smashed)
+effect change_description(security_camera, "A shattered mess of glass and wires hangs from the wall.")
+effect add_score(15)
+
+success "You swing the pipe, shattering the security_camera lens."
+fail "You have nothing heavy enough to reach the camera."
+}
+
+--- GLOBAL FALLBACKS ---
+on "push {target}" {
+success "It doesn't seem designed to be pushed."
+}
+
+on "pull {target}" {
+success "It doesn't budge."
+}
+
+on "smash {target}" {
+success "You lack the strength or the tools to smash that."
+}
+
+--- TRIGGERS ---
+when item_taken(instruction_manual) {
+effect set_flag(manual_read)
+message "The manual contains several highlighted sections regarding the lockbox."
+once
+}
+
+when room_enter(the_outside) {
+require has_flag(door_opened)
+
+effect set_flag(test_complete)
+effect add_score(50)
+message "The cold air hits your face. You have passed the test."
+once
+}
+
+when flag_set(npc_killed) {
+effect add_score(-20)
+message "A siren wails briefly. Violence was not a requested parameter."
+once
+}
+
+when dialogue_node(maintenance_bot_root) {
+require not_flag(bot_powered)
+effect set_flag(bot_powered)
+once
+}
+
+--- INTERACTION RESPONSES ---
+interaction weapon_on_character {
+tag      "weapon"
+target   "character"
+response "You strike the {target} with the {item}. It emits a shower of sparks!"
+effect   damage_target(100)
+effect   set_flag(npc_killed)
+effect   kill_target()
+}
+
+interaction tool_on_device {
+tag      "tool"
+target   "device"
+response "You interface the {item} with the {target}. Data streams across the display."
+effect   set_flag(terminal_hacked)
+effect   set_flag(door_opened)
+effect   unlock(containment_lock)
+effect   add_score(20)
+}
+
+interaction cube_on_fixture {
+tag      "cube"
+target   "fixture"
+response "You carefully balance the {item} on the {target}."
+effect   set_flag(cube_placed)
+effect   print("A status light on the wall turns green.")
+}
+
+interaction weapon_on_furniture {
+tag      "weapon"
+target   "furniture"
+response "You bash the {target} with the {item}. It's durable, but now it's dented."
+effect   add_score(2)
+}
+
+interaction food_on_character {
+tag      "food"
+target   "character"
+response "You try to feed the {item} to the {target}, but it has no mouth."
+consumes 1
+}
+
+interaction tool_on_container {
+tag      "tool"
+target   "container"
+response "You use the {item} to pry at the {target}."
+effect   open_target()
+}
+
+interaction weapon_on_default {
+tag      "weapon"
+target   "*"
+response "You swing the {item} at the {target}. Clang! Nothing happens."
+}
+
+interaction default_use {
+tag      ""
+target   ""
+response "Using the {item} on the {target} yields no results."
+}

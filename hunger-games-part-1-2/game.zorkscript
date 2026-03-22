@@ -1,0 +1,28 @@
+game {
+  title       "The 74th Hunger Games: District 12"
+  author      "A survival simulation of the Reaping and the Training Center."
+  intro       "The morning of the Reaping is hot. You wake in the Seam, the smell of coal dust and fear hanging in the air. Today, one boy and one girl will be chosen to represent District 12 in the Hunger Games."
+  win_text    "The hovercraft lifts you from the arena pedestal. You have survived the first stage of the Games."
+  lose_text   "The cannon fires. Your journey ends here in the dust of Panem."
+  max_score   150
+  realism     "medium"
+  win         [tribute_escaped_arena]
+}
+
+player {
+  start       seam_house
+  hp          100
+  max_hp      100
+}
+
+flag tribute_escaped_arena "Player has survived the opening bloodbath"
+flag reaping_complete "The Reaping ceremony has finished"
+flag volunteered "The player volunteered to save a family member"
+flag training_done "The player has completed training sessions"
+flag scored_high "The player received a high training score"
+flag has_sponsor "A sponsor has noticed the player"
+flag peacekeeper_distracted "The peacekeepers are looking away"
+flag bag_taken "The player grabbed a bag from the Cornucopia"
+flag cat_fed "Buttercup the cat has been fed"
+flag sister_saved "Prim has been saved from the Reaping"
+flag arrived_capitol "The tribute train has reached the Capitol"

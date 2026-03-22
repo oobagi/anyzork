@@ -1,0 +1,71 @@
+npc echo_guardian {
+name        "Echo Guardian"
+description "A shimmering, translucent figure clad in ancient robes."
+examine     "The figure is mostly transparent, but its eyes hold a deep weariness. It seems to be waiting for something."
+in          solaris_wing
+home        solaris_wing
+category    "character"
+room_desc   "A shimmering Echo Guardian stands near the pedestal, looking hungry."
+dialogue    "The guardian sighs, a sound like wind through dry grass."
+
+talk root {
+"The sun has set on my people, yet I remain. I guard the Ruby until a provider arrives."
+option "Who are you?" -> identity
+option "I need the key to the pedestal." -> key_request
+option "Goodbye."
+}
+
+talk identity {
+"I am the memory of the sun's first rays. I was bound here to ensure only those with compassion could reach the shards."
+option "I see." -> root
+option "Never mind."
+}
+
+talk key_request {
+"My service has lasted centuries, and my spirit grows thin. Feed the echo, and I shall grant you the sun's key."
+option "I will see what I can find." -> root {
+require not_flag(guardian_satisfied)
+}
+option "I have some meat for you." -> satisfied {
+require_item dried_meat
+}
+}
+
+talk satisfied {
+"The guardian takes the meat, which vanishes into his shimmering form. 'The cycle continues,' he whispers, handing you a key."
+effect consume_quantity(dried_meat, 1)
+effect spawn_item(silver_key, _inventory)
+effect set_flag(guardian_satisfied)
+effect add_score(10)
+option "Thank you." -> end
+}
+}
+
+npc scriptorium_ghost {
+name        "Ghostly Scribe"
+description "A faint spirit hovering over a desk, clutching a spectral quill."
+examine     "He is frantically writing on nothingness, ignoring his surroundings."
+in          scriptorium
+home        scriptorium
+category    "character"
+room_desc   "A Ghostly Scribe hovers near one of the ink-stained desks."
+dialogue    "He mutters about ink and deadlines."
+
+talk root {
+"Ink! I need more ink! The history of 451 will not write itself!"
+option "What happened in 451?" -> history
+option "Do you know the safe combination?" -> code_hint
+option "I'll leave you to your work."
+}
+
+talk history {
+"The Year of the Fall! The shadows came and the archives were sealed. We lost so much... but the Sapphire is safe."
+option "Tell me more about the safe." -> code_hint
+option "Goodbye."
+}
+
+talk code_hint {
+"The safe? It is locked with the memory of our ending. Look to the notes of the archive if your memory fails you."
+option "Thank you." -> end
+}
+}[201

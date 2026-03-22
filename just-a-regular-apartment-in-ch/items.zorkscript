@@ -1,0 +1,4 @@
+player {
+start living_room
+hp    100
+}

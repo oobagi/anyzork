@@ -1,0 +1,32 @@
+flag cato_dead "Cato has been defeated"
+flag rue_fed "Rue has been given food"
+flag rue_helped "Rue has shared information"
+flag crate_opened "The silver crate is open"
+flag reached_woods "Player reached the woods"
+flag has_weapon "Player has a weapon"
+
+lock forest_exit {
+  exit      treeline -> deep_woods north
+  type      "flag"
+  flags     [rue_fed]
+  locked    "The undergrowth is too thick to pass. You can't find the trail."
+  unlocked  "Following Rue's directions, you find a hidden path through the thickets."
+}
+
+puzzle supplies_puzzle {
+  name        "Secure Supplies"
+  description "You can't survive the games without gear. Get a backpack and a weapon."
+  in          cornucopia_fringe
+  score       30
+  steps       ["Pick up the orange backpack", "Open the silver crate", "Get the hunting knife"]
+  hint        "The silver crate requires a code found nearby."
+}
+
+puzzle escape_puzzle {
+  name        "Into the Trees"
+  description "Escape the bloodbath at the Cornucopia."
+  in          treeline
+  score       50
+  steps       ["Talk to Rue", "Find the hidden path", "Enter the deep woods"]
+  hint        "Rue might help you if you show her some kindness."
+}

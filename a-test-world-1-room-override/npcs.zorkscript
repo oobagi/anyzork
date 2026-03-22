@@ -1,0 +1,74 @@
+npc maintenance_bot {
+name        "Maintenance Bot"
+description "A small, three-wheeled robot with a single optical sensor."
+examine     "It is currently stationary. A small hatch on its chest is labeled 'POWER INPUT'."
+in          test_chamber
+home        test_chamber
+room_desc   "A maintenance_bot is parked near the glass_window, powered down."
+dialogue    "The bot's sensor is dark."
+category    "character"
+
+talk root {
+"The bot chirps and its sensor glows blue. 'Unit 74 operational. How may I assist the test subject?'"
+option "How do I leave?" -> exit_info
+option "What are you doing?" -> job_info
+option "Never mind." -> end
+}
+
+talk exit_info {
+"'Access to the perimeter requires a validated access_card. These are typically kept in secure lockboxes.'"
+option "Where is the lockbox?" -> lockbox_info
+option "Thanks." -> root
+}
+
+talk lockbox_info {
+"'The emergency lockbox is located near the northern portal. It requires an override code.' "
+option "Do you know the code?" -> code_hint
+option "Goodbye." -> end
+}
+
+talk code_hint {
+"'Codes are distributed via official documentation or hidden in maintenance areas for technician access.' "
+option "I see." -> root
+}
+
+talk job_info {
+"'I maintain chamber cleanliness and monitor subject vitals. Please do not obstruct my path.'"
+option "Okay." -> root
+}
+}
+
+npc observer_alpha {
+name        "Observer Alpha"
+description "A voice emanating from hidden speakers."
+examine     "The voice sounds synthesized, but with a hint of bored authority."
+in          test_chamber
+home        test_chamber
+room_desc   "A voice crackles over the intercom occasionally."
+dialogue    "The intercom hums with static."
+category    "character"
+
+talk root {
+"A crackle of static. 'Subject 114, please proceed with the test. Your cooperation is noted.'"
+option "Who are you?" -> who_info
+option "What happens if I fail?" -> fail_info
+option "I'm leaving." -> end
+}
+
+talk who_info {
+"'I am the lead analyst for this cycle. My name is of no consequence to the parameters of the test.'"
+option "Are there others?" -> others_info
+option "Fine." -> root
+}
+
+talk others_info {
+"'There are many observers. We are all waiting for your results.'"
+option "Creepy." -> root
+}
+
+talk fail_info {
+"'Failure is an acceptable data point. However, it usually results in the immediate termination of the subject's contract.'"
+option "Contract?" -> root
+option "Goodbye." -> end
+}
+}

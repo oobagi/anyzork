@@ -89,7 +89,7 @@ class CatalogStore:
         published: bool = False,
         allow_replace: bool = False,
     ) -> UploadedGame:
-        """Validate and store an uploaded ``.anyzorkpkg``."""
+        """Validate and store an uploaded ``.zork`` share package."""
         package_path = package_path.expanduser().resolve()
         manifest = _read_manifest_from_package(package_path)
         game_meta = dict(manifest.get("game", {}))
@@ -109,7 +109,7 @@ class CatalogStore:
                 "Choose a different slug."
             )
 
-        package_target = self.packages_dir / f"{normalized_slug}.anyzorkpkg"
+        package_target = self.packages_dir / f"{normalized_slug}.zork"
         package_target.write_bytes(package_path.read_bytes())
 
         now = datetime.now(UTC).isoformat()
@@ -318,11 +318,12 @@ class CatalogStore:
 
 
 def _read_manifest_from_package(package_path: Path) -> dict[str, object]:
-    """Read and validate the manifest from a share package."""
-    if package_path.suffix != ".anyzorkpkg":
-        raise SharePackageError("Uploads must be .anyzorkpkg files.")
-
+    """Read and validate the manifest from a share package (.zork archive)."""
     import tempfile
+    import zipfile
+
+    if not zipfile.is_zipfile(package_path):
+        raise SharePackageError("Uploads must be .zork archive files.")
 
     with tempfile.TemporaryDirectory(prefix="anyzork-catalog-") as tmp:
         manifest, _game_path = _extract_share_package(package_path, Path(tmp))

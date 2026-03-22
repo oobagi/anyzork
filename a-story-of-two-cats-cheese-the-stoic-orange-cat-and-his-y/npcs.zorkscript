@@ -1,0 +1,81 @@
+npc cheese_the_cat {
+name        "Cheese"
+description "A massive orange tabby with a very serious face and one clipped ear."
+examine     "He looks like he's contemplating the fundamental laws of physics, or perhaps just his next meal. His orange fur is remarkably soft."
+in          bedroom
+home        bedroom
+room_desc   "Cheese is curled up under the bed, looking like a grumpy orange loaf."
+dialogue    "He blinks slowly at you, his pupils narrowing as he judges your chaotic energy."
+category    "character"
+
+talk root {
+"He lets out a heavy, dramatic sigh. 'Bugs. It is the hour of the Nap. Why have you disturbed the loaf?'"
+option "The Tall One put the Churu on top of the fridge!" -> churu_chat
+option "I have a gift for you." -> give_gift {
+require_item catnip_mouse
+}
+option "Just checking if you're still orange." -> tease_cheese
+option "Sorry, go back to sleep." -> end
+}
+
+talk churu_chat {
+"'The Yellow Tube? High above? Hmph. My jumping days are behind me, little brother. Unless... I had some proper motivation.'"
+option "What kind of motivation?" -> motivation
+option "I'll find something." -> end
+}
+
+talk motivation {
+"'Something green. Something stinky. Something that makes the world spin. Bring me the nip, and we shall discuss heist logistics.'"
+option "The catnip mouse! I'll go get it." -> end
+option "I'll see what I can do." -> end
+}
+
+talk give_gift {
+"His eyes go wide as he sniffs the catnip mouse. He snatches it and begins to roll around frantically on the carpet. 'OH YES. THE GOOD STUFF. I AM ALIVE!'"
+effect remove_item(catnip_mouse)
+effect set_flag(cheese_awake)
+effect add_score(20)
+option "Now, about that Churu..." -> heist_start
+}
+
+talk heist_start {
+"'Lead the way, tiny chaotic one. To the kitchen! We shall form a cat-ladder and conquer the fridge!'"
+effect move_npc(cheese_the_cat, kitchen)
+option "Let's go!" -> end
+}
+
+talk tease_cheese {
+"He turns his back to you with great dignity. 'I am ginger, not orange. There is a distinct, majestic difference.'"
+option "If you say so." -> root
+}
+}
+
+npc tall_one_human {
+name        "The Tall One"
+description "A large, two-legged creature wearing a 'CSU Chico' sweatshirt and fuzzy socks."
+examine     "They are currently staring at a glowing rectangle (their phone) and occasionally saying 'Aww' at videos of other cats on the internet."
+in          kitchen
+home        kitchen
+room_desc   "The Tall One is standing by the counter, blocking the path to the Great White Fridge."
+dialogue    "They look down and smile, reaching out a hand. 'Hey Bugs, you hungry buddy?'"
+category    "character"
+blocking    kitchen -> fridge_tower north
+unblock     tall_one_distracted
+
+talk root {
+"They scratch you behind the ears in just the right spot. 'No treats yet, Bugs. You just ate breakfast five hours ago. You'll survive.'"
+option "Meow loudly and pathetically." -> meow_response
+option "Rub against their legs until they trip." -> rub_legs
+option "Walk away and plot their downfall." -> end
+}
+
+talk meow_response {
+"'I know, I know. You're starving. You're practically wasting away into a tiny gray puddle.'"
+option "Meow even louder!" -> root
+}
+
+talk rub_legs {
+"'You're so sweet when you want something. But the answer is still no. Go play with your cardboard box.'"
+option "Purr loudly." -> root
+}
+}

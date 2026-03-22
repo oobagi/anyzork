@@ -16,11 +16,11 @@ create_catalog_app = importlib.import_module("anyzork.catalog_api").create_catal
 
 def test_catalog_store_builds_public_catalog(
     tmp_path: Path,
-    compiled_game_path: Path,
+    zork_archive_path: Path,
 ) -> None:
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
+    package_path = tmp_path / "fixture_game.zork"
     create_share_package(
-        compiled_game_path,
+        zork_archive_path,
         package_path,
         author="AnyZork",
         description="A compact uploaded game.",
@@ -42,11 +42,11 @@ def test_catalog_store_builds_public_catalog(
 
 def test_catalog_api_uploads_games_as_unpublished_submissions(
     tmp_path: Path,
-    compiled_game_path: Path,
+    zork_archive_path: Path,
 ) -> None:
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
+    package_path = tmp_path / "fixture_game.zork"
     create_share_package(
-        compiled_game_path,
+        zork_archive_path,
         package_path,
         author="AnyZork",
         description="Uploaded through the package manifest.",
@@ -64,7 +64,7 @@ def test_catalog_api_uploads_games_as_unpublished_submissions(
         response = client.post(
             "/api/games",
             files={
-                "package": ("fixture_game.anyzorkpkg", handle, "application/zip"),
+                "package": ("fixture_game.zork", handle, "application/zip"),
             },
         )
 
@@ -92,11 +92,11 @@ def test_catalog_api_uploads_games_as_unpublished_submissions(
 
 def test_catalog_api_rejects_duplicate_slug_submissions(
     tmp_path: Path,
-    compiled_game_path: Path,
+    zork_archive_path: Path,
 ) -> None:
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
+    package_path = tmp_path / "fixture_game.zork"
     create_share_package(
-        compiled_game_path,
+        zork_archive_path,
         package_path,
         slug="fixture-custom",
     )
@@ -106,7 +106,7 @@ def test_catalog_api_rejects_duplicate_slug_submissions(
     with package_path.open("rb") as handle:
         first = client.post(
             "/api/games",
-            files={"package": ("fixture_game.anyzorkpkg", handle, "application/zip")},
+            files={"package": ("fixture_game.zork", handle, "application/zip")},
         )
 
     assert first.status_code == 201, first.text
@@ -114,7 +114,7 @@ def test_catalog_api_rejects_duplicate_slug_submissions(
     with package_path.open("rb") as handle:
         second = client.post(
             "/api/games",
-            files={"package": ("fixture_game.anyzorkpkg", handle, "application/zip")},
+            files={"package": ("fixture_game.zork", handle, "application/zip")},
         )
 
     assert second.status_code == 400, second.text
@@ -124,10 +124,10 @@ def test_catalog_api_rejects_duplicate_slug_submissions(
 def test_catalog_api_ignores_client_filename_paths(
     monkeypatch,
     tmp_path: Path,
-    compiled_game_path: Path,
+    zork_archive_path: Path,
 ) -> None:
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
-    create_share_package(compiled_game_path, package_path, slug="fixture-custom")
+    package_path = tmp_path / "fixture_game.zork"
+    create_share_package(zork_archive_path, package_path, slug="fixture-custom")
     app = create_catalog_app(root_dir=tmp_path / "catalog")
     client = testclient.TestClient(app)
     scratch_dir = tmp_path / "scratch"
@@ -145,12 +145,12 @@ def test_catalog_api_ignores_client_filename_paths(
 
     monkeypatch.setattr("anyzork.catalog_api.tempfile.TemporaryDirectory", StableTemporaryDirectory)
 
-    outside_target = tmp_path / "escape.anyzorkpkg"
+    outside_target = tmp_path / "escape.zork"
 
     with package_path.open("rb") as handle:
         response = client.post(
             "/api/games",
-            files={"package": ("../../escape.anyzorkpkg", handle, "application/zip")},
+            files={"package": ("../../escape.zork", handle, "application/zip")},
         )
 
     assert response.status_code == 201, response.text
