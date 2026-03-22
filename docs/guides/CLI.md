@@ -73,23 +73,26 @@ anyzork import --print-template
 
 ### `repair`
 
-Check a ZorkScript source file for errors without compiling it, and generate a fix prompt for LLM-assisted repair.
+Diagnose ZorkScript errors, generate an LLM fix prompt, and optionally paste back the corrected output to re-import. The fix prompt is copied to the clipboard when possible.
 
 ```
-anyzork repair [SPEC_SOURCE]
+anyzork repair [SOURCE]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `SPEC_SOURCE` | Path to a ZorkScript file, or `-` (default) to read from stdin. |
+| `SOURCE` | Path to a ZorkScript file, project directory, or `-` (default) to read from stdin. |
 
-Output is diagnostics grouped by severity with a summary count. Exit code is `0` if no errors are found (warnings are OK), `1` if any errors are present.
+When run interactively, the command prints diagnostics, copies a fix prompt to the clipboard, and waits for the user to paste the corrected LLM response. The pasted output is saved and automatically re-imported.
 
 ```bash
-# Check a file
+# Diagnose and repair a file
 anyzork repair game.zorkscript
 
-# Check from stdin
+# Diagnose a project directory
+anyzork repair my-game/
+
+# Diagnose from stdin
 cat game.zorkscript | anyzork repair -
 ```
 
@@ -108,7 +111,7 @@ anyzork play [GAME_REF] [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `GAME_REF` | Library ref, game title slug, game ID, or path to a `.zork` file. If omitted, an interactive game picker is shown. |
-| `--slot NAME` | Managed save slot name (default: `default`). |
+| `--save NAME` | Managed save slot name (default: `default`). |
 | `--new` | Start the save slot over from the library copy. |
 | `--narrator` | Enable narrator mode (requires an LLM API key). |
 | `--provider PROVIDER` | LLM provider for narrator mode: `claude`, `openai`, or `gemini`. Overrides `ANYZORK_PROVIDER`. |
@@ -122,7 +125,7 @@ anyzork play
 anyzork play haunted-lighthouse
 
 # Start a new run in a named slot
-anyzork play haunted-lighthouse --slot speedrun --new
+anyzork play haunted-lighthouse --save speedrun --new
 
 # Play with AI narrator
 anyzork play haunted-lighthouse --narrator --provider claude
@@ -152,6 +155,24 @@ anyzork doctor
 anyzork doctor --fix
 ```
 
+### `narrator`
+
+View and configure narrator settings. On first run (no API key configured), launches a setup wizard. When a key is already configured, shows current settings and a menu to change provider, model, API key, or toggle narrator on/off.
+
+```
+anyzork narrator
+```
+
+No options. All configuration is done through the interactive menu.
+
+```bash
+# First-time setup (walks through provider choice, API key, enable toggle)
+anyzork narrator
+
+# Reconfigure (shows current settings, offers change menu)
+anyzork narrator
+```
+
 ---
 
 ## Library Management
@@ -166,9 +187,9 @@ anyzork list [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `--saves` | Also show a detailed managed saves table after the games table. |
+| `--saves` | Show managed saves instead of the games table. |
 
-Displays a table of all library games with ref, title, version, active save count, and latest run timestamp. With `--saves`, a second table shows each save slot's game state, score, moves, and last-updated timestamp.
+Without `--saves`, displays a table of all library games with ref, title, version, active save count, and latest run timestamp. With `--saves`, shows managed save slots with game ref, title, save name, game state, score, moves, and last-updated timestamp.
 
 ### `delete`
 
@@ -181,11 +202,13 @@ anyzork delete GAME_REF [OPTIONS]
 | Option | Description |
 |--------|-------------|
 | `GAME_REF` | Library game ref or path. Required. |
+| `--save NAME` | Delete only this save slot instead of the whole game. |
 | `--yes` | Skip the confirmation prompt. |
 
 ```bash
 anyzork delete haunted-lighthouse
 anyzork delete haunted-lighthouse --yes
+anyzork delete haunted-lighthouse --save speedrun
 ```
 
 ---

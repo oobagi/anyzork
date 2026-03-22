@@ -79,7 +79,7 @@ files = ["game.zorkscript", "rooms.zorkscript", "items.zorkscript", "npcs.zorksc
 
 1. Run `anyzork import <project-dir>` to compile the project
 2. If import fails: read the error output carefully, fix the offending ZorkScript file, re-import
-3. If errors persist: run `anyzork doctor <project-dir>` for deeper diagnostics
+3. If errors persist: run `anyzork repair <project-dir>` for deeper diagnostics
 4. Iterate until compilation is clean with zero errors
 5. Report the final game stats to the user: room count, item count, NPC count, puzzle count, quest count, max score
 
@@ -650,8 +650,7 @@ You have full access to the AnyZork CLI via Bash. Use these commands to manage t
 | `anyzork generate --list-presets` | List available presets |
 | `anyzork import <source>` | Compile ZorkScript into a `.zork` game (source can be a file, directory, or `-` for stdin) |
 | `anyzork import <source> -o <path>` | Compile to a specific output path |
-| `anyzork lint <source>` | Lint ZorkScript without compiling (fast spec-level checks) |
-| `anyzork doctor <source>` | Diagnose import errors and suggest fixes |
+| `anyzork repair <source>` | Diagnose ZorkScript errors and generate an LLM fix prompt |
 
 ### Playing
 
@@ -659,7 +658,7 @@ You have full access to the AnyZork CLI via Bash. Use these commands to manage t
 |---------|---------|
 | `anyzork play` | Interactive game picker |
 | `anyzork play <game>` | Play a library game or `.zork` file |
-| `anyzork play <game> --slot <name>` | Play in a named save slot |
+| `anyzork play <game> --save <name>` | Play in a named save slot |
 | `anyzork play <game> --new` | Start a fresh run |
 | `anyzork play <game> --narrator` | Play with AI narrator mode |
 
@@ -670,7 +669,7 @@ You have full access to the AnyZork CLI via Bash. Use these commands to manage t
 | `anyzork list` | List all library games with save counts and timestamps |
 | `anyzork list --saves` | List all managed save slots |
 | `anyzork delete <game>` | Delete a library game and all its saves |
-| `anyzork delete <game> --slot <name>` | Delete a specific save slot |
+| `anyzork delete <game> --save <name>` | Delete a specific save slot |
 
 ### Sharing and Catalog
 
@@ -680,21 +679,24 @@ You have full access to the AnyZork CLI via Bash. Use these commands to manage t
 | `anyzork publish --status <slug>` | Check the publish status of a submitted game |
 | `anyzork browse` | Browse the official game catalog |
 | `anyzork browse --limit N` | Browse with a custom page size (1-100) |
-| `anyzork install <source>` | Install a game from the catalog or a local `.anyzorkpkg` package |
+| `anyzork install <source>` | Install a game from the catalog or a local `.zork` package |
 | `anyzork install <source> --force` | Replace an existing library game |
 
-### Diagnostic and Info
+### Environment and Info
 
 | Command | Purpose |
 |---------|---------|
 | `anyzork --version` | Show version info (app, runtime compat, prompt system) |
 | `anyzork import --print-template` | Print the ZorkScript authoring template |
+| `anyzork doctor` | Run health checks on the local environment |
+| `anyzork doctor --fix` | Auto-clean issues found by doctor |
+| `anyzork narrator` | View and configure narrator settings (provider, model, API key) |
 
 ### When to Use CLI Commands
 
-- **After generating a game**: run `anyzork import <project-dir>` to compile, then `anyzork doctor <project-dir>` if errors persist
+- **After generating a game**: run `anyzork import <project-dir>` to compile, then `anyzork repair <project-dir>` if errors persist
 - **To test a game**: run `anyzork play <game>` (note: this starts an interactive session -- pipe commands for automated testing)
 - **To publish**: run `anyzork publish <game>` after the game compiles cleanly
 - **To check existing games**: run `anyzork list` to see what is already in the library
 - **To browse for inspiration**: run `anyzork browse` to see public catalog entries
-- **To manage saves**: run `anyzork list --saves` or `anyzork delete <game> --slot <name>`
+- **To manage saves**: run `anyzork list --saves` or `anyzork delete <game> --save <name>`
