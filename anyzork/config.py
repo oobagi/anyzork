@@ -89,6 +89,138 @@ def load_config_file() -> dict:
     return result
 
 
+def _format_toml(data: dict) -> str:
+    """Format a simple nested dict as TOML."""
+    lines: list[str] = []
+    if "anyzork" in data:
+        lines.append("[anyzork]")
+        for k, v in data["anyzork"].items():
+            if isinstance(v, bool):
+                lines.append(f"{k} = {str(v).lower()}")
+            elif isinstance(v, str):
+                lines.append(f'{k} = "{v}"')
+        lines.append("")
+    if "keys" in data:
+        lines.append("[keys]")
+        for k, v in data["keys"].items():
+            lines.append(f'{k} = "{v}"')
+        lines.append("")
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def save_config_file(
+    *,
+    provider: str | None = None,
+    model: str | None = None,
+    api_key: tuple[str, str] | None = None,
+    narrator_enabled: bool | None = None,
+) -> None:
+    """Update ~/.anyzork/config.toml, preserving existing values.
+
+    Args:
+        provider: Provider name to set in [anyzork] section.
+        model: Model name to set in [anyzork] section.
+        api_key: Tuple of (key_type, key_value) to set in [keys] section.
+                 key_type is "anthropic", "openai", or "google".
+        narrator_enabled: Whether narrator is enabled by default.
+    """
+    # Read existing raw TOML structure.
+    if CONFIG_FILE.is_file():
+        try:
+            with CONFIG_FILE.open("rb") as f:
+                data = tomllib.load(f)
+        except Exception:
+            data = {}
+    else:
+        data = {}
+
+    # Ensure sections exist.
+    if "anyzork" not in data:
+        data["anyzork"] = {}
+    if "keys" not in data:
+        data["keys"] = {}
+
+    # Merge updates.
+    if provider is not None:
+        data["anyzork"]["provider"] = provider
+    if model is not None:
+        data["anyzork"]["model"] = model
+    if narrator_enabled is not None:
+        data["anyzork"]["narrator_enabled"] = narrator_enabled
+    if api_key is not None:
+        key_type, key_value = api_key
+        data["keys"][key_type] = key_value
+
+    # Remove empty sections before writing.
+    if not data["anyzork"]:
+        del data["anyzork"]
+    if not data.get("keys"):
+        data.pop("keys", None)
+
+    # Write back.
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    CONFIG_FILE.write_text(_format_toml(data))
+
+
+def validate_api_key(provider: LLMProvider, api_key: str) -> tuple[bool, str]:
+    """Make a minimal API call to verify the key works.
+
+    Returns (success, message) tuple.
+    """
+    if provider == LLMProvider.CLAUDE:
+        try:
+            import anthropic
+        except ImportError:
+            return (False, "anthropic package not installed. Install the 'narrator' extra.")
+        try:
+            anthropic.Anthropic(api_key=api_key).messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1,
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        except anthropic.AuthenticationError:
+            return (False, "Invalid API key.")
+        except Exception as exc:
+            return (False, str(exc))
+        return (True, "Key validated successfully.")
+
+    if provider == LLMProvider.OPENAI:
+        try:
+            import openai
+        except ImportError:
+            return (False, "openai package not installed. Install the 'narrator' extra.")
+        try:
+            openai.OpenAI(api_key=api_key).chat.completions.create(
+                model="gpt-4o-mini",
+                max_tokens=1,
+                messages=[{"role": "user", "content": "hi"}],
+            )
+        except openai.AuthenticationError:
+            return (False, "Invalid API key.")
+        except Exception as exc:
+            return (False, str(exc))
+        return (True, "Key validated successfully.")
+
+    if provider == LLMProvider.GEMINI:
+        try:
+            from google import genai
+            from google.genai import errors as genai_errors
+        except ImportError:
+            return (False, "google-genai package not installed. Install the 'narrator' extra.")
+        try:
+            genai.Client(api_key=api_key).models.generate_content(
+                model="gemini-2.0-flash-lite",
+                contents="hi",
+            )
+        except genai_errors.ClientError:
+            return (False, "Invalid API key.")
+        except Exception as exc:
+            return (False, str(exc))
+        return (True, "Key validated successfully.")
+
+    return (False, f"Unknown provider: {provider}")
+
+
 class Config(BaseSettings):
     """Central configuration for AnyZork.
 

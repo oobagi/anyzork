@@ -850,6 +850,271 @@ def doctor(fix: bool) -> None:
         console.print("[dim]Nothing to fix.[/dim]")
 
 
+@cli.command("narrator")
+def narrator_cmd() -> None:
+    """View and configure narrator settings."""
+    import os
+
+    from anyzork.config import (
+        LLMProvider,
+        _DEFAULT_MODELS,
+        _PROVIDER_TO_KEY_TYPE,
+        load_config_file,
+        save_config_file,
+        validate_api_key,
+    )
+
+    cfg = Config()
+    has_key = cfg.get_api_key() is not None
+
+    # --- Auto-detect available provider keys from env ---
+    _ENV_VARS: dict[str, str] = {
+        "claude": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "gemini": "GOOGLE_API_KEY",
+    }
+
+    if not has_key:
+        # No key configured — run setup wizard.
+        _narrator_setup_wizard(cfg)
+        return
+
+    # --- Show current status ---
+    key = cfg.get_api_key() or ""
+    masked = key[:7] + "..." + key[-4:] if len(key) > 11 else "***"
+    model_label = cfg.active_model or "default"
+    if cfg.model is None:
+        model_label += " (default)"
+    enabled_label = "yes" if cfg.narrator_enabled else "no"
+
+    console.print()
+    console.print("[bold]Narrator Settings[/bold]")
+    console.print(f"  Provider:  [cyan]{cfg.provider.value}[/cyan]")
+    console.print(f"  Model:     [cyan]{model_label}[/cyan]")
+    console.print(f"  API Key:   [cyan]{masked}[/cyan]  [green]\u2713[/green]")
+    console.print(f"  Enabled:   [cyan]{enabled_label}[/cyan]")
+    console.print()
+
+    # --- Reconfigure menu ---
+    console.print("  [cyan]1[/cyan]. Change provider")
+    console.print("  [cyan]2[/cyan]. Change model")
+    console.print("  [cyan]3[/cyan]. Update API key")
+    current_toggle = "on" if cfg.narrator_enabled else "off"
+    console.print(f"  [cyan]4[/cyan]. Toggle narrator (currently: {current_toggle})")
+    console.print("  [dim]q. Done[/dim]")
+    console.print()
+
+    while True:
+        choice = click.prompt("Choose an option", type=str).strip().lower()
+        if choice in {"q", "quit", "exit", "done"}:
+            return
+
+        if choice == "1":
+            _narrator_change_provider(cfg)
+            return
+        if choice == "2":
+            _narrator_change_model(cfg)
+            return
+        if choice == "3":
+            _narrator_update_key(cfg)
+            return
+        if choice == "4":
+            new_state = not cfg.narrator_enabled
+            save_config_file(narrator_enabled=new_state)
+            label = "enabled" if new_state else "disabled"
+            console.print(f"[green]Narrator {label}.[/green]")
+            return
+
+        console.print("[dim]Enter 1-4 or q to cancel.[/dim]")
+
+
+def _narrator_setup_wizard(cfg: Config) -> None:
+    """Interactive first-time narrator setup."""
+    import os
+
+    from anyzork.config import (
+        LLMProvider,
+        _PROVIDER_TO_KEY_TYPE,
+        save_config_file,
+        validate_api_key,
+    )
+
+    _ENV_VARS: dict[str, str] = {
+        "claude": "ANTHROPIC_API_KEY",
+        "openai": "OPENAI_API_KEY",
+        "gemini": "GOOGLE_API_KEY",
+    }
+    _KEY_URLS: dict[str, str] = {
+        "claude": "https://console.anthropic.com/settings/keys",
+        "openai": "https://platform.openai.com/api-keys",
+        "gemini": "https://aistudio.google.com/apikey",
+    }
+
+    console.print()
+    console.print("[bold]Narrator Setup[/bold]")
+    console.print()
+
+    # Auto-detect available keys.
+    detected: list[tuple[str, str]] = []
+    for provider_name, env_var in _ENV_VARS.items():
+        if os.environ.get(env_var):
+            detected.append((provider_name, env_var))
+
+    if detected:
+        console.print("[dim]Detected API keys in environment:[/dim]")
+        for name, var in detected:
+            console.print(f"  [green]\u2713[/green] {name} ({var})")
+        console.print()
+
+    providers = list(LLMProvider)
+    for i, p in enumerate(providers, 1):
+        label = p.value.capitalize()
+        suffix = ""
+        if any(d[0] == p.value for d in detected):
+            suffix = " [green](key detected)[/green]"
+        console.print(f"  [cyan]{i}[/cyan]. {label}{suffix}")
+    console.print()
+
+    while True:
+        choice = click.prompt("Choose a provider", type=str).strip()
+        if choice in {"q", "quit", "exit"}:
+            console.print("[dim]Canceled.[/dim]")
+            return
+        try:
+            index = int(choice)
+        except ValueError:
+            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+            continue
+        if 1 <= index <= len(providers):
+            selected = providers[index - 1]
+            break
+        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+
+    key_type = _PROVIDER_TO_KEY_TYPE[selected]
+
+    # Check if env var already provides the key.
+    env_var = _ENV_VARS[selected.value]
+    env_key = os.environ.get(env_var)
+    if env_key:
+        console.print(f"\n[dim]Using key from {env_var}.[/dim]")
+        api_key = env_key
+    else:
+        url = _KEY_URLS.get(selected.value, "")
+        console.print(f"\nGet your API key: [cyan]{url}[/cyan]")
+        api_key = click.prompt("Paste your API key", type=str, hide_input=True).strip()
+        if not api_key:
+            console.print("[red]No key provided.[/red]")
+            return
+
+    # Validate key.
+    console.print("[dim]Validating key...[/dim]", end=" ")
+    ok, msg = validate_api_key(selected, api_key)
+    if ok:
+        console.print("[green]\u2713[/green]")
+    else:
+        console.print(f"[red]\u2717 {msg}[/red]")
+        if not click.confirm("Save anyway?", default=False):
+            return
+
+    # Enable narrator by default?
+    enable = click.confirm("Enable narrator by default?", default=True)
+
+    # Save.
+    save_config_file(
+        provider=selected.value,
+        api_key=(key_type, api_key),
+        narrator_enabled=enable,
+    )
+    console.print(f"\n[green]Saved to {cfg.games_dir.parent / 'config.toml'}[/green]")
+
+
+def _narrator_change_provider(cfg: Config) -> None:
+    """Change the narrator provider."""
+    from anyzork.config import LLMProvider, save_config_file
+
+    providers = list(LLMProvider)
+    console.print()
+    for i, p in enumerate(providers, 1):
+        label = p.value.capitalize()
+        current = " [dim](current)[/dim]" if p == cfg.provider else ""
+        console.print(f"  [cyan]{i}[/cyan]. {label}{current}")
+    console.print()
+
+    while True:
+        choice = click.prompt("Choose a provider", type=str).strip()
+        if choice in {"q", "quit", "exit"}:
+            return
+        try:
+            index = int(choice)
+        except ValueError:
+            console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+            continue
+        if 1 <= index <= len(providers):
+            selected = providers[index - 1]
+            save_config_file(provider=selected.value)
+            console.print(f"[green]Provider set to {selected.value}.[/green]")
+
+            # Check if key exists for new provider.
+            new_cfg = Config()
+            if not new_cfg.get_api_key():
+                console.print("[yellow]No API key configured for this provider.[/yellow]")
+                _narrator_update_key(new_cfg)
+            return
+        console.print("[dim]Enter one of the numbers above, or q to cancel.[/dim]")
+
+
+def _narrator_change_model(cfg: Config) -> None:
+    """Change the narrator model."""
+    from anyzork.config import _DEFAULT_MODELS, save_config_file
+
+    default = _DEFAULT_MODELS.get(cfg.provider, "")
+    console.print(f"\n[dim]Default model for {cfg.provider.value}: {default}[/dim]")
+    console.print("[dim]Leave blank to use the default.[/dim]")
+
+    model = click.prompt("Model", default="", show_default=False, type=str).strip()
+    if model:
+        save_config_file(model=model)
+        console.print(f"[green]Model set to {model}.[/green]")
+    else:
+        save_config_file(model="")
+        console.print(f"[green]Model reset to default ({default}).[/green]")
+
+
+def _narrator_update_key(cfg: Config) -> None:
+    """Update the API key for the current provider."""
+    from anyzork.config import (
+        _PROVIDER_TO_KEY_TYPE,
+        save_config_file,
+        validate_api_key,
+    )
+
+    _KEY_URLS: dict[str, str] = {
+        "claude": "https://console.anthropic.com/settings/keys",
+        "openai": "https://platform.openai.com/api-keys",
+        "gemini": "https://aistudio.google.com/apikey",
+    }
+
+    url = _KEY_URLS.get(cfg.provider.value, "")
+    console.print(f"\nGet your API key: [cyan]{url}[/cyan]")
+    api_key = click.prompt("Paste your API key", type=str, hide_input=True).strip()
+    if not api_key:
+        console.print("[red]No key provided.[/red]")
+        return
+
+    console.print("[dim]Validating key...[/dim]", end=" ")
+    ok, msg = validate_api_key(cfg.provider, api_key)
+    if ok:
+        console.print("[green]\u2713[/green]")
+    else:
+        console.print(f"[red]\u2717 {msg}[/red]")
+        if not click.confirm("Save anyway?", default=False):
+            return
+
+    key_type = _PROVIDER_TO_KEY_TYPE[cfg.provider]
+    save_config_file(api_key=(key_type, api_key))
+    console.print("[green]API key updated.[/green]")
+
+
 @cli.command("install")
 @click.argument("source", type=str)
 @click.option(

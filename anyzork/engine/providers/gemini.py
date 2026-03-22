@@ -60,7 +60,7 @@ class GeminiProvider(BaseProvider):
         api_key = config.get_api_key()
         if not api_key:
             raise ProviderError(
-                "No API key for Gemini. Set GOOGLE_API_KEY."
+                "No API key for Gemini. Run 'anyzork narrator' to set one up, or set GOOGLE_API_KEY."
             )
         self._client = genai.Client(api_key=api_key)
         self._model = config.active_model or "gemini-2.5-flash"
@@ -89,7 +89,7 @@ class GeminiProvider(BaseProvider):
             expected_provider=LLMProvider.GEMINI,
             provider_name="Gemini",
             missing_key_message=(
-                "No API key for Gemini. Set GOOGLE_API_KEY."
+                "No API key for Gemini. Run 'anyzork narrator' to set one up, or set GOOGLE_API_KEY."
             ),
         )
 
