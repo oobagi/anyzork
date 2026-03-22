@@ -64,34 +64,37 @@ player {
 # reveal it with reveal_exit(exit_id) when the path opens. Do NOT use
 # move_player to reach a room with no exit connection -- the validator
 # requires all rooms to be reachable via exits.
+#
+# Exit descriptions appear in-game after the direction. Always write them.
+# Syntax: exit direction -> target (modifiers) "description"
 
 room cell {
   name        "Prison Cell"
-  description "A narrow stone cell with damp walls. An iron door hangs open to the north. A rickety wooden table stands against the far wall, and a straw pallet lies in the corner. Scratches on the wall mark hundreds of days."
+  description "A narrow stone cell with damp walls. Scratches on the wall mark hundreds of days."
   short       "Your former cell."
   first_visit "The silence here is heavier than the stone walls."
   start       true
 
-  exit north -> corridor
+  exit north -> corridor "An iron door hangs open to the north."
 }
 
 room corridor {
   name        "Dungeon Corridor"
-  description "A long corridor lit by guttering torches. The air smells of damp stone and old smoke. Doors line the east wall. To the north, a heavy portcullis blocks the passage."
+  description "A long corridor lit by guttering torches. The air smells of damp stone and old smoke."
   short       "A torch-lit corridor running north-south."
 
-  exit south -> cell
-  exit north -> gate_room
-  exit east  -> supply_closet
-  exit down  -> cellar
+  exit south -> cell "The cells lie south."
+  exit north -> gate_room "A heavy portcullis blocks the passage north."
+  exit east  -> supply_closet "A door opens east into a closet."
+  exit down  -> cellar "Stone steps descend into darkness."
 }
 
 room supply_closet {
   name        "Supply Closet"
-  description "A cramped closet stuffed with crates and mouldering rope. A rusty lever protrudes from the wall, connected to chains that vanish into the ceiling. A wooden shelf holds dusty supplies."
-  short       "A cluttered supply closet with a lever on the wall."
+  description "A cramped closet stuffed with dusty crates. The air is thick with the smell of old rope and mildew."
+  short       "A cluttered supply closet."
 
-  exit west -> corridor
+  exit west -> corridor "The corridor lies west."
 }
 
 room cellar {
@@ -101,36 +104,36 @@ room cellar {
   first_visit "The darkness is absolute. You cannot see your hand in front of your face."
   dark        true
 
-  exit up    -> corridor
-  exit north -> vault (locked)
+  exit up    -> corridor "Steps climb back up."
+  exit north -> vault (locked) "A heavy door blocks the north passage."
 }
 
 room vault {
   name        "Old Vault"
-  description "A small stone vault, dry and cold. A heavy iron chest sits against the far wall. Cobwebs blanket the ceiling."
-  short       "A sealed vault with an iron chest."
+  description "A small stone vault, dry and cold. Cobwebs blanket the ceiling."
+  short       "A sealed vault."
   first_visit "Stale air rushes out as the door opens for the first time in years."
   dark        true
 
-  exit south -> cellar
+  exit south -> cellar "The cellar lies south."
 }
 
 room gate_room {
   name        "Portcullis Chamber"
-  description "The corridor ends at a massive iron portcullis. Beyond it, a stone staircase climbs toward daylight. A guard slouches on a stool beside the gate, half-asleep."
-  short       "The portcullis chamber. A guard watches the gate."
+  description "The corridor ends at a massive iron portcullis. Beyond it, a stone staircase climbs toward daylight."
+  short       "The portcullis chamber."
 
-  exit south -> corridor
-  exit north -> courtyard (locked)
+  exit south -> corridor "The corridor stretches south."
+  exit north -> courtyard (locked) "A staircase climbs north toward daylight."
 }
 
 room courtyard {
   name        "Sunlit Courtyard"
-  description "Warm sunlight floods a flagstone courtyard. An overgrown garden borders the eastern wall. The main road leads west to freedom."
+  description "Warm sunlight floods a flagstone courtyard. The main road leads west to freedom."
   short       "A bright courtyard outside the dungeon."
   first_visit "The light stings your eyes after so long underground."
 
-  exit south -> gate_room
+  exit south -> gate_room "Steps lead back down to the dungeon."
 }
 
 # -- Items --
@@ -144,6 +147,7 @@ room courtyard {
 #   "use batteries on flashlight" auto-works when requires is set.
 # Consumables: quantity/max_quantity/quantity_unit/depleted_msg.
 # Tags and categories enable the interaction matrix.
+# EVERY item MUST have tags. EVERY item and NPC MUST have a category.
 # When an NPC dies, the engine auto-spawns "{Name}'s Body" as a searchable
 # container. Use triggers to move_item_to_container loot into the body.
 
@@ -154,10 +158,24 @@ item cell_table {
   in          cell
   takeable    false
   container   true
+  tags        ["furniture"]
   category    "furniture"
   room_desc   "A rickety wooden table stands against the wall."
   open_msg    "The drawer slides open with a dry scrape."
   search_msg  "You pull open the drawer and peer inside."
+}
+
+# Scenery items (takeable false) let the player examine room objects.
+# They don't need home/drop_desc because they never move.
+item straw_pallet {
+  name        "Straw Pallet"
+  description "A thin bed of straw on the stone floor."
+  examine     "Rough wool over compressed straw. Not comfortable, but better than bare stone."
+  in          cell
+  takeable    false
+  tags        ["bedding"]
+  category    "furniture"
+  room_desc   "A straw pallet lies in the corner."
 }
 
 item silver_key {
@@ -167,6 +185,8 @@ item silver_key {
   in          cell_table
   takeable    true
   home        cell
+  tags        ["key"]
+  category    "key_item"
   take_msg    "You pocket the silver key."
   drop_msg    "You set the silver key down."
   room_desc   "A glint of silver catches your eye inside the drawer."
@@ -184,6 +204,7 @@ item oil_lantern {
   on_msg      "The flame catches and steadies, casting warm light."
   off_msg     "You snuff the flame. Darkness returns."
   tags        ["light_source"]
+  category    "tool"
   take_msg    "You lift the lantern by its wire handle."
   room_desc   "A brass lantern sits on the shelf."
 }
@@ -199,6 +220,8 @@ item healing_moss {
   quantity_unit "clumps"
   depleted_msg "You have no moss left."
   quantity_desc "You have {quantity} {unit} of moss remaining."
+  tags        ["medicine"]
+  category    "consumable"
   take_msg    "You scrape the moss off the stone."
   room_desc   "Green moss grows on the damp stones."
 }
@@ -209,6 +232,8 @@ item rusty_lever {
   examine     "Chains run from it up through a slot in the ceiling. It looks connected to something mechanical above."
   in          supply_closet
   takeable    false
+  tags        ["mechanism"]
+  category    "fixture"
   room_desc   "A rusty lever juts from the wall."
 }
 
@@ -221,6 +246,7 @@ item iron_chest {
   container   true
   locked      true
   key         brass_key
+  tags        ["container"]
   category    "furniture"
   room_desc   "A heavy iron chest sits against the far wall."
   lock_msg    "The chest is locked. You need a key."
@@ -235,6 +261,8 @@ item brass_key {
   in          cellar
   takeable    true
   visible     false
+  tags        ["key"]
+  category    "key_item"
   take_msg    "You pick up the brass key and loop the cord around your wrist."
   room_desc   "A small brass key lies on the floor."
 }
@@ -246,6 +274,8 @@ item escape_map {
   read_text   "The map reads: The vault key is in the dark. Bring light."
   in          iron_chest
   takeable    true
+  tags        ["clue"]
+  category    "document"
   take_msg    "You roll up the map and tuck it into your belt."
 }
 
@@ -255,21 +285,23 @@ item guard_stool {
   examine     "Initials carved into the seat: J.R."
   in          gate_room
   takeable    false
+  tags        ["furniture"]
   category    "furniture"
   room_desc   "A rickety stool sits beside the gate."
 }
 
-# Code-locked container example — the player types "unlock lockbox" and enters the code.
+# Code-locked container example -- the player types "unlock lockbox" and enters the code.
 # Always provide an in-game clue with the exact code somewhere (here it's on the stool: J.R. -> 417).
 item lockbox {
   name        "Lockbox"
   description "A small metal box with a three-digit combination dial."
-  examine     "The numbers 0-9 are etched around the dial. A label reads 'J.R. — 417'."
+  examine     "The numbers 0-9 are etched around the dial. A label reads 'J.R. -- 417'."
   in          gate_room
   takeable    false
   container   true
   locked      true
   code        "417"
+  tags        ["container"]
   category    "furniture"
   lock_msg    "The lockbox is locked. It has a combination dial."
   open_msg    "The dial clicks and the lid pops open."
@@ -278,9 +310,11 @@ item lockbox {
 item gold_ring {
   name        "Gold Ring"
   description "A plain gold band."
-  examine     "Engraved inside: 'To J.R. — Forever.'"
+  examine     "Engraved inside: 'To J.R. -- Forever.'"
   in          lockbox
   takeable    true
+  tags        ["treasure"]
+  category    "treasure"
   take_msg    "You slip the ring into your pocket."
   room_desc   "A gold ring gleams inside the lockbox."
 }
@@ -292,6 +326,7 @@ item rusty_pipe {
   in          supply_closet
   takeable    true
   tags        ["weapon"]
+  category    "weapon"
   take_msg    "You heft the pipe. It feels reassuringly solid."
   room_desc   "A rusty iron pipe leans against the wall."
 }
@@ -365,6 +400,8 @@ flag lever_pulled "The supply closet lever has been pulled"
 flag vault_unlocked "The vault door has been unlocked"
 flag found_brass_key "Found the brass key in the dark cellar"
 flag lantern_lit "The lantern has been lit at least once"
+flag npc_killed "An NPC has been killed"
+flag fed_npc "An NPC has been fed"
 
 # -- Locks -- Reference exits by from -> to direction.
 
@@ -467,10 +504,16 @@ quest side:vault_secret {
 #   lock_exit(exit_id)        -- re-lock a previously unlocked exit
 #   hide_exit(exit_id)        -- re-hide a previously revealed exit
 #   change_description(entity_id, "new text") -- change item/room description at runtime
+#   make_visible(item_id)     -- reveal a hidden item (visible false -> true)
+#   make_hidden(item_id)      -- hide a visible item at runtime
+#   make_takeable(item_id)    -- make a non-takeable item takeable at runtime
 #
-# Items that should appear later: declare the item WITHOUT an initial location
-# and use spawn_item(item_id, room_id) or spawn_item(item_id, _inventory) when
-# the reveal happens. Do not invent visibility effects.
+# Hidden items: two approaches.
+# 1. SPAWN: declare item with NO location, then spawn_item(id, room_id) later.
+# 2. VISIBILITY: declare item with visible false, then make_visible(id) later.
+#    Use this when the item is physically present but not yet noticed (e.g.,
+#    a key hidden under debris that becomes visible after searching).
+# Both work. Choose whichever fits the narrative.
 #
 # Tiered command pattern (highest priority fires first):
 # 1. SPECIFIC: room-scoped on blocks with exact preconditions (one-shot story moments)
@@ -544,6 +587,12 @@ on "hit {target}" {
 #   when dialogue_node(cook_marta_secret)  -- correct (npc_id = cook_marta, label = secret)
 #   when dialogue_node(secret)             -- WRONG, bare label will fail
 
+when item_taken(oil_lantern) {
+  effect set_flag(lantern_lit)
+  message "This should provide light in dark places."
+  once
+}
+
 when room_enter(courtyard) {
   require has_flag(guard_bribed)
   require has_flag(door_raised)
@@ -557,8 +606,23 @@ when room_enter(courtyard) {
 
 when room_enter(cellar) {
   require not_flag(found_brass_key)
+  require not_flag(lantern_lit)
 
   message "The darkness presses in around you. If only you had a light source."
+  once
+}
+
+# Visibility example: brass_key starts hidden (visible false). When the player
+# enters the cellar with a lit lantern, make_visible reveals it.
+when room_enter(cellar) {
+  require toggle_state(oil_lantern, "on")
+  require not_flag(found_brass_key)
+
+  effect make_visible(brass_key)
+  effect set_flag(found_brass_key)
+  effect discover_quest(vault_secret)
+
+  message "Your lantern light catches a glint on the floor -- a small brass key."
   once
 }
 
@@ -608,11 +672,13 @@ when room_enter(cellar) {
 interaction weapon_on_character {
   tag      "weapon"
   target   "character"
-  response "You strike {target} with the {item}. They collapse to the ground."
-  effect   kill_target()
+  response "You crack the {item} into {target}. They stagger from the blow."
+  effect   damage_target(50)
   effect   set_flag(npc_killed)
   effect   add_score(-10)
 }
+# damage_target(N) deals N damage. kill_target() kills instantly.
+# The engine auto-spawns a lootable "{Name}'s Body" container when an NPC dies.
 
 # Chain consequence: use set_flag() + when blocks for ripple effects.
 # Example: killing an NPC should have consequences elsewhere.

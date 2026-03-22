@@ -366,7 +366,6 @@ CREATE TABLE IF NOT EXISTS triggers (
     id              TEXT PRIMARY KEY,
     event_type      TEXT    NOT NULL,       -- room_enter | flag_set | dialogue_node
                                             -- | item_taken | item_dropped
-                                            -- | npc_killed
     event_data      TEXT    NOT NULL DEFAULT '{}',
                                             -- JSON: partial match against
                                             -- emitted event data
