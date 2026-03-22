@@ -1,0 +1,50 @@
+(on{{}} command blocks, trigger blocks, interaction_response blocks, and remaining flag definitions)
+
+
+Follow ZorkScript syntax exactly. Refer to the example from Step 1 for syntax reference.
+
+Quality requirements:
+- 6-12 rooms.
+- At least 10 items. Every major room has 2+ examinable objects.
+- Use furniture (desks, tables, shelves) as searchable containers.
+- Include at least one toggle item (torch, lamp, switch) with on/off.
+- Include dark rooms that require a light source.
+- Use take_msg, drop_msg, room_desc, drop_desc, examine for rich feedback. Never generic.
+- take_msg/drop_msg must work in ANY room (not context-specific).
+  Use home + room_desc for the item's native room, drop_desc for away.
+- EVERY item and NPC with a home room MUST have room_desc. This is a compile-time error.
+  NPCs support home, room_desc, and drop_desc identically to items.
+- Include consumable items (food, potions) with eat/drink/use commands.
+- 2-4 NPCs with dialogue trees.
+- Every named character in the concept MUST exist as a real NPC.
+  If the concept says '8 people', create 8 NPCs -- not 2.
+- 2-3 puzzles with multi-step solutions.
+- 1 main quest with 3+ objectives. Side quests encouraged.
+- Every custom verb (pull, push, ring, hit, shoot, climb, etc.) MUST have a global fallback on block.
+- EVERY item MUST have tags. EVERY item and NPC MUST have a category.
+  Without tags and categories, 'use X on Y' silently fails.
+- Write interaction responses for EVERY tag x category combo in the game.
+  Include a wildcard (target '*') fallback for each tag.
+- Interactions MUST have consequences: use kill_target(), destroy_target(),
+  set_flag(), add_score(), etc. Chain with when blocks for ripple effects.
+- Room descriptions: 2-4 vivid sentences with sensory detail.
+- Short descriptions: 1 compact sentence.
+- First-visit text: a fresh reaction, not repeated from description.
+- Do NOT mention takeable items directly in base room descriptions if room_desc/drop_desc already cover them.
+  Keep movable-item prose in room_desc/drop_desc so the engine does not duplicate it.
+- Use each item's exact name in room prose so it highlights in-game.
+- Never include a custom command unless it changes state or prints a visible result on success.
+- Starting room offers an obvious first action within 1-2 commands.
+- Every object mentioned in room descriptions must be a declared item (scenery items with takeable false). No phantom nouns.
+- Win condition must be reachable. No dead ends or softlocks.
+
+Realism: medium
+- Keep the world grounded and internally consistent.
+- Some nested systems are fine when they serve the story (a locked chest
+- needing a key, a torch needing to be lit). But avoid gratuitous simulation.
+- Puzzles should have clear cause-and-effect, 1-3 steps.
+
+
+
+Concept:
+cheese and bugs. just two cats. two brothers. heroes. one orange and stoic. one chaotic, brown, slightly tiner than the orange one, and a bobtail. the orange is named CHEESE. the gray (not brown whoops) bobtail is named BUGS

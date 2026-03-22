@@ -1,0 +1,23 @@
+quest main:survive_bloodbath {
+  name         "Survive the Bloodbath"
+  description  "The first hour is the deadliest. Find supplies and get to safety."
+  completion   is_victor
+  score        50
+
+  objective "Wait for the gong" -> gong_sounded
+  objective "Obtain a weapon" -> has_knife
+  objective "Find a source of water" -> water_found
+  objective "Defeat the Career leader" -> cato_dead
+}
+
+quest side:sponsor_gift {
+  name         "Sponsor's Favor"
+  description  "Impress the sponsors to receive life-saving gifts."
+  completion   found_parachute
+  discovery    rue_allied
+  score        30
+
+  objective "Form an alliance" -> rue_allied
+  objective "Find the hidden hollow" -> found_hollow
+  objective "Recover the silver parachute" -> found_parachute
+}

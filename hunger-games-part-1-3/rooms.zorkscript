@@ -1,0 +1,71 @@
+room pedestal {
+  name        "Starting Pedestal"
+  description "A circular metal plate set into the dusty earth. If you step off before the gong, mines will blow you to bits."
+  short       "Your starting pedestal."
+  first_visit "The hum of the landmines beneath your feet is a terrifying reminder of the rules."
+  start       true
+
+  exit north -> cornucopia_fringe "The Cornucopia lies directly north."
+}
+
+room cornucopia_fringe {
+  name        "The Fringe"
+  description "A chaotic stretch of dirt between the pedestals and the golden horn. Tributes are already clashing here."
+  short       "Outside the Cornucopia."
+  
+  exit south -> pedestal "Your starting plate is south."
+  exit north -> inside_cornucopia "The golden mouth of the horn is north."
+  exit east  -> rocky_outcrop "Sharp rocks rise to the east."
+  exit west  -> meadow "A flat, grassy meadow stretches west."
+}
+
+room inside_cornucopia {
+  name        "Inside the Cornucopia"
+  description "The interior of the giant golden horn. It is filled with high-value crates, weapons, and armor. It is a death trap."
+  short       "Inside the golden horn."
+  
+  exit south -> cornucopia_fringe "Back out to the fringe."
+}
+
+room meadow {
+  name        "The Meadow"
+  description "Tall grass sways in the wind. It offers little cover, but the path to the woods is clear."
+  short       "A wide meadow."
+  
+  exit east  -> cornucopia_fringe "The chaos of the center is east."
+  exit west  -> treeline "The dark woods lie west."
+}
+
+room rocky_outcrop {
+  name        "Rocky Outcrop"
+  description "Large grey boulders provide some cover from the initial chaos. A narrow path leads further into the hills."
+  short       "A cluster of boulders."
+  
+  exit west  -> cornucopia_fringe "The fringe is west."
+  exit up    -> hills "The path climbs into the hills."
+}
+
+room hills {
+  name        "The Hills"
+  description "Dry, scrubby terrain that overlooks the entire arena. The wind howls through the rocks."
+  short       "High hills."
+  
+  exit down  -> rocky_outcrop "Back down to the outcrop."
+}
+
+room treeline {
+  name        "The Woods"
+  description "The edge of a dense, dark forest. Pine needles carpet the floor and the air is cooler here."
+  short       "The forest edge."
+  
+  exit east  -> meadow "The meadow is east."
+  exit north -> deep_woods (locked) "The thickest part of the forest is north."
+}
+
+room deep_woods {
+  name        "Deep Woods"
+  description "Towering trees block out the sun. This is where the true games begin."
+  short       "Deep in the forest."
+
+  exit south -> treeline "Back to the treeline."
+}

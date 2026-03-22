@@ -18,7 +18,7 @@ env/
 # Local AI / editor settings
 .claude/
 
-# SQLite / game files
+# Game archives and SQLite cache/save files
 *.db
 *.sqlite
 *.sqlite3

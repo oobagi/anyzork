@@ -1,0 +1,93 @@
+npc primrose {
+  name        "Primrose"
+  description "A young girl with blonde hair and an untucked shirt."
+  examine     "She looks terrified. Her 'duck tail' is showing where her blouse is untucked."
+  in          seam_house
+  home        seam_house
+  category    "character"
+  room_desc   "Your younger sister, Prim, sits on the edge of her bed."
+  
+  talk root {
+    "Are you going to the Square now?"
+    option "Yes, I have to. Don't worry." -> comfort
+    option "Stay close to Mother." -> end
+  }
+
+  talk comfort {
+    "I'm scared they'll pick me. My name is only in once."
+    option "They won't. I'll see you later." -> end
+  }
+}
+
+npc effie_tinket {
+  name        "Effie Trinket"
+  description "A woman with a pink wig and a scary, painted-on smile."
+  examine     "Her outfit is flamboyant and completely out of place in the gray Seam."
+  in          justice_building_square
+  home        justice_building_square
+  category    "character"
+  room_desc   "Effie Trinket stands at the microphone, smoothing her skirt."
+  
+  talk root {
+    "Happy Hunger Games! And may the odds be ever in your favor!"
+    option "Just start the Reaping." -> start_reaping {
+      require not_flag(reaping_complete)
+    }
+    option "Nice wig." -> wig_comment
+    option "Goodbye." -> end
+  }
+
+  talk wig_comment {
+    "Oh, thank you! It's the latest style in the Capitol!"
+    option "Back to the Reaping." -> root
+  }
+
+  talk start_reaping {
+    "The time has come! The first name... Primrose Everdeen!"
+    effect make_visible(reaping_ballot)
+    effect set_flag(reaping_complete)
+    option "Volunteer!" -> volunteer_branch
+    option "Do nothing." -> fail_reaping
+  }
+
+  talk volunteer_branch {
+    "A volunteer! How exciting! What is your name?"
+    effect set_flag(volunteered)
+    effect set_flag(sister_saved)
+    effect add_score(20)
+    option "I'm the tribute." -> end
+  }
+
+  talk fail_reaping {
+    "Primrose is led to the stage, weeping. You have failed her."
+    effect fail_quest(main_survival)
+    option "..." -> end
+  }
+}
+
+npc haymitch {
+  name        "Haymitch"
+  description "A middle-aged man who smells strongly of white liquor."
+  examine     "He's the only living Victor from District 12. He looks like he'd rather be anywhere else."
+  in          tribute_train
+  home        tribute_train
+  category    "character"
+  room_desc   "Haymitch Abernathy is slumped in a velvet armchair."
+
+  talk root {
+    "Here's some advice: Stay alive."
+    option "How do I get sponsors?" -> sponsor_talk
+    option "Can you help me?" -> help_talk
+    option "Leave him alone." -> end
+  }
+
+  talk sponsor_talk {
+    "You want sponsors? Make them like you. Or make them fear you. Better yet, make them remember you."
+    option "I'll try." -> root
+  }
+
+  talk help_talk {
+    "I'll help when you show me you're worth the effort. Go to the training center."
+    option "Fine." -> end
+  }
+}

@@ -1,0 +1,62 @@
+room pedestal {
+  name        "Starting Pedestal"
+  description "A small metal disk elevated above the ground. To the north lies the golden Cornucopia, overflowing with riches. To the south, the dense pine forest offers a dark sanctuary."
+  short       "Your starting pedestal."
+  first_visit "Don't step off until the gong sounds. The landmines are sensitive."
+  start       true
+
+  exit north -> cornucopia "The golden horn lies north."
+  exit south -> pine_forest "The woods stretch south."
+}
+
+room cornucopia {
+  name        "The Cornucopia"
+  description "A giant golden horn shaped like a cone. It is surrounded by crates, weapons, and backpacks. The ground here is already stained red."
+  short       "The center of the arena."
+  
+  exit south -> pedestal "Back toward the starting line."
+  exit east  -> rocky_ridge "A steep ridge rises to the east."
+  exit west  -> wheat_field "A field of tall yellow grass lies west."
+}
+
+room pine_forest {
+  name        "Pine Forest"
+  description "Towering pines block out much of the sun. The air is cool and smells of needles and damp earth."
+  short       "A thick pine forest."
+
+  exit north -> pedestal "The clearing lies north."
+  exit west  -> stream_bank "You hear the sound of running water to the west."
+}
+
+room stream_bank {
+  name        "Stream Bank"
+  description "A shallow stream cuts through the earth. The water is clear but cold. Muddy footprints mark the bank."
+  short       "A small stream."
+
+  exit east  -> pine_forest "The forest lies east."
+  exit south -> hidden_hollow (hidden) "A small gap in the rocks leads south."
+}
+
+room hidden_hollow {
+  name        "Hidden Hollow"
+  description "A secluded space beneath a rocky overhang. It is dry and well-hidden from the main paths."
+  short       "A safe hollow."
+
+  exit north -> stream_bank "Back to the stream."
+}
+
+room rocky_ridge {
+  name        "Rocky Ridge"
+  description "The ground turns to shale and jagged stone. From here, you can see the smoke of distant fires."
+  short       "A high rocky ridge."
+
+  exit west -> cornucopia "Down toward the Cornucopia."
+}
+
+room wheat_field {
+  name        "Wheat Field"
+  description "Tall, dry wheat reaches your waist. It provides excellent cover but makes a lot of noise when moved through."
+  short       "A golden wheat field."
+
+  exit east -> cornucopia "Back toward the center."
+}

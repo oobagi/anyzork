@@ -1,0 +1,22 @@
+game {
+  title       "The Stoic and the Bobtail"
+  author      "A feline adventure of chaos and naps."
+  intro       "You are Cheese, a large, stoic orange cat. Your younger brother Bugs, a gray bobtail, is currently causing absolute chaos. You just want a peaceful nap in the sunbeam."
+  win_text    "With the house quiet and Bugs finally exhausted, you curl up in the warm sunbeam. Perfect peace."
+  lose_text   "The chaotic energy of the bobtail overwhelms you. You surrender to the madness and join in tearing up the toilet paper."
+  max_score   100
+  realism     "medium"
+  win         [nap_taken]
+}
+
+player {
+  start  living_room
+  hp     100
+}
+
+flag bugs_fed "Bugs has been distracted with a treat"
+flag bugs_exhausted "Bugs has chased the laser pointer until tired"
+flag closet_unlocked "The closet door has been pushed open"
+flag pantry_unlocked "The pantry door has been nudged open"
+flag nap_taken "Cheese achieved the ultimate nap in the sunroom"
+flag chaos_cleaned "The spilled kibble has been hidden or eaten"

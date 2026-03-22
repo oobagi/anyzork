@@ -1,0 +1,17 @@
+[project]
+title = "an adventure of a orange cat named 'Cheese' and a gray bobtail named Bugs. bugs "
+slug = "an-adventure-of-a-orange-cat-named-cheese-and-a-gray-bobta"
+author = ""
+description = ""
+tags = []
+
+[source]
+files = [
+  "game.zorkscript",
+  "rooms.zorkscript",
+  "items.zorkscript",
+  "npcs.zorkscript",
+  "puzzles.zorkscript",
+  "quests.zorkscript",
+  "commands.zorkscript",
+]

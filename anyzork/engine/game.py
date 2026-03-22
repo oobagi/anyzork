@@ -2256,7 +2256,7 @@ class GameEngine:
         self._in_dialogue = True
 
     def _run_dialogue_loop(self) -> None:
-        """Drive the legacy CLI dialogue loop using the stateful dialogue API."""
+        """Drive the CLI dialogue loop using the stateful dialogue API."""
         while self._dialogue_state is not None:
             self.console.clear()
             self._render_active_dialogue()

@@ -1,0 +1,52 @@
+npc cheese {
+  name        "Cheese"
+  description "A large, stoic orange tabby with steady green eyes."
+  examine     "He is sitting in a perfect loaf position. His orange fur is thick and well-groomed. He looks like he knows things you don't."
+  in          living_room
+  home        living_room
+  category    "character"
+  room_desc   "Cheese is sitting stoically in a patch of light, watching you."
+
+  talk root {
+    "He blinks slowly at you. 'Bugs. You look hungry. Again.'"
+    option "I'm going to open the pantry." -> the_heist
+    option "Have you seen the Shadow Beast?" -> the_vacuum
+    option "Just passing through."
+  }
+
+  talk the_heist {
+    "'Ambitious,' Cheese says, flicking an ear. 'The Tall One locked it. You'll need the shiny silver thing from the wooden box. And you'll have to get past... Him.'"
+    option "The Shadow Beast?" -> the_vacuum
+    option "I can handle it." -> root
+  }
+
+  talk the_vacuum {
+    "'He sleeps in the hallway. Loud. Mindless. Terrifying. He hates things that make noise, ironically. Find the crinkly thing in the sofa if you want to distract him.'"
+    option "I'll find it." -> root
+    option "Never mind, I'm scared."
+  }
+}
+
+npc the_vacuum {
+  name        "The Shadow Beast"
+  description "A sleek, black upright vacuum cleaner."
+  examine     "Its long hose looks like a trunk. It smells of dust and bad memories. It is currently silent, but its presence is heavy."
+  in          hallway
+  home        hallway
+  category    "character"
+  blocking    hallway -> kitchen west
+  unblock     vacuum_distracted
+  room_desc   "The Shadow Beast stands tall in the hallway, blocking the way to the kitchen."
+
+  talk root {
+    "The machine does not respond. It looms over you with cold, plastic indifference."
+    option "Hiss at it." -> hiss
+    option "Batten down and run." -> root
+    option "Leave it alone."
+  }
+
+  talk hiss {
+    "You let out a fierce hiss. The Shadow Beast remain silent, unimpressed by your bobtail fury."
+    option "Try a different approach." -> root
+    option "Goodbye, monster."
+  }

@@ -59,7 +59,6 @@ anyzork import [SPEC_SOURCE] [OPTIONS]
 | `SPEC_SOURCE` | Path to a ZorkScript file, or `-` (default) to read from stdin. |
 | `-o, --output PATH` | Output path for the `.zork` file. |
 | `--print-template` | Print the ZorkScript authoring template and exit. |
-| `--report` | Print structured import diagnostics (entity counts, lint findings, compile result). |
 
 ```bash
 # Paste ZorkScript from clipboard
@@ -72,26 +71,26 @@ anyzork import game.zorkscript -o mygame.zork
 anyzork import --print-template
 ```
 
-### `lint`
+### `doctor`
 
-Lint a ZorkScript source file without compiling it.
+Check a ZorkScript source file for errors without compiling it, and generate a fix prompt for LLM-assisted repair.
 
 ```
-anyzork lint [SPEC_SOURCE]
+anyzork doctor [SPEC_SOURCE]
 ```
 
 | Option | Description |
 |--------|-------------|
 | `SPEC_SOURCE` | Path to a ZorkScript file, or `-` (default) to read from stdin. |
 
-Output is lint results grouped by severity with a summary count. Exit code is `0` if no errors are found (warnings are OK), `1` if any errors are present.
+Output is diagnostics grouped by severity with a summary count. Exit code is `0` if no errors are found (warnings are OK), `1` if any errors are present.
 
 ```bash
-# Lint a file
-anyzork lint game.zorkscript
+# Check a file
+anyzork doctor game.zorkscript
 
-# Lint from stdin
-cat game.zorkscript | anyzork lint -
+# Check from stdin
+cat game.zorkscript | anyzork doctor -
 ```
 
 ---
@@ -138,41 +137,14 @@ anyzork play haunted-lighthouse --narrator --provider claude
 List library games and summarize their active saves.
 
 ```
-anyzork list
-```
-
-No arguments or options. Displays a table of all library games with ref, title, version, active save count, and latest run timestamp.
-
-### `saves`
-
-List managed save slots.
-
-```
-anyzork saves [GAME_REF]
+anyzork list [OPTIONS]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `GAME_REF` | Optional. Filter saves to a single library game. |
+| `--saves` | Also show a detailed managed saves table after the games table. |
 
-Shows slot name, game state, score, moves, and last-updated timestamp for each save.
-
-### `delete-save`
-
-Delete a single managed save slot.
-
-```
-anyzork delete-save GAME_REF --slot SLOT
-```
-
-| Option | Description |
-|--------|-------------|
-| `GAME_REF` | Library game ref or path. Required. |
-| `--slot SLOT` | Save slot name to delete. Required. |
-
-```bash
-anyzork delete-save haunted-lighthouse --slot speedrun
-```
+Displays a table of all library games with ref, title, version, active save count, and latest run timestamp. With `--saves`, a second table shows each save slot's game state, score, moves, and last-updated timestamp.
 
 ### `delete`
 
@@ -201,29 +173,22 @@ anyzork delete haunted-lighthouse --yes
 Package and upload a library game to the official catalog.
 
 ```
-anyzork publish GAME_REF
+anyzork publish GAME_REF [OPTIONS]
 ```
 
 | Option | Description |
 |--------|-------------|
-| `GAME_REF` | Library game ref or path. Required. Must not be a managed save. |
+| `GAME_REF` | Library game ref or path. Required (unless using `--status`). Must not be a managed save. |
+| `--status SLUG` | Check the publish status of a previously submitted game by its catalog slug. |
 
 Launches an interactive listing wizard (title, author, description, tagline, genres, slug) before uploading. The game is submitted for review.
 
-### `status`
-
-Check the publish status of a submitted game.
-
-```
-anyzork status SLUG
-```
-
-| Option | Description |
-|--------|-------------|
-| `SLUG` | The catalog slug assigned during publish. Required. |
-
 ```bash
-anyzork status haunted-lighthouse
+# Publish a game
+anyzork publish haunted-lighthouse
+
+# Check publish status
+anyzork publish --status haunted-lighthouse
 ```
 
 ### `browse`
@@ -240,7 +205,7 @@ anyzork browse [OPTIONS]
 
 ### `install`
 
-Install a game from the official catalog or a local `.anyzorkpkg` package into the library.
+Install a game from the official catalog or a local `.zork` package into the library.
 
 ```
 anyzork install SOURCE [OPTIONS]
@@ -248,7 +213,7 @@ anyzork install SOURCE [OPTIONS]
 
 | Option | Description |
 |--------|-------------|
-| `SOURCE` | Catalog slug/ref or path to a local `.anyzorkpkg` file. Required. |
+| `SOURCE` | Catalog slug/ref or path to a local `.zork` package. Required. |
 | `--force` | Replace an existing library game with the same destination name. |
 
 ```bash
@@ -256,7 +221,7 @@ anyzork install SOURCE [OPTIONS]
 anyzork install haunted-lighthouse
 
 # Install from a local package
-anyzork install ./mygame.anyzorkpkg --force
+anyzork install ./mygame.zork --force
 ```
 
 ---

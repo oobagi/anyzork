@@ -1,17 +1,17 @@
 # Sharing Games
 
-AnyZork games can be shared as portable `.anyzorkpkg` packages, published to the official catalog, or installed from it. This guide covers the full sharing workflow.
+AnyZork games can be shared as portable `.zork` packages, published to the official catalog, or installed from it. This guide covers the full sharing workflow.
 
 ## Package format
 
-A `.anyzorkpkg` file is a ZIP archive containing two entries:
+A `.zork` file is a ZIP archive containing a project manifest and ZorkScript source files:
 
 | Entry | Description |
 |---|---|
-| `manifest.json` | Listing metadata, game metadata, and an integrity checksum. |
-| `game.zork` | The compiled game database. |
+| `manifest.toml` | Project metadata (title, slug, author, description, source file list). |
+| `*.zorkscript` | One or more ZorkScript source files that define the game world. |
 
-The manifest uses the `anyzork-share-package/v1` format and includes the game title, room count, runtime compatibility version, prompt system version, and a SHA-256 checksum of the payload. On install, AnyZork verifies the checksum before writing the game to your library.
+On import or play, AnyZork compiles the archive's source files into a SQLite database stored in the compilation cache (`~/.anyzork/cache/`). Share packages uploaded to the catalog use the `anyzork-share-package/v1` format with additional listing metadata and an integrity checksum.
 
 Packages have a 50 MB upload limit on the official catalog.
 
@@ -38,14 +38,14 @@ The wizard prompts for:
 - **Genres** -- comma-separated genre tags (e.g. `fantasy, horror`).
 - **Slug** -- the URL-safe identifier used as the catalog ref (defaults to a slugified version of the title).
 
-After confirming, AnyZork builds the `.anyzorkpkg`, uploads it, and prints the assigned slug.
+After confirming, AnyZork builds the `.zork`, uploads it, and prints the assigned slug.
 
 ### What happens after upload
 
 Uploaded games are **not immediately visible** in the catalog. They enter a pending review state. The CLI prints a status check command you can use to follow up:
 
 ```
-anyzork status <slug>
+anyzork publish --status <slug>
 ```
 
 See [Checking publish status](#checking-publish-status) below.
@@ -53,7 +53,7 @@ See [Checking publish status](#checking-publish-status) below.
 ## Checking publish status
 
 ```
-anyzork status <slug>
+anyzork publish --status <slug>
 ```
 
 This queries the catalog API and reports one of two states:
@@ -95,17 +95,17 @@ There are two ways to install a shared game.
 anyzork install <ref>
 ```
 
-Where `<ref>` is the slug shown in `anyzork browse`. AnyZork resolves the slug against the official catalog, downloads the `.anyzorkpkg` from the trusted `anyzork.com` domain, verifies the checksum, and extracts the `.zork` file into your library at `~/.anyzork/games/`.
+Where `<ref>` is the slug shown in `anyzork browse`. AnyZork resolves the slug against the official catalog, downloads the `.zork` from the trusted `anyzork.com` domain, verifies the checksum, and extracts the `.zork` file into your library at `~/.anyzork/games/`.
 
 Remote downloads are restricted to the official catalog domain. Arbitrary URLs are rejected.
 
 ### From a local package
 
 ```
-anyzork install path/to/game.anyzorkpkg
+anyzork install path/to/game.zork
 ```
 
-This installs directly from a `.anyzorkpkg` file on disk -- useful for games shared outside the catalog (email, file transfer, etc.).
+This installs directly from a `.zork` file on disk -- useful for games shared outside the catalog (email, file transfer, etc.).
 
 ### Options
 
@@ -135,7 +135,7 @@ These are mainly useful for local development or self-hosted catalogs.
 AnyZork includes a FastAPI-based catalog server that you can run yourself. It provides:
 
 - `GET /catalog.json` -- public catalog in `anyzork-public-catalog/v1` format.
-- `POST /api/games` -- upload endpoint (accepts multipart `.anyzorkpkg` uploads).
+- `POST /api/games` -- upload endpoint (accepts multipart `.zork` uploads).
 - `GET /api/games/<slug>/package` -- download endpoint for published packages.
 - `GET /api/games/<slug>/status` -- publish status check.
 - `GET /admin` -- admin dashboard (HTML).
@@ -179,5 +179,5 @@ curl -X POST http://localhost:8000/api/admin/games/<slug>/unpublish \
 - **No automated moderation.** All uploads enter a pending state and require manual approval before they appear in `browse` or can be installed by ref.
 - **No authentication for uploaders.** Anyone can submit a package to the upload endpoint. There is no account system or upload tokens yet.
 - **No versioning for published games.** Re-uploading with the same slug is rejected unless the server-side store allows replacement. There is no update-in-place flow.
-- **Remote installs are domain-locked.** `anyzork install <ref>` only downloads from `anyzork.com` (or subdomains). Packages from other origins must be downloaded manually and installed as local `.anyzorkpkg` files.
+- **Remote installs are domain-locked.** `anyzork install <ref>` only downloads from `anyzork.com` (or subdomains). Packages from other origins must be downloaded manually and installed as local `.zork` files.
 - **50 MB upload cap.** The catalog API rejects packages larger than 50 MB.

@@ -234,6 +234,29 @@ def dialogue_effects_game_path(tmp_path: Path, minimal_import_spec: dict) -> Pat
     return compiled_path
 
 
+@pytest.fixture
+def zork_archive_path(tmp_path: Path, minimal_zorkscript: str) -> Path:
+    """Create a .zork zip archive from a minimal project."""
+    from anyzork.archive import pack_project
+
+    project_dir = tmp_path / "fixture_project"
+    project_dir.mkdir()
+    (project_dir / "manifest.toml").write_text(
+        '[project]\n'
+        'title = "Fixture Game"\n'
+        'slug = "fixture-game"\n'
+        'author = ""\n'
+        'description = ""\n'
+        'tags = []\n'
+        '\n'
+        '[source]\n'
+        'files = ["game.zorkscript"]\n',
+        encoding="utf-8",
+    )
+    (project_dir / "game.zorkscript").write_text(minimal_zorkscript, encoding="utf-8")
+    return pack_project(project_dir, tmp_path / "fixture_game.zork")
+
+
 def assert_has_error(messages: list, needle: str) -> None:
     text = "\n".join(str(message) for message in messages)
     assert needle in text

@@ -2,11 +2,11 @@
 
 ## Problem
 
-Authors working with ZorkScript have poor feedback loops. When something is wrong with their script, they discover it only after a full `anyzork import` cycle -- which creates a temporary SQLite database, inserts every entity, runs post-import validation, and then either succeeds or throws a terse error message. The specific problems:
+Authors working with ZorkScript have poor feedback loops. When something is wrong with their script, they discover it only after a full `anyzork import` cycle -- which compiles every entity into the compilation cache, runs post-import validation, and then either succeeds or throws a terse error message. The specific problems:
 
 1. **Parse errors lose context.** `ZorkScriptError` carries a line number, but the CLI catches it as a generic `Exception` and prints `Import failed: line 42: expected IDENT but found RBRACE`. No source snippet. No suggestion.
 
-2. **No way to check without compiling.** Validation only runs against the populated `.zork` database. If an author just wants to know "is my script well-formed and internally consistent?", they must pay the full import cost and get a `.zork` file they don't want.
+2. **No way to check without compiling.** Validation only runs against the compiled database. If an author just wants to know "is my script well-formed and internally consistent?", they must pay the full import cost and get a `.zork` archive they don't want. (`anyzork doctor` now addresses this.)
 
 3. **Warnings are opaque.** Post-import warnings are plain strings stripped of their severity, category, and structure. The CLI shows at most 8 and hides the rest.
 
@@ -75,7 +75,7 @@ def from_validation_error(ve: ValidationError) -> Diagnostic:
 **Why `hint` is `str | None` and not a structured object:** Hints are for human consumption. A plain string ("Did you mean 'forest_clearing'?") is sufficient. If we later want machine-actionable fixes (auto-correct), that's a different feature with different data needs.
 
 
-### 2. `anyzork lint` Command
+### 2. `anyzork doctor` Command
 
 #### What It Checks
 
@@ -128,8 +128,8 @@ The function collects all findings and returns them. It does not raise exception
 ```python
 @cli.command()
 @click.argument("source", required=False, default="-")
-def lint(source: str) -> None:
-    """Check ZorkScript for errors without importing."""
+def doctor(source: str) -> None:
+    """Check ZorkScript for errors and generate a fix prompt."""
 ```
 
 Behavior:
@@ -175,88 +175,11 @@ Lint deliberately skips anything that requires a populated database:
 These remain the domain of full `validate_game()` during import. The boundary is clean: lint checks the spec dict, validation checks the compiled database.
 
 
-### 3. `anyzork import --report`
-
-#### What the Report Contains
-
-`--report` extends the existing import flow. It does not replace it. The game is still compiled and validated exactly as today, but instead of printing a one-line success message plus truncated warnings, it prints a structured report.
-
-Report sections:
-
-1. **Summary** -- game title, room count, item count, NPC count, exit count, command count
-2. **Lint diagnostics** -- run `lint_spec()` against the parsed spec before compiling (these are fast and can catch issues before the DB is created)
-3. **Compile result** -- success/failure, output path
-4. **Post-import validation** -- full list of `ValidationError` findings, converted to `Diagnostic` with severity and category
-5. **Totals** -- error count, warning count
-
-The report always shows all diagnostics (no 8-item cap). This is the "give me everything" mode.
-
-#### CLI Integration
-
-```python
-@cli.command("import")
-@click.argument("spec_source", required=False, default="-")
-@click.option("--output", "-o", type=click.Path(path_type=Path), default=None)
-@click.option("--print-template", is_flag=True)
-@click.option("--report", is_flag=True, help="Print detailed import diagnostics.")
-def import_game(spec_source, output, print_template, report):
-```
-
-When `--report` is set:
-- Run lint checks first (spec-level), collect diagnostics
-- If lint finds errors, still attempt compilation (the author may want to see the full picture)
-- Run compilation and validation as normal
-- Convert all `ValidationError` results to `Diagnostic`
-- Print the combined report
-- Exit code follows the same rule: 0 if the game compiled and has no validation errors, 1 otherwise
-
-When `--report` is not set, behavior is identical to today (backward compatible).
-
-#### Output Format
-
-```
-=== Import Report: The Haunted Manor ===
-
-Entities: 12 rooms, 8 exits, 15 items, 3 NPCs, 5 commands, 2 quests
-
---- Lint (spec-level) ---
-No issues found.
-
---- Compile ---
-OK -> ~/.anyzork/games/the_haunted_manor.zork
-
---- Validation (post-import) ---
-[WARN][spatial] Exit 'hall_to_cellar' (hall -> cellar) has no matching reverse exit
-[WARN][item] Item 'dusty_key' is already named in room 'attic' prose
-
---- Totals ---
-0 errors, 2 warnings
-
-Play it with:  anyzork play the_haunted_manor
-```
-
-If compilation fails:
-
-```
-=== Import Report ===
-
---- Lint (spec-level) ---
-[ERROR][reference] Lock 'cellar_lock' targets non-existent exit 'cellar_door'
-[ERROR][reference] Item 'gold_key' references non-existent room 'treasury'
-
---- Compile ---
-FAILED: Imported game failed validation: ...
-
---- Totals ---
-2 errors, 0 warnings
-```
-
-
-### 4. Error Message Improvements
+### 3. Error Message Improvements
 
 These are incremental changes to existing code, not new infrastructure.
 
-#### 4a. Catch `ZorkScriptError` Explicitly in CLI
+#### 3a. Catch `ZorkScriptError` Explicitly in CLI
 
 The import command currently catches `ImportSpecError` twice and then has a bare `except Exception`. `ZorkScriptError` is a `ValueError` subclass and falls through to the generic handler, losing the line number in the formatted output.
 
@@ -277,7 +200,7 @@ except ImportSpecError as exc:
 
 This gives parse errors their own formatting path with line numbers prominently displayed.
 
-#### 4b. Diagnostic Printer
+#### 3b. Diagnostic Printer
 
 A small helper in `diagnostics.py` that uses Rich markup:
 
@@ -291,7 +214,7 @@ def render_diagnostic(diag: Diagnostic, console: Console) -> None:
         console.print(f"  [dim]hint: {diag.hint}[/dim]")
 ```
 
-#### 4c. Hints for Common Errors
+#### 3c. Hints for Common Errors
 
 Add hints to specific lint checks where the fix is obvious:
 
@@ -305,7 +228,7 @@ Hint generation is best-effort. Not every diagnostic needs a hint. Start with th
 Edit distance suggestions should only fire when the entity set is small (say, < 50 entries) to avoid performance surprises on large specs. Use `difflib.get_close_matches` from the standard library.
 
 
-### 5. What NOT to Build
+### 4. What NOT to Build
 
 **No LSP / language server.** This is a CLI tool. Authors paste ZorkScript from LLM output. A language server for an AI-generated DSL is overhead without an audience.
 
@@ -328,7 +251,7 @@ Edit distance suggestions should only fire when the entity set is small (say, < 
 anyzork/
     diagnostics.py     # NEW: Diagnostic dataclass, converters, render helper
     lint.py            # NEW: lint_spec() function with spec-level checks
-    cli.py             # MODIFY: add `lint` command, add `--report` to `import`, catch ZorkScriptError
+    cli.py             # MODIFY: add `doctor` command, catch ZorkScriptError
     validation.py      # NO CHANGES
     zorkscript.py      # NO CHANGES
     importer/
@@ -344,7 +267,7 @@ Two new files (~150 lines each), one modified file. No changes to the parser, va
 
 1. **`diagnostics.py`** -- Diagnostic type and converters. No dependencies on anything new.
 2. **`lint.py`** -- Spec-level checks. Depends on diagnostics.py and reads constants from validation.py and _constants.py.
-3. **`cli.py` changes** -- `lint` command, `--report` flag, `ZorkScriptError` catch. Depends on both new modules.
+3. **`cli.py` changes** -- `doctor` command, `ZorkScriptError` catch. Depends on both new modules.
 4. **Hint generation** -- Add hints to lint checks iteratively. Can be done after the initial PR ships.
 
 Steps 1-3 can ship in a single PR. Step 4 is a follow-up.

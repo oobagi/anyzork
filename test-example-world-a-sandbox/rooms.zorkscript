@@ -1,0 +1,451 @@
+room origin_point {
+  name        "The Origin Point"
+  description "A perfectly cubical room made of matte white panels. A single recessed light in the ceiling casts no shadows."
+  short       "The white cube."
+  first_visit "Movement feels fluid here, as if the air itself is frictionless."
+  start       true
+
+  exit north -> observation_deck "A sliding panel leads north."
+  exit down  -> maintenance_duct "A circular hatch in the floor is open."
+}
+
+room observation_deck {
+  name        "Observation Deck"
+  description "A curved balcony overlooking a vast, empty chasm of grey fog. Glass screens float mid-air, displaying scrolling hex code."
+  short       "A high balcony overlooking the fog."
+
+  exit south -> origin_point "The origin chamber is south."
+  exit east  -> logic_chamber "A bridge of solid light extends east."
+}
+
+room logic_chamber {
+  name        "Logic Chamber"
+  description "Prisms of glass hang from the ceiling by invisible wires. A pedestal in the center holds a dormant emitter."
+  short       "The prism room."
+  dark        true
+
+  exit west  -> observation_deck "The light bridge leads back west."
+  exit north -> terminal_hub (hidden) "A doorway hidden by the darkness."
+}
+
+room maintenance_duct {
+  name        "Maintenance Duct"
+  description "A narrow crawlspace of brushed aluminum. Blue fiber-optic cables pulse like veins along the walls."
+  short       "The aluminum crawlspace."
+
+  exit up    -> origin_point "The hatch leads back up."
+  exit north -> cooling_shrine "The duct widens into a chamber north."
+}
+
+room cooling_shrine {
+  name        "Cooling Shrine"
+  description "The temperature drops sharply here. Heavy frost coats a massive brass radiator in the center of the room."
+  short       "The frozen radiator room."
+
+  exit south -> maintenance_duct "The duct leads south."
+  exit east  -> power_substation "A heavy pressure-door leads east."
+}
+
+room power_substation {
+  name        "Power Substation"
+  description "The hum is loudest here. Banks of capacitors line the walls, flickering with arcs of static electricity."
+  short       "The capacitor room."
+
+  exit west  -> cooling_shrine "The cooling room lies west."
+  exit up    -> terminal_hub "A ladder of rungs leads up."
+}
+
+room terminal_hub {
+  name        "Terminal Hub"
+  description "The junction of all sectors. A massive pillar of data flows from floor to ceiling. A large floor plate sits empty."
+  short       "The central hub."
+
+  exit south -> logic_chamber "The logic chamber is south."
+  exit down  -> power_substation "The ladder leads down to the substation."
+  exit north -> horizon_gate (locked) "The path to the horizon is blocked by a seal."
+}
+
+room horizon_gate {
+  name        "The Horizon Gate"
+  description "A long, white walkway extending into infinity. At the very end, a single door of dark wood stands out of place."
+  short       "The infinite walkway."
+  first_visit "The wooden door smells of old paper and rain—things that shouldn't exist here."
+
+  exit south -> terminal_hub "The hub is back south."
+}
+
+item glass_prism {
+  name        "Glass Prism"
+  description "A heavy, multi-faceted crystal."
+  examine     "It feels colder than the ambient temperature. It refracts light into perfect, sharp spectrums."
+  in          logic_chamber
+  takeable    true
+  home        logic_chamber
+  tags        ["refractor", "heavy"]
+  category    "tool"
+  room_desc   "A glass prism lies on the floor, catching what little light remains."
+  take_msg    "You lift the heavy prism. It hums slightly in your grip."
+  drop_msg    "The prism hits the floor with a crystal chime."
+}
+
+item logic_emitter {
+  name        "Logic Emitter"
+  description "A sleek device with a lens on one side and a switch on the other."
+  examine     "It appears to be a portable light source designed for the prisms."
+  in          observation_deck
+  takeable    true
+  toggle      true
+  toggle_state "off"
+  on_msg      "A beam of concentrated white light shoots from the emitter."
+  off_msg     "The beam flickers out."
+  tags        ["light_source", "logic_tool"]
+  category    "tool"
+  room_desc   "A logic emitter rests on a floating glass screen."
+  home        observation_deck
+}
+
+item weighted_cube {
+  name        "Weighted Cube"
+  description "A 50cm cube of dense, grey composite material."
+  examine     "It is incredibly heavy. A circular icon is etched on each face."
+  in          cooling_shrine
+  takeable    true
+  home        cooling_shrine
+  tags        ["weight", "block"]
+  category    "furniture"
+  room_desc   "A weighted cube sits near the radiator."
+  take_msg    "You strain your muscles to lift the cube."
+  drop_msg    "The cube lands with a thud that vibrates the floor."
+}
+
+item brass_radiator {
+  name        "Brass Radiator"
+  description "A complex network of pipes and fins."
+  examine     "A small red valve is tucked under the primary pipe."
+  in          cooling_shrine
+  takeable    false
+  tags        ["mechanism"]
+  category    "fixture"
+  room_desc   "The brass radiator dominates the center of the room."
+}
+
+item floor_plate {
+  name        "Floor Plate"
+  description "A circular indentation in the floor of the hub."
+  examine     "It looks like it was designed to hold something heavy and square."
+  in          terminal_hub
+  takeable    false
+  tags        ["pressure_sensor"]
+  category    "fixture"
+  room_desc   "A large floor plate is embedded in the center of the hub."
+}
+
+item floating_screen {
+  name        "Floating Screen"
+  description "A pane of glass hovering at eye level."
+  examine     "The text reads: POWER STATUS: OFFLINE. COOLANT: FROZEN. EXIT SEAL: ENGAGED."
+  in          observation_deck
+  takeable    false
+  tags        ["display"]
+  category    "clue"
+  room_desc   "Several floating screens drift lazily around the balcony."
+}
+
+item data_core {
+  name        "Data Core"
+  description "A glowing sphere of pure information."
+  examine     "It is the heart of this sector. Taking it would likely destabilize the seal."
+  in          terminal_hub
+  takeable    true
+  visible     false
+  home        terminal_hub
+  tags        ["key_item", "treasure"]
+  category    "treasure"
+  room_desc   "The data core pulses with a blinding white light."
+}
+
+item maintenance_wrench {
+  name        "Maintenance Wrench"
+  description "A tool made of the same white porcelain as the walls."
+  examine     "It is ergonomically perfect. It has the serial number 001."
+  in          maintenance_duct
+  takeable    true
+  home        maintenance_duct
+  tags        ["tool", "wrench"]
+  category    "tool"
+  room_desc   "A maintenance wrench is magnetically attached to the wall."
+}
+
+item nutrient_paste {
+  name        "Nutrient Paste"
+  description "A silver tube containing a flavorless grey gel."
+  examine     "The label simply says: SUSTENANCE."
+  in          origin_point
+  takeable    true
+  quantity    2
+  max_quantity 2
+  quantity_unit "tubes"
+  depleted_msg "You have squeezed the last of the paste from the tubes."
+  tags        ["food"]
+  category    "consumable"
+  room_desc   "A tube of nutrient paste sits on a small shelf."
+}
+
+item technician_log {
+  name        "Technician Log"
+  description "A digital tablet with a cracked screen."
+  examine     "One entry is still readable: 'The code for the substation override is 2026.'"
+  read_text   "OVERRIDE CODE: 2026. Use on the terminal in the substation."
+  in          maintenance_duct
+  takeable    true
+  home        maintenance_duct
+  tags        ["clue"]
+  category    "document"
+  room_desc   "A technician log lies discarded in the corner."
+}
+
+item power_terminal {
+  name        "Power Terminal"
+  description "A console with a numeric keypad."
+  examine     "It controls the flow of energy to the hub."
+  in          power_substation
+  takeable    false
+  container   true
+  locked      true
+  code        "2026"
+  tags        ["console"]
+  category    "furniture"
+  room_desc   "A power terminal stands against the far wall."
+  open_msg    "The terminal screen flickers to life, accepting the code."
+}
+
+npc maintenance_drone {
+  name        "Drone 7-B"
+  description "A hovering white sphere with a flickering blue lens."
+  examine     "Its outer shell is scorched. It emits a low, sad-sounding hum."
+  in          cooling_shrine
+  home        cooling_shrine
+  room_desc   "Drone 7-B hovers near the frozen radiator, its lens pulsing."
+  category    "character"
+
+  talk root {
+    "Unit 7-B diagnostic: Thermal levels critical. Substation power locked. Can you assist, User?"
+    option "How do I unlock the power?" -> power_hint
+    option "I have a tool that might help with the radiator." -> repair_check {
+      require_item maintenance_wrench
+    }
+    option "I'm just looking around."
+  }
+
+  talk power_hint {
+    "The override module was lost in the substation. The code is usually the current year of the sector's last calibration."
+    option "Thanks for the info." -> root
+    option "Goodbye."
+  }
+
+  talk repair_check {
+    "Analysis: Ceramic Wrench detected. Please use the tool on the cooling valve to restore thermal flow."
+    option "I'll do that now."
+    option "Maybe later."
+  }
+}
+
+npc holographic_guide {
+  name        "The Guide"
+  description "A translucent figure made of blue light."
+  examine     "The figure is flickering in and out of existence. It wears a lab coat that doesn't seem to belong here."
+  in          terminal_hub
+  home        terminal_hub
+  room_desc   "A holographic guide stands near the horizon gate, flickering rhythmically."
+  category    "character"
+
+  talk root {
+    "Welcome to the Hub. The Horizon Gate is sealed until the sector is fully powered and aligned."
+    option "What do I need to do?" -> task_list
+    option "Who are you?" -> identity
+    option "Goodbye."
+  }
+
+  talk task_list {
+    "You must: 1. Restore Substation Power. 2. Align the Logic Beam. 3. Trigger the Hub Pressure Pad."
+    option "I'm on it." -> root
+  }
+
+  talk identity {
+    "I am a recording. My purpose is to ensure the Null Sector is exited correctly. Don't linger too long."
+    option "Understood." -> root
+  }
+}
+
+quest main:breach_protocol {
+  name        "Breach Protocol"
+  description "Restore all sector systems to unlock the Horizon Gate and exit the Null Sector."
+  completion  escaped_the_null
+  score       25
+
+  objective "Restore substation power" -> substation_online
+  objective "Align the logic beam" -> beam_aligned
+  objective "Initialize the hub pressure pad" -> hub_weighted
+  objective "Recover the data core" -> escaped_the_null
+}
+
+quest side:drone_aid {
+  name        "System Maintenance"
+  description "Help Maintenance Drone 7-B with its local repairs."
+  completion  radiator_repaired
+  score       15
+
+  objective "Repair the radiator cooling valve" -> radiator_repaired
+}
+
+flag substation_online "Substation has been rebooted"
+flag beam_aligned "The logic beam is striking the receptor"
+flag hub_weighted "The hub pressure pad is activated"
+flag escaped_the_null "The player has breached the gate"
+flag radiator_repaired "The cooling valve has been turned"
+flag thermal_reset "Thermal status is reset"
+flag power_restored "Power flow is active"
+flag logic_gate_active "The gate sensor is triggered"
+flag core_exposed "The data core pedestal is raised"
+flag cube_placed "The cube is on the plate"
+flag npc_calibrated "The drone is satisfied"
+
+on "turn {target}" in [cooling_shrine] {
+  require has_item(maintenance_wrench)
+  require not_flag(thermal_reset)
+
+  effect set_flag(thermal_reset)
+  effect set_flag(power_restored)
+  effect add_score(20)
+  success "You fit the wrench to the brass radiator valve and give it a sharp turn. A hiss of coolant echoes through the pipes, and the substation hum stabilizes."
+}
+
+on "turn {target}" {
+  success "You try to turn it, but it doesn't budge or doesn't exist."
+}
+
+on "align {target}" in [logic_chamber] {
+  require has_item(glass_prism)
+  require toggle_state(logic_emitter, "on")
+
+  effect set_flag(logic_gate_active)
+  effect reveal_exit(logic_chamber_north)
+  effect add_score(20)
+  success "You place the glass prism in the beam's path. The light refracts into a hidden sensor on the north wall, and a door slides open with a whisper."
+}
+
+on "align {target}" {
+  success "You can't align that here."
+}
+
+on "reboot {target}" in [power_substation] {
+  require has_item(override_module)
+  require has_flag(radiator_repaired)
+
+  effect set_flag(substation_online)
+  effect add_score(15)
+  success "You slide the override module into the slot and enter code 2026. The capacitors roar to life, bathing the room in a vibrant blue glow. Power is restored."
+}
+
+on "reboot {target}" {
+  success "The system doesn't respond to a reboot command here."
+}
+
+on "push {target}" {
+  success "It doesn't budge."
+}
+
+when room_enter(logic_chamber) {
+  require toggle_state(logic_emitter, "on")
+  message "The beam of light cuts through the darkness, illuminating dust motes that shouldn't exist."
+  once
+}
+
+when item_dropped(weighted_cube) {
+  require room_is(terminal_hub)
+  effect set_flag(cube_placed)
+  effect make_visible(data_core)
+  effect set_flag(core_exposed)
+  message "As the cube hits the floor plate, a pedestal rises from the center of the room, revealing the data core."
+}
+
+when item_taken(data_core) {
+  effect set_flag(escaped_the_null)
+  effect unlock(exit_seal)
+  effect add_score(10)
+  message "The moment you touch the core, the white seal to the north shatters."
+  once
+}
+
+interaction tool_on_fixture {
+  tag      "tool"
+  target   "fixture"
+  response "You use the {item} on the {target}. It provides the necessary leverage."
+  effect   set_flag(radiator_repaired)
+}
+
+interaction weight_on_fixture {
+  tag      "weight"
+  target   "fixture"
+  response "You place the {item} onto the {target}. The mechanical sensors acknowledge the mass."
+  effect   set_flag(hub_weighted)
+}
+
+interaction weight_on_sensor {
+  tag      "weight"
+  target   "pressure_sensor"
+  response "The {target} clicks under the weight of the {item}."
+}
+
+interaction light_on_fixture {
+  tag      "light_source"
+  target   "fixture"
+  response "The beam from the {item} illuminates the {target}, but it needs to be reflected to trigger the sensor."
+}
+
+interaction light_on_refractor {
+  tag      "logic_tool"
+  target   "tool"
+  response "The light from the {item} passes through the {target}, creating a beautiful display."
+}
+
+interaction electronics_on_furniture {
+  tag      "electronics"
+  target   "furniture"
+  response "You attempt to interface the {item} with the {target}. It fits into the designated slot."
+}
+
+interaction tool_on_furniture {
+  tag      "tool"
+  target   "furniture"
+  response "You poke the {target} with the {item}. It makes a sterile clicking sound."
+}
+
+interaction wrench_on_character {
+  tag      "wrench"
+  target   "character"
+  response "The {target} retreats slightly. 'Tool usage on chassis not authorized, User.'"
+}
+
+interaction wrench_on_default {
+  tag      "wrench"
+  target   "*"
+  response "You wave the wrench at the {target}. Nothing happens."
+}
+
+interaction weight_on_default {
+  tag      "weight"
+  target   "*"
+  response "You drop the {item} onto the {target}. It makes a heavy thud, but nothing else occurs."
+}
+
+interaction tool_on_default {
+  tag      "tool"
+  target   "*"
+  response "The {item} doesn't seem to have a function when used on the {target}."
+}
+
+interaction food_on_character {
+  tag      "food"
+  target   "character"
+  response "The {target} scans the {item} but has no mouth to consume it."

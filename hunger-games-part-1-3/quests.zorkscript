@@ -1,0 +1,22 @@
+quest main:bloodbath {
+  name        "The Bloodbath"
+  description "Survival is the only goal. Gather supplies and get to cover before the Careers find you."
+  completion  escaped_bloodbath
+  score       50
+
+  objective "Find a weapon" -> has_weapon
+  objective "Gather survival supplies" -> crate_opened
+  objective "Reach the safety of the woods" -> reached_woods
+  objective "Escape to the Deep Woods" -> escaped_bloodbath
+}
+
+quest side:ally {
+  name        "An Unexpected Ally"
+  description "Make a friend in a world designed to make you enemies."
+  completion  rue_fed
+  discovery   rue_helped
+  score       20
+
+  objective "Find Rue in the hills" -> rue_helped
+  objective "Give Rue food" -> rue_fed
+}

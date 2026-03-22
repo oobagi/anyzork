@@ -1,0 +1,9 @@
+[project]
+title = "Just a regular apartment in Chico CA. 2 Cats live there, and their owners, Jaden"
+slug = "just-a-regular-apartment-in-ch"
+author = ""
+description = ""
+tags = []
+
+[source]
+files = ["game.zorkscript", "items.zorkscript", "puzzles.zorkscript"]

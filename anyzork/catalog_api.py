@@ -18,7 +18,7 @@ from anyzork.catalog_store import CatalogStore
 from anyzork.config import Config
 from anyzork.sharing import SharePackageError
 
-_UPLOAD_FILENAME = "submission.anyzorkpkg"
+_UPLOAD_FILENAME = "submission.zork"
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
@@ -83,7 +83,7 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
         return FileResponse(
             game.package_path,
             media_type="application/octet-stream",
-            filename=f"{slug}.anyzorkpkg",
+            filename=f"{slug}.zork",
         )
 
     @app.post("/api/games")

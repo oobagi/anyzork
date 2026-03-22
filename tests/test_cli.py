@@ -14,14 +14,19 @@ from anyzork.services import library as library_service
 from anyzork.sharing import PUBLIC_CATALOG_FORMAT, create_share_package
 
 
-def test_generate_outputs_prompt_for_freeform_concept() -> None:
+def test_generate_outputs_prompt_for_freeform_concept(tmp_path: Path) -> None:
     runner = CliRunner()
 
-    result = runner.invoke(cli, ["generate", "A haunted lighthouse on a foggy coast"])
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(
+            cli,
+            ["generate", "A haunted lighthouse on a foggy coast", "-o", "prompts.txt"],
+        )
 
-    assert result.exit_code == 0, result.output
-    assert "A haunted lighthouse on a foggy coast" in result.output
-    assert "You are authoring a complete, playable text adventure in ZorkScript" in result.output
+        assert result.exit_code == 0, result.output
+        content = Path("prompts.txt").read_text()
+        assert "A haunted lighthouse on a foggy coast" in content
+        assert "You are authoring a complete, playable text adventure in ZorkScript format" in content
 
 
 def test_import_reads_zorkscript_from_stdin(tmp_path: Path, minimal_zorkscript: str) -> None:
@@ -63,14 +68,14 @@ def test_play_creates_and_restarts_managed_save_slot(
     monkeypatch.setattr(cli_module, "Config", FakeConfig)
     monkeypatch.setattr("anyzork.engine.game.GameEngine.start", fake_start)
 
-    first = runner.invoke(cli, ["play", "fixture_game", "--slot", "alpha"])
+    first = runner.invoke(cli, ["play", "fixture_game", "--save", "alpha"])
     assert first.exit_code == 0, first.output
     assert len(started_paths) == 1
     save_path = started_paths[-1]
     assert save_path.exists()
     assert save_path.parent.name
 
-    second = runner.invoke(cli, ["play", "fixture_game", "--slot", "alpha", "--new"])
+    second = runner.invoke(cli, ["play", "fixture_game", "--save", "alpha", "--new"])
     assert second.exit_code == 0, second.output
     assert len(started_paths) == 2
     assert started_paths[-1] == save_path
@@ -225,7 +230,7 @@ def test_list_shows_library_table_with_active_save_count_only(
     assert "beta (won)" in result.output
 
 
-def test_saves_lists_all_saves_and_can_filter_by_game(
+def test_list_saves_flag_shows_saves_table(
     monkeypatch,
     tmp_path: Path,
     compiled_game_path: Path,
@@ -262,36 +267,31 @@ def test_saves_lists_all_saves_and_can_filter_by_game(
 
     monkeypatch.setattr(cli_module, "Config", FakeConfig)
 
-    all_saves = runner.invoke(cli, ["saves"])
+    all_saves = runner.invoke(cli, ["list", "--saves"])
     assert all_saves.exit_code == 0, all_saves.output
+    assert "Game Library" not in all_saves.output
     assert "Managed Saves" in all_saves.output
-    assert "Ref" in all_saves.output
-    assert "Title" in all_saves.output
     assert "fixture_game" in all_saves.output
     assert "second_fixture" in all_saves.output
     assert "alpha" in all_saves.output
     assert "omega" in all_saves.output
 
-    fixture_only = runner.invoke(cli, ["saves", "fixture_game"])
-    assert fixture_only.exit_code == 0, fixture_only.output
-    assert "Managed Saves for Fixture Game" in fixture_only.output
-    assert "Ref" in fixture_only.output
-    assert "Title" in fixture_only.output
-    assert "fixture_game" in fixture_only.output
-    assert "alpha" in fixture_only.output
-    assert "second_fixture" not in fixture_only.output
-    assert "omega" not in fixture_only.output
+    # Without --saves flag, only the library table is shown
+    no_saves = runner.invoke(cli, ["list"])
+    assert no_saves.exit_code == 0, no_saves.output
+    assert "Game Library" in no_saves.output
+    assert "Managed Saves" not in no_saves.output
 
 
 def test_publish_creates_share_package(
-    monkeypatch, tmp_path: Path, compiled_game_path: Path
+    monkeypatch, tmp_path: Path, zork_archive_path: Path
 ) -> None:
     runner = CliRunner()
     library_dir = tmp_path / "library"
     saves_dir = tmp_path / "saves"
     library_dir.mkdir()
     target_game = library_dir / "fixture_game.zork"
-    target_game.write_bytes(compiled_game_path.read_bytes())
+    target_game.write_bytes(zork_archive_path.read_bytes())
     uploaded: dict[str, object] = {}
 
     class FakeConfig:
@@ -332,18 +332,18 @@ def test_publish_creates_share_package(
     assert manifest["format"] == "anyzork-share-package/v1"
     assert manifest["game"]["title"] == "Fixture Game"
     assert manifest["listing"]["title"] == "Fixture Game"
-    assert "game.zork" in uploaded["payload_names"]
+    assert "manifest.toml" in uploaded["payload_names"]
 
 
 def test_publish_accepts_public_listing_metadata(
-    monkeypatch, tmp_path: Path, compiled_game_path: Path
+    monkeypatch, tmp_path: Path, zork_archive_path: Path
 ) -> None:
     runner = CliRunner()
     library_dir = tmp_path / "library"
     saves_dir = tmp_path / "saves"
     library_dir.mkdir()
     target_game = library_dir / "fixture_game.zork"
-    target_game.write_bytes(compiled_game_path.read_bytes())
+    target_game.write_bytes(zork_archive_path.read_bytes())
     uploaded: dict[str, object] = {}
 
     class FakeConfig:
@@ -395,14 +395,14 @@ def test_publish_accepts_public_listing_metadata(
 
 
 def test_publish_wizard_prompts_for_listing_metadata(
-    monkeypatch, tmp_path: Path, compiled_game_path: Path
+    monkeypatch, tmp_path: Path, zork_archive_path: Path
 ) -> None:
     runner = CliRunner()
     library_dir = tmp_path / "library"
     saves_dir = tmp_path / "saves"
     library_dir.mkdir()
     target_game = library_dir / "fixture_game.zork"
-    target_game.write_bytes(compiled_game_path.read_bytes())
+    target_game.write_bytes(zork_archive_path.read_bytes())
     uploaded: dict[str, object] = {}
 
     class FakeConfig:
@@ -454,13 +454,13 @@ def test_publish_wizard_prompts_for_listing_metadata(
 
 
 def test_install_adds_shared_package_to_library(
-    monkeypatch, tmp_path: Path, compiled_game_path: Path
+    monkeypatch, tmp_path: Path, zork_archive_path: Path
 ) -> None:
     runner = CliRunner()
     library_dir = tmp_path / "library"
     saves_dir = tmp_path / "saves"
-    package_path = tmp_path / "fixture_game.anyzorkpkg"
-    create_share_package(compiled_game_path, package_path)
+    package_path = tmp_path / "shared_fixture_game.zork"
+    create_share_package(zork_archive_path, package_path)
 
     class FakeConfig:
         def __init__(self, **_kwargs) -> None:
@@ -477,21 +477,23 @@ def test_install_adds_shared_package_to_library(
     assert result.exit_code == 0, result.output
     installed_path = library_dir / "fixture_game.zork"
     assert installed_path.exists()
-    metadata = cli_module._read_zork_metadata(installed_path)
-    assert metadata is not None
-    assert metadata["title"] == "Fixture Game"
+    # Verify the installed archive contains manifest.toml
+    import zipfile as zf
+    assert zf.is_zipfile(installed_path)
+    with zf.ZipFile(installed_path) as archive:
+        assert "manifest.toml" in archive.namelist()
 
 
 def test_install_uses_catalog_ref_and_relative_package_path(
-    monkeypatch, tmp_path: Path, compiled_game_path: Path
+    monkeypatch, tmp_path: Path, zork_archive_path: Path
 ) -> None:
     runner = CliRunner()
     library_dir = tmp_path / "library"
     saves_dir = tmp_path / "saves"
     share_dir = tmp_path / "published"
     share_dir.mkdir()
-    package_path = share_dir / "fixture_game.anyzorkpkg"
-    create_share_package(compiled_game_path, package_path)
+    package_path = share_dir / "fixture_game.zork"
+    create_share_package(zork_archive_path, package_path)
 
     class FakeConfig:
         def __init__(self, **_kwargs) -> None:
@@ -509,7 +511,7 @@ def test_install_uses_catalog_ref_and_relative_package_path(
             {
                 "slug": ref,
                 "title": "Fixture Game",
-                "package_url": "published/fixture_game.anyzorkpkg",
+                "package_url": "published/fixture_game.zork",
             },
         ),
     )
@@ -521,13 +523,15 @@ def test_install_uses_catalog_ref_and_relative_package_path(
     assert installed_path.exists()
 
 
-def test_install_rejects_local_raw_zork_files(
+def test_install_rejects_non_archive_zork_files(
     monkeypatch, tmp_path: Path, compiled_game_path: Path
 ) -> None:
+    """A .zork file that is not a valid zip archive should be rejected."""
     runner = CliRunner()
     library_dir = tmp_path / "library"
     saves_dir = tmp_path / "saves"
     local_game = tmp_path / "fixture_game.zork"
+    # compiled_game_path is a SQLite file, not a zip archive
     local_game.write_bytes(compiled_game_path.read_bytes())
 
     class FakeConfig:
@@ -543,7 +547,7 @@ def test_install_rejects_local_raw_zork_files(
     result = runner.invoke(cli, ["install", str(local_game)])
 
     assert result.exit_code != 0
-    assert "official catalog ref or a local .anyzorkpkg package" in result.output
+    assert "Install failed" in result.output
 
 
 def test_install_rejects_remote_urls(
@@ -561,10 +565,10 @@ def test_install_rejects_remote_urls(
 
     monkeypatch.setattr(cli_module, "Config", FakeConfig)
 
-    result = runner.invoke(cli, ["install", "https://example.com/fixture_game.anyzorkpkg"])
+    result = runner.invoke(cli, ["install", "https://example.com/fixture_game.zork"])
 
     assert result.exit_code != 0
-    assert "official catalog ref or a local .anyzorkpkg package" in result.output
+    assert "official catalog ref or a local .zork package" in result.output
 
 
 def test_browse_lists_games_from_catalog(monkeypatch) -> None:
@@ -583,7 +587,7 @@ def test_browse_lists_games_from_catalog(monkeypatch) -> None:
                     "tagline": "A tiny deterministic mystery.",
                     "genres": ["mystery", "short"],
                     "featured": True,
-                    "package_url": "https://example.com/fixture_game.anyzorkpkg",
+                    "package_url": "https://example.com/fixture_game.zork",
                     "runtime_compat_version": "r1",
                     "room_count": 2,
                 }

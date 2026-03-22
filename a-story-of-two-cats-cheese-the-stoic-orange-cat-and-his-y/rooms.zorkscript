@@ -1,0 +1,299 @@
+room living_room {
+name        "Sun-Drenched Living Room"
+description "A cozy space filled with the scent of laundry and old sneakers. A giant window looks out toward downtown Chico. The couch is a mountain of cushions, and a discarded box sits in the center of the floor."
+short       "The main living area."
+first_visit "You stretch your tiny bobtail and let out a chirp. The hunt begins."
+
+exit north -> kitchen "The tiles of the kitchen glint to the north."
+exit east  -> bedroom "The carpeted sanctuary of the bedroom lies east."
+exit west  -> balcony "A sliding glass door leads west to the balcony."
+}
+
+room kitchen {
+name        "The Tiled Tundra"
+description "A vast expanse of linoleum. The Great White Tower (the fridge) looms over the room. On its summit, the yellow package of Churu treats mocks you."
+short       "The kitchen."
+
+exit south -> living_room "Back to the living room."
+}
+
+room bedroom {
+name        "The Sleepy Sanctuary"
+description "The air is still here. A large bed takes up most of the space, its underside providing a dark, safe kingdom for stoic orange cats."
+short       "The bedroom."
+first_visit "You hear a rhythmic, low-frequency vibration. Someone is snoring."
+
+exit west  -> living_room "The living room is west."
+}
+
+room balcony {
+name        "The Chico Lookout"
+description "A small concrete square overlooking the street. You can see the trees of Bidwell Park in the distance. A single potted plant sits in the corner, looking suspicious."
+short       "The balcony."
+
+exit east  -> living_room "Back inside to the living room."
+}
+
+-- Items --
+item fluffy_couch {
+name        "Fluffy Couch"
+description "A beige fabric mountain with deep, mysterious crevices."
+examine     "Between the cushions, you see some loose change, a lost remote, and something elastic."
+in          living_room
+takeable    false
+container   true
+tags        ["furniture"]
+category    "furniture"
+room_desc   "The fluffy couch dominates the southern wall."
+open_msg    "You dig your paws deep into the cushions."
+search_msg  "You rummage through the lint and crumbs."
+}
+
+item cardboard_box {
+name        "Delivery Box"
+description "A pristine Amazon box. The pinnacle of feline architecture."
+examine     "It's the perfect size for a bobtail. It smells like shipping labels and destiny."
+in          living_room
+takeable    false
+container   true
+tags        ["furniture"]
+category    "container"
+room_desc   "A tempting cardboard box sits in the middle of the floor."
+open_msg    "You dive into the box with reckless abandon!"
+}
+
+item blue_hair_tie {
+name        "Blue Hair Tie"
+description "A stretchy loop of blue fabric. The ultimate toy."
+examine     "It has just the right amount of bounce. Cheese used to love these before he became 'mature'."
+in          fluffy_couch
+takeable    true
+home        living_room
+tags        ["toy", "trade_good"]
+category    "clue"
+take_msg    "You snag the hair tie with a claw. Victory!"
+drop_msg    "The hair tie hits the floor with a silent thud."
+room_desc   "A blue hair tie lies here, forgotten."
+drop_desc   "A blue hair tie is looped around a table leg."
+}
+
+item laser_pointer {
+name        "Red Dot Maker"
+description "A small silver tube that creates the elusive Red Dot."
+examine     "The Tall One usually holds this. If you can move it, maybe you can control the dot."
+in          cardboard_box
+takeable    true
+home        living_room
+toggle      true
+toggle_state "off"
+on_msg      "A tiny red dot appears on the wall! The chaos begins!"
+off_msg     "The red dot vanishes. Reality is boring again."
+tags        ["tool", "distraction"]
+category    "tool"
+take_msg    "You bat the silver tube into your paws."
+room_desc   "A silver laser pointer sits at the bottom of the box."
+}
+
+item suspicious_plant {
+name        "Potted Fern"
+description "A green, leafy thing that exists only to be chewed."
+examine     "The leaves look remarkably like cat grass. But forbidden."
+in          balcony
+takeable    false
+tags        ["foliage"]
+category    "fixture"
+room_desc   "A suspicious potted fern sits in the corner, rustling in the breeze."
+}
+
+item churu_tube {
+name        "Forbidden Churu"
+description "A yellow tube filled with pure, unadulterated chicken puree."
+examine     "It is the nectar of the gods. It requires two cats to reach."
+in          kitchen
+visible     false
+takeable    true
+home        kitchen
+tags        ["food", "treasure"]
+category    "food"
+take_msg    "You have secured the prize!"
+room_desc   "The yellow Churu tube lies on the floor, waiting to be devoured."
+}
+
+item catnip_mouse {
+name        "Stinky Mouse"
+description "A grey felt mouse that smells of the high-grade 'nip."
+examine     "It's a bit soggy from previous encounters, but still potent."
+in          bedroom
+takeable    true
+home        bedroom
+tags        ["toy", "offering"]
+category    "food"
+take_msg    "The scent of catnip fills your nose. You feel powerful."
+room_desc   "A stinky catnip mouse is tucked under the edge of the bed."
+}
+
+-- NPCs --
+npc cheese_the_cat {
+name        "Cheese"
+description "A large, stoic orange tabby. He takes life one nap at a time."
+examine     "His orange fur is impeccably groomed. He is currently a loaf of judgment."
+in          bedroom
+home        bedroom
+room_desc   "Cheese is loafing under the bed, his eyes half-closed in a majestic nap."
+category    "character"
+
+talk root {
+"He lets out a long, heavy sigh. 'Bugs. It is 2 PM. Why are you vibrating?'"
+option "We need to heist the Churu from the fridge!" -> heist_plan {
+require_item catnip_mouse
+}
+option "I found your favorite hair tie!" -> trade_tie {
+require_item blue_hair_tie
+}
+option "Just checking in on the loaf." -> end
+}
+
+talk heist_plan {
+"'The yellow tube? Truly? Fine. If you provide the distraction, I shall provide the height. But I require a stimulant first.'"
+option "Give him the stinky mouse." -> awake {
+require_item catnip_mouse
+}
+option "I'll be back with the goods." -> end
+}
+
+talk trade_tie {
+"His ears perk up. He bats the hair tie playfully. 'Ah, the old ways. I am listening.'"
+effect remove_item(blue_hair_tie)
+effect set_flag(cheese_awake)
+effect add_score(10)
+option "Let's go to the kitchen!" -> end
+}
+
+talk awake {
+"Cheese sniffs the mouse and suddenly his pupils dilate. He is ready. 'To the kitchen, brother. We ride at dawn... or now.'"
+effect remove_item(catnip_mouse)
+effect set_flag(cheese_awake)
+effect move_npc(cheese_the_cat, kitchen)
+effect add_score(20)
+option "Huzzah!" -> end
+}
+}
+
+npc bugs_the_cat {
+name        "Bugs"
+description "A chaotic gray bobtail with too much energy."
+examine     "That's you! You look great. Very sleek. Very fast."
+in          living_room
+home        living_room
+room_desc   "You are standing here, ready for action."
+category    "character"
+
+talk root {
+"You meow at yourself in the mirror. You look sharp."
+option "Goodbye, handsome." -> end
+}
+}
+
+-- Locks --
+lock churu_lock {
+exit      kitchen -> living_room south
+type      "flag"
+flags     [heist_complete]
+locked    "You aren't leaving until the snack is secured."
+unlocked  "The mission is over. Time for a nap."
+}
+
+-- Puzzles --
+puzzle churu_heist {
+name        "The Great Churu Heist"
+description "Secure the Churu tube from the top of the fridge."
+in          kitchen
+score       50
+steps       ["Wake Cheese with catnip", "Distract the human with the laser", "Climb Cheese to reach the top"]
+hint        "Cheese won't move without his 'nip, and the Tall One is watching the kitchen."
+}
+
+-- Quests --
+quest main:snack_time {
+name        "Operation: Tasty Tube"
+description "Get the Churu from the kitchen fridge."
+completion  heist_complete
+score       30
+
+objective "Wake up Cheese" -> cheese_awake
+objective "Distract the Tall One" -> tall_one_distracted
+objective "Grab the Churu" -> heist_complete
+}
+
+-- Commands --
+on "meow" {
+success "You let out a piercing, high-pitched meow. Somewhere, a human considers getting the spray bottle."
+}
+
+on "pounce {target}" in [living_room] {
+require is_item(cardboard_box)
+effect set_flag(box_explored)
+success "You pounce into the box! It crinkles delightfully."
+}
+
+on "pounce {target}" {
+success "You pounce, but only catch a dust bunny. It is a hollow victory."
+}
+
+on "nap" in [bedroom] {
+success "You curl into a ball and purr. Five minutes later, you wake up even more chaotic than before."
+}
+
+on "nap" {
+success "The floor is too hard for a proper nap here."
+}
+
+-- Triggers --
+when flag_set(cheese_awake) {
+message "Cheese stretches his long orange legs and lets out a mighty yawn. The team is assembled."
+once
+}
+
+when item_taken(churu_tube) {
+effect set_flag(heist_complete)
+effect add_score(20)
+message "The crinkle of the plastic is the sweetest music you've ever heard."
+}
+
+when flag_set(tall_one_distracted) {
+message "The human is mesmerized by the red dot on the living room wall. The kitchen is clear!"
+}
+
+-- Interactions --
+interaction toy_on_character {
+tag      "toy"
+target   "character"
+response "You bat the {item} toward {target}. They watch it slide across the floor with mild interest."
+effect   add_score(5)
+}
+
+interaction distraction_on_furniture {
+tag      "distraction"
+target   "furniture"
+response "You shine the {item} on the {target}. The red dot dances across the surface."
+effect   set_flag(tall_one_distracted)
+}
+
+interaction food_on_character {
+tag      "food"
+target   "character"
+response "You offer the {item} to {target}. He purrs loudly. 'Finally, some good service.'"
+effect   set_flag(cheese_awake)
+}
+
+interaction tool_on_fixture {
+tag      "tool"
+target   "fixture"
+response "You use the {item} on the {target}. It doesn't do much, but the plant looks annoyed."
+}
+
+interaction default_on_default {
+tag      ""
+target   ""
+response "You sniff the {target} and decide it's not worth the effort."
+}

@@ -1,0 +1,111 @@
+--- Triggers ---
+when flag_set(cheese_awake) {
+message "Cheese lets out a war cry! He is ready for the heist."
+effect add_score(10)
+once
+}
+
+when flag_set(tall_one_distracted) {
+message "The Tall One shouts, 'The dot! It's back!' and runs into the living room."
+effect move_npc(tall_one_human, living_room)
+effect unlock(fridge_heist_lock)
+once
+}
+
+when item_taken(churu_tube) {
+effect set_flag(heist_complete)
+effect complete_quest(churu_heist)
+message "The heist is a success! You and Cheese share the spoils."
+once
+}
+
+when room_enter(kitchen) {
+require not_flag(tall_one_distracted)
+message "The human is blocking your path to the fridge summit."
+}
+
+--- Interaction Responses ---
+interaction toy_on_character {
+tag      "toy"
+target   "character"
+response "You bat the {item} at {target}. They look at you with deep confusion."
+}
+
+interaction distraction_on_character {
+tag      "distraction"
+target   "character"
+response "You point the {item} near {target}. Their eyes widen as they begin the hunt!"
+effect   set_flag(tall_one_distracted)
+effect   add_score(10)
+}
+
+interaction food_on_character {
+tag      "food"
+target   "character"
+response "You offer the {item} to {target}. It is a peace offering they cannot refuse."
+effect   set_flag(cheese_awake)
+}
+
+interaction toy_on_furniture {
+tag      "toy"
+target   "furniture"
+response "The {item} bounces off the {target} with a satisfying thud."
+}
+
+interaction default_on_default {
+tag      ""
+target   ""
+response "You sniff the {target} and let out a sneeze. Not very helpful."
+}
+
+--- Custom Commands (On Blocks) ---
+on "meow" {
+success "You let out a sharp meow. The Tall One says, 'I hear you, Bugs, be patient!'"
+}
+
+on "pounce {target}" {
+success "You wiggle your bobtail and launch yourself at the {target}! Total chaos ensues."
+effect add_score(1)
+}
+
+on "chew {target}" in [balcony] {
+require is_item(suspicious_plant)
+require not_flag(plant_chewed)
+
+effect set_flag(plant_chewed)
+effect add_score(15)
+success "You take a big bite of the fern. It's bitter, spicy, and absolutely forbidden. Delicious."
+}
+
+on "chew {target}" {
+success "You give the {target} a little gnaw. It's not as tasty as you'd hoped."
+}
+
+on "climb {target}" in [kitchen] {
+require is_item(fridge_tower)
+require has_flag(cheese_awake)
+require has_flag(tall_one_distracted)
+
+effect move_player(fridge_top)
+success "You scramble up Cheese's back and onto the top of the fridge!"
+}
+
+on "climb {target}" {
+success "You try to climb the {target}, but your claws just slide off."
+}
+
+on "nap" in [bedroom] {
+success "You curl up in a ball of gray fur. The world can wait five minutes."
+}
+
+on "nap" {
+success "You're too excited to nap right now. There are treats to steal!"
+}
+
+on "purr" {
+success "You vibrate with feline intensity. It's very soothing."
+}
+
+on "push {target}" {
+success "You slowly extend a paw and nudge the {target} toward the edge. Gravity does the rest."
+}

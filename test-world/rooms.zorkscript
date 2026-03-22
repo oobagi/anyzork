@@ -1,0 +1,445 @@
+room atrium {
+  name        "Echoing Atrium"
+  description "A vast circular hall with a domed ceiling. High windows cast shafts of dusty light onto a central statue. To the north stands a massive, inactive Resonance Gate."
+  short       "The central atrium of the temple."
+  first_visit "The air is still, smelling of ancient stone and ozone."
+  start       true
+
+  exit north -> gate_chamber "The Resonance Gate looms to the north."
+  exit east  -> solaris_wing "A sun-drenched hallway leads east."
+  exit west  -> archive_wing "A dark, shadowed passage leads west."
+}
+
+room gate_chamber {
+  name        "Gate Chamber"
+  description "A small semicircular room dominated by the Resonance Gate. Three empty sockets are carved into the gate's frame."
+  short       "The gate chamber."
+
+  exit south -> atrium "The atrium lies to the south."
+}
+
+room solaris_wing {
+  name        "Solaris Wing"
+  description "The walls here are lined with gold leaf, reflecting the afternoon sun. A glass-topped pedestal stands in the center of the room."
+  short       "A golden hallway."
+
+  exit west  -> atrium "Return to the atrium."
+  exit north -> balcony "A set of glass doors leads north to a balcony."
+}
+
+room balcony {
+  name        "Overlook Balcony"
+  description "A stone balcony overlooking a misty chasm. A light-bridge projector is mounted to the railing, but it lacks a focus."
+  short       "A balcony over a chasm."
+
+  exit south -> solaris_wing "Go back inside."
+  exit north -> floating_shrine (hidden) "A bridge of solid light spans the chasm to the north."
+}
+
+room floating_shrine {
+  name        "Floating Shrine"
+  description "A tiny marble shrine floating impossibly above the mist. An altar sits in the center."
+  short       "A shrine in the clouds."
+
+  exit south -> balcony "Cross the light-bridge back to the balcony."
+}
+
+room archive_wing {
+  name        "Shadowed Archive"
+  description "Rows of stone shelves hold crumbling scrolls. The light from the atrium doesn't reach the far corners of this room."
+  short       "The dark archives."
+  dark        true
+
+  exit east  -> atrium "The light of the atrium is to the east."
+  exit down  -> scriptorium "Narrow stairs lead down into the depths."
+}
+
+room scriptorium {
+  name        "The Scriptorium"
+  description "A cramped room filled with ink-stained desks. A heavy iron safe is built into the wall here."
+  short       "An ancient writing room."
+  dark        true
+
+  exit up    -> archive_wing "Climb back to the archives."
+}
+
+# -- Items --
+item resonance_gate {
+  name        "Resonance Gate"
+  description "A massive stone archway etched with glowing runes."
+  examine     "Three circular indentations are visible. One seems sized for a Sapphire, one for a Ruby, and one for an Emerald."
+  in          gate_chamber
+  takeable    false
+  category    "fixture"
+  tags        ["goal"]
+  room_desc   "The Resonance Gate stands tall against the northern wall."
+}
+
+item central_statue {
+  name        "Marble Statue"
+  description "A statue of a figure holding a bowl toward the ceiling."
+  examine     "The figure is beautifully carved. The bowl looks like it could hold something."
+  in          atrium
+  takeable    false
+  category    "furniture"
+  tags        ["container"]
+  container   true
+  room_desc   "An elegant marble statue stands in the center of the room."
+}
+
+item brass_lantern {
+  name        "Brass Lantern"
+  description "A sturdy lantern with a glass housing."
+  examine     "It's clean and ready to use. There's a small toggle switch on the side."
+  in          atrium
+  takeable    true
+  home        atrium
+  toggle      true
+  toggle_state "off"
+  on_msg      "The lantern glows with a soft, magical light."
+  off_msg     "The lantern goes dark."
+  category    "tool"
+  tags        ["light_source"]
+  take_msg    "You pick up the brass lantern."
+  room_desc   "A brass lantern sits at the base of the statue."
+  drop_desc   "A brass lantern lies here."
+}
+
+item solaris_pedestal {
+  name        "Gold Pedestal"
+  description "A pedestal topped with a heavy glass dome."
+  examine     "The dome is locked tight. A small keyhole is visible at the base."
+  in          solaris_wing
+  takeable    false
+  category    "container"
+  tags        ["container"]
+  container   true
+  locked      true
+  key         silver_key
+  room_desc   "A gold pedestal stands under a shaft of light."
+  open_msg    "The glass dome slides open with a hiss."
+}
+
+item ruby_shard {
+  name        "Ruby Shard"
+  description "A deep red gemstone that pulses with warmth."
+  examine     "It fits perfectly in the palm of your hand."
+  in          solaris_pedestal
+  takeable    true
+  home        solaris_wing
+  category    "key_item"
+  tags        ["shard", "red"]
+  take_msg    "You take the Ruby Shard. It feels warm."
+  room_desc   "The Ruby Shard rests upon the pedestal."
+  drop_desc   "A glowing red shard lies on the floor."
+}
+
+item iron_safe {
+  name        "Iron Safe"
+  description "A heavy safe with a three-digit combination lock."
+  examine     "The dial turns smoothly. A scratched note on the side says 'The Year of the Fall'."
+  in          scriptorium
+  takeable    false
+  category    "container"
+  tags        ["container"]
+  container   true
+  locked      true
+  code        "451"
+  room_desc   "A heavy iron safe is bolted to the wall."
+  open_msg    "The safe door swings open heavily."
+}
+
+item sapphire_shard {
+  name        "Sapphire Shard"
+  description "A brilliant blue gemstone that feels ice-cold."
+  examine     "Faint humming sounds come from within the crystal."
+  in          iron_safe
+  takeable    true
+  home        scriptorium
+  category    "key_item"
+  tags        ["shard", "blue"]
+  take_msg    "You pocket the cold Sapphire Shard."
+  room_desc   "The Sapphire Shard glints inside the safe."
+  drop_desc   "A blue crystal shard lies here."
+}
+
+item archive_note {
+  name        "Faded Note"
+  description "A scrap of parchment with hurried handwriting."
+  examine     "The ink is faded but readable."
+  read_text   "The library fell in 451. We locked the sapphire away to keep it from the echoes."
+  in          archive_wing
+  takeable    true
+  home        archive_wing
+  category    "document"
+  tags        ["clue"]
+  take_msg    "You take the faded note."
+  room_desc   "A faded note lies on one of the shelves."
+  drop_desc   "A scrap of parchment lies here."
+}
+
+item light_focus {
+  name        "Glass Lens"
+  description "A thick, polished glass lens."
+  examine     "It looks like it belongs in a projector."
+  in          scriptorium
+  takeable    true
+  home        scriptorium
+  category    "tool"
+  tags        ["focus"]
+  take_msg    "You pick up the glass lens."
+  room_desc   "A polished glass lens sits on a desk."
+  drop_desc   "A glass lens lies here."
+}
+
+item bridge_projector {
+  name        "Bridge Projector"
+  description "A brass device pointed out toward the chasm."
+  examine     "It has a slot designed for a Glass Lens."
+  in          balcony
+  takeable    false
+  category    "fixture"
+  tags        ["mechanism"]
+  room_desc   "A bridge projector is mounted to the balcony railing."
+}
+
+item emerald_shard {
+  name        "Emerald Shard"
+  description "A vibrant green gemstone that smells of fresh rain."
+  examine     "The most beautiful of the three shards."
+  in          floating_shrine
+  takeable    true
+  home        floating_shrine
+  category    "key_item"
+  tags        ["shard", "green"]
+  take_msg    "You carefully lift the Emerald Shard."
+  room_desc   "The Emerald Shard sits atop the marble altar."
+  drop_desc   "A green shard lies on the ground."
+}
+
+item silver_key {
+  name        "Silver Key"
+  description "A simple silver key with a sun engraved on the head."
+  examine     "It looks like it belongs in the Solaris Wing."
+  in          echo_guardian
+  takeable    true
+  category    "key_item"
+  tags        ["key"]
+  take_msg    "You take the silver key from the guardian's hand."
+}
+
+item dried_meat {
+  name        "Dried Meat"
+  description "A salty, preserved strip of meat."
+  examine     "It's not very appetizing, but it's edible."
+  in          atrium
+  takeable    true
+  home        atrium
+  quantity    2
+  max_quantity 2
+  category    "consumable"
+  tags        ["food"]
+  take_msg    "You take the dried meat."
+  room_desc   "A pouch of dried meat lies near the statue."
+}
+
+# -- NPCs --
+npc echo_guardian {
+  name        "Echo Guardian"
+  description "A shimmering, translucent figure clad in ancient robes."
+  examine     "The figure is mostly transparent, but its eyes hold a deep weariness. It seems to be waiting for something."
+  in          solaris_wing
+  home        solaris_wing
+  category    "character"
+  room_desc   "A shimmering Echo Guardian stands near the pedestal, looking hungry."
+  dialogue    "The guardian sighs, a sound like wind through dry grass."
+
+  talk root {
+    "The sun has set on my people, yet I remain. I guard the Ruby until a provider arrives."
+    option "Who are you?" -> identity
+    option "I need the key to the pedestal." -> key_request
+    option "Goodbye."
+  }
+
+  talk identity {
+    "I am the memory of the sun's first rays. I was bound here to ensure only those with compassion could reach the shards."
+    option "I see." -> root
+    option "Never mind."
+  }
+
+  talk key_request {
+    "My service has lasted centuries, and my spirit grows thin. Feed the echo, and I shall grant you the sun's key."
+    option "I will see what I can find." -> root {
+      require not_flag(guardian_satisfied)
+    }
+    option "I have some meat for you." -> satisfied {
+      require_item dried_meat
+    }
+  }
+
+  talk satisfied {
+    "The guardian takes the meat, which vanishes into his shimmering form. 'The cycle continues,' he whispers, handing you a key."
+    effect consume_quantity(dried_meat, 1)
+    effect spawn_item(silver_key, _inventory)
+    effect set_flag(guardian_satisfied)
+    effect add_score(10)
+    option "Thank you." -> end
+  }
+}
+
+npc scriptorium_ghost {
+  name        "Ghostly Scribe"
+  description "A faint spirit hovering over a desk, clutching a spectral quill."
+  examine     "He is frantically writing on nothingness, ignoring his surroundings."
+  in          scriptorium
+  home        scriptorium
+  category    "character"
+  room_desc   "A Ghostly Scribe hovers near one of the ink-stained desks."
+  dialogue    "He mutters about ink and deadlines."
+
+  talk root {
+    "Ink! I need more ink! The history of 451 will not write itself!"
+    option "What happened in 451?" -> history
+    option "Do you know the safe combination?" -> code_hint
+    option "I'll leave you to your work."
+  }
+
+  talk history {
+    "The Year of the Fall! The shadows came and the archives were sealed. We lost so much... but the Sapphire is safe."
+    option "Tell me more about the safe." -> code_hint
+    option "Goodbye."
+  }
+
+  talk code_hint {
+    "The safe? It is locked with the memory of our ending. Look to the notes of the archive if your memory fails you."
+    option "Thank you." -> end
+  }
+}
+
+# -- Puzzles --
+puzzle gate_puzzle {
+  name        "The Resonance Gate"
+  description "The gate requires three shards to function."
+  in          gate_chamber
+  score       30
+  steps       ["Find the Sapphire Shard", "Find the Ruby Shard", "Find the Emerald Shard"]
+  hint        "Search the wings of the temple for the colored gemstones."
+}
+
+puzzle bridge_puzzle {
+  name        "The Light Bridge"
+  description "The chasm is impassable without the bridge."
+  in          balcony
+  score       20
+  steps       ["Find the lens in the scriptorium", "Use the lens on the projector"]
+  hint        "The projector on the balcony is missing a focus lens."
+}
+
+# -- Quests --
+quest main:escape_the_atrium {
+  name        "The Final Resonance"
+  description "Gather all three shards and activate the Resonance Gate to escape."
+  completion  gate_powered
+  score       20
+
+  objective "Acquire the Sapphire Shard" -> sapphire_found
+  objective "Acquire the Ruby Shard" -> ruby_found
+  objective "Acquire the Emerald Shard" -> emerald_found
+}
+
+quest side:feed_the_echoes {
+  name        "Mercy for the Dead"
+  description "The Echo Guardian is hungry. Find him something to eat."
+  completion  guardian_satisfied
+  score       10
+
+  objective "Find food in the atrium" -> item_taken(dried_meat)
+  objective "Give food to the guardian" -> guardian_satisfied
+}
+
+# -- Commands & Triggers --
+on "push {target}" in [atrium] {
+  require is_id(target, central_statue)
+  require not_flag(statue_shattered)
+
+  effect set_flag(statue_shattered)
+  effect open_container(central_statue)
+  effect add_score(5)
+  success "You heave against the statue. It grinds aside, revealing a hidden compartment in its base."
+}
+
+on "push {target}" {
+  success "It doesn't budge."
+}
+
+on "climb {target}" {
+  success "There's nothing here worth climbing."
+}
+
+on "pray" {
+  success "The ancient gods of the atrium do not answer."
+}
+
+interaction tool_on_fixture {
+  tag         "focus"
+  target      "fixture"
+  response    "You slide the {item} into the {target}. A beam of light shoots out, solidifying into a bridge!"
+  effect      reveal_exit(balcony_north)
+  effect      set_flag(bridge_extended)
+  effect      solve_puzzle(bridge_puzzle)
+  effect      add_score(15)
+}
+
+interaction shard_on_fixture {
+  tag         "shard"
+  target      "fixture"
+  response    "You place the {item} into one of the sockets. The gate hums louder."
+  effect      remove_item(_item)
+
+  when item_id(ruby_shard) { effect set_flag(ruby_found) }
+  when item_id(sapphire_shard) { effect set_flag(sapphire_found) }
+  when item_id(emerald_shard) { effect set_flag(emerald_found) }
+}
+
+interaction shard_on_default {
+  tag         "shard"
+  target      "*"
+  response    "The shard pulses in your hand, but doesn't react to the {target}."
+}
+
+interaction food_on_default {
+  tag         "food"
+  target      "*"
+  response    "That wouldn't be very helpful to use there."
+}
+
+interaction focus_on_default {
+  tag         "focus"
+  target      "*"
+  response    "The lens magnifies the {target}, but nothing else happens."
+}
+
+when flag_set(ruby_found) {
+  require has_flag(sapphire_found)
+  require has_flag(emerald_found)
+
+  effect set_flag(gate_powered)
+  effect solve_puzzle(gate_puzzle)
+  message "The final shard clicks into place. The Resonance Gate erupts into a swirl of blue light!"
+}
+
+when item_taken(ruby_shard) { effect set_flag(ruby_found) once }
+when item_taken(sapphire_shard) { effect set_flag(sapphire_found) once }
+when item_taken(emerald_shard) { effect set_flag(emerald_found) once }
+
+when room_enter(archive_wing) {
+  require toggle_state(brass_lantern, "on")
+  require not_flag(lantern_activated)
+
+  effect set_flag(lantern_activated)
+  message "Your lantern illuminates the dust and shadows of the archives."
+}
+
+when flag_set(gate_powered) {
+  effect add_score(20)
+}[201

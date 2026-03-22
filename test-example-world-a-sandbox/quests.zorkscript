@@ -1,0 +1,20 @@
+quest main:breach_protocol {
+name        "Breach Protocol"
+description "Restore all sector systems to unlock the Horizon Gate and exit the Null Sector."
+completion  escaped_the_null
+score       25
+
+objective "Restore substation power" -> substation_online
+objective "Align the logic beam" -> beam_aligned
+objective "Initialize the hub pressure pad" -> hub_weighted
+objective "Recover the data core" -> escaped_the_null
+}
+
+quest side:drone_aid {
+name        "System Maintenance"
+description "Help Maintenance Drone 7-B with its local repairs."
+completion  radiator_repaired
+score       15
+
+objective "Repair the radiator cooling valve" -> radiator_repaired
+}

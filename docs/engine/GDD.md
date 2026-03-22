@@ -9,7 +9,7 @@ Using an LLM to run a text adventure in real time fails in the same ways over an
 AnyZork splits the system into three steps:
 
 1. `anyzork generate` builds a ZorkScript authoring prompt for an external LLM.
-2. `anyzork import` compiles the returned ZorkScript into structured data stored in a portable SQLite `.zork` file.
+2. `anyzork import` compiles the returned ZorkScript into a portable `.zork` archive.
 3. `anyzork play` runs the deterministic engine against that file.
 
 The LLM is used once for creativity. The engine handles all runtime state.

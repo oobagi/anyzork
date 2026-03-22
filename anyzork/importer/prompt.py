@@ -343,6 +343,8 @@ item rusty_pipe {
 # Every NPC talk branch MUST include a dismissive exit option (e.g., "Never mind" or
 # "Goodbye") so the player can leave the conversation. Do not create dialogue paths
 # with no exit option — the player gets trapped in dialogue mode.
+# To EXIT dialogue: use option "Goodbye." (no arrow) OR option "Goodbye." -> end
+# Both work. "-> end" explicitly ends the conversation. Omitting the arrow does too.
 #
 # Conditions (require_item, require not_flag, etc.) go on OPTIONS, not on
 # talk node headers. Gate access to a dialogue branch by conditioning the
@@ -354,10 +356,12 @@ item rusty_pipe {
 #     effect spawn_item(magic_ring, _inventory)
 #     effect add_score(10)
 #     sets [received_ring]
-#     option "Thank you." -> end
+#     option "Thank you."
 #   }
 # Effects in talk blocks use the SAME syntax as on/when blocks.
 # They fire when the node is visited, before the player sees options.
+# sets [flag1, flag2] can appear in talk nodes (fires on entering the node)
+# and in option blocks (fires when that option is chosen).
 
 npc guard {
   name        "The Guard"
@@ -445,6 +449,10 @@ puzzle vault_puzzle {
 }
 
 # -- Quests -- main: or side: prefix. Inline objectives with -> completion_flag.
+# Objective modifiers (optional, in parentheses after ->):
+#   objective "Find the key" -> found_key (optional)
+#   objective "Bonus treasure" -> bonus_found (optional, bonus: 10)
+#   objective "First step" -> step_done (order: 0)
 
 quest main:escape {
   name        "Escape the Dungeon"
@@ -478,6 +486,25 @@ quest side:vault_secret {
 # dead NPCs (auto-spawn a searchable "{Name}'s Body" container on death),
 # and requires (use batteries on flashlight auto-works when requires is set).
 # ONLY author on blocks for CUSTOM verbs the engine doesn't know.
+#
+# Available preconditions for require lines (use ONLY these, do not invent new ones):
+#   has_item(item_id)                  -- player has the item
+#   has_flag(flag_id)                  -- flag is true
+#   not_flag(flag_id)                  -- flag is false
+#   in_room(room_id)                   -- player is in room
+#   item_in_room(item_id, room_id)     -- item is in room
+#   item_accessible(item_id)           -- item is reachable (in room or inventory)
+#   npc_in_room(npc_id, room_id)       -- NPC is in room (_current = player's room)
+#   toggle_state(item_id, "state")     -- item toggle matches state
+#   lock_unlocked(lock_id)             -- lock is unlocked
+#   puzzle_solved(puzzle_id)           -- puzzle is solved
+#   health_above(N)                    -- player HP > N
+#   container_open(item_id)            -- container is open
+#   item_in_container(item, container) -- item is inside container
+#   not_item_in_container(item, cont)  -- item is NOT in container
+#   container_has_contents(item_id)    -- container is not empty
+#   container_empty(item_id)           -- container is empty
+#   has_quantity(item_id, N)           -- consumable has >= N charges
 #
 # Available effects for on/when blocks (use ONLY these, do not invent new ones):
 #   set_flag(id)              -- set a flag to true
@@ -790,10 +817,21 @@ Constraints:
   The player will type exactly what the clue says.
 - For combination locks and code-locked containers, use the code field. The engine
   prompts the player to enter the code when they type "unlock [target]".
-  Exit lock example: lock safe_lock { exit room -> vault north / type "combination" /
-  code "813" / locked "A combination dial blocks the way." / unlocked "Click. The lock opens." }
-  Container example: item wall_safe { container true / locked true / code "813" /
-  lock_msg "The safe has a three-digit dial." }
+  Exit lock example:
+    lock safe_lock {
+      exit room -> vault north
+      type "combination"
+      code "813"
+      locked "A combination dial blocks the way."
+      unlocked "Click. The lock opens."
+    }
+  Container example:
+    item wall_safe {
+      container true
+      locked true
+      code "813"
+      lock_msg "The safe has a three-digit dial."
+    }
   Always provide an in-game clue with the exact code (a photograph, a note, a date).
 - Prefer built-in engine verbs over custom verbs. Instead of a custom "combine" verb,
   use "use item_a on item_b" with an interaction response. Instead of "install fuse",
@@ -811,6 +849,30 @@ Constraints:
   because the parser matches on the first word. Use distinct prefixes: "Vault Door"
   and "Iron Key Half", or "Cell Door" and "Brass Key". Each item name should be
   unambiguously matchable.
+- Do NOT invent field names. The parser rejects any field not listed below.
+  Valid fields per block type (use ONLY these):
+  game:        title, author, intro, win_text, lose_text, max_score, realism, win, lose
+  player:      start, hp, max_hp
+  room:        name, description, short, first_visit, dark, start, exit
+  item:        name, description, examine, in, takeable, visible, home, tags, category,
+               room_desc, drop_desc, take_msg, drop_msg, read_text,
+               container, is_open, has_lid, locked, key, code, lock_msg, open_msg, search_msg,
+               toggle, toggle_state, on_msg, off_msg,
+               quantity, max_quantity, quantity_unit, depleted_msg, quantity_desc,
+               requires, requires_msg, weight, accepts_items, reject_msg
+  npc:         name, description, examine, in, home, room_desc, drop_desc, dialogue, category,
+               blocking, unblock, hp, damage, talk
+  talk:        (text), option, effect, sets
+  option:      (text) [-> label|end], require_item, require_flag, exclude_flag,
+               required_flags, excluded_flags, required_items, set_flags
+  flag:        (id) (description)
+  lock:        exit, type, key, flags, code, locked, unlocked
+  puzzle:      name, description, in, score, steps, hint
+  quest:       name, description, completion, discovery, score, objective
+  on:          require, effect, success, fail, done, once, priority
+  when:        require, effect, message, once, priority
+  interaction: tag, target, response, effect, consumes, score, sets_flag
+  "print" is NOT a standalone keyword — use "message" or "effect print(text)".
 
 Concept:
 {concept}

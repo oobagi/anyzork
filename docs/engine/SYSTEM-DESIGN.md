@@ -5,12 +5,12 @@
 AnyZork is a CLI tool that turns a natural-language idea into a playable text adventure. The shipped authoring path is intentionally split into two steps:
 
 1. Authoring: `anyzork generate` produces a ZorkScript authoring prompt.
-2. Import/runtime: an external LLM returns ZorkScript, `anyzork import` compiles it into a SQLite `.zork` file, and the deterministic engine plays it with no LLM in the loop unless optional narrator mode is enabled.
+2. Import/runtime: an external LLM returns ZorkScript, `anyzork import` compiles it into a `.zork` archive, and the deterministic engine plays it with no LLM in the loop unless optional narrator mode is enabled.
 
 The separation is the product. The model creates content once; the engine owns state forever.
 
 ```text
-Prompt -> `anyzork generate` -> external LLM -> `anyzork import` -> .zork database -> Game Engine -> Player
+Prompt -> `anyzork generate` -> external LLM -> `anyzork import` -> .zork archive -> Game Engine -> Player
 ```
 
 Current authoring flow:
@@ -30,15 +30,14 @@ Current commands:
 
 - `anyzork generate [prompt]` — build a ZorkScript authoring prompt (freeform, guided wizard, or preset)
 - `anyzork import <file|->` — compile ZorkScript into a `.zork` game file
-- `anyzork lint <file|->` — lint a ZorkScript source file without compiling
+- `anyzork doctor <file|->` — check a ZorkScript source file for errors and generate a fix prompt
 - `anyzork publish <game>` — package a library game and upload it to the catalog
-- `anyzork status <slug>` — check the publish status of a submitted game
-- `anyzork install <source>` — install a game from the catalog, a URL, or a local `.anyzorkpkg`
+- `anyzork publish --status <slug>` — check the publish status of a submitted game
+- `anyzork install <source>` — install a game from the catalog or a local `.zork` package
 - `anyzork browse` — browse the public catalog
 - `anyzork play [game]` — play a library game or `.zork` file
 - `anyzork list` — list library games and their active saves
-- `anyzork saves [game]` — list managed save slots
-- `anyzork delete-save <game>` — delete a managed save slot
+- `anyzork list --saves` — also show detailed managed save slots
 - `anyzork delete <game>` — delete a library game and all its saves
 
 The CLI handles argument parsing, import/export UX, package creation, catalog publishing and status tracking, install flows, catalog browsing, and launching the runtime engine.
@@ -56,7 +55,7 @@ Sources, from lowest to highest priority:
 5. CLI overrides
 
 Supported providers for narrator mode today are `claude`, `openai`, and `gemini`.
-Browse/install talk to the official AnyZork catalog, publish talks to the official AnyZork upload API, and public installs are intentionally limited to official refs plus local `.anyzorkpkg` artifacts.
+Browse/install talk to the official AnyZork catalog, publish talks to the official AnyZork upload API, and public installs are intentionally limited to official refs plus local `.zork` artifacts.
 
 ### 2.3 Public Catalog Service
 
@@ -64,7 +63,7 @@ Client-side packaging, installation, and upload logic lives in [anyzork/sharing.
 
 The service exposes:
 
-- `POST /api/games` for uploaded `.anyzorkpkg` files and metadata
+- `POST /api/games` for uploaded `.zork` files and metadata
 - `GET /api/games` for public game listings
 - `GET /api/games/{slug}` for one public entry
 - `GET /api/games/{slug}/status` for publish status checks
@@ -77,7 +76,7 @@ This is deployment infrastructure for the official AnyZork hosted catalog. The e
 
 ### 2.4 Database Layer
 
-The database wrapper lives in [anyzork/db/schema.py](../../anyzork/db/schema.py). SQLite is both the world format and the save format.
+The database wrapper lives in [anyzork/db/schema.py](../../anyzork/db/schema.py). `.zork` archives hold the authored world as `manifest.toml` + `.zorkscript` source files. SQLite is used internally as a compilation cache (`~/.anyzork/cache/*.db`) and for save files (`~/.anyzork/saves/`).
 
 Important tables:
 
@@ -175,12 +174,11 @@ Diagnostics are produced by [anyzork/diagnostics.py](../../anyzork/diagnostics.p
 
 `diagnostics.py` defines a unified `Diagnostic` dataclass with fields for severity (error, warning, info), message, and optional source location. All lint and import validation findings are expressed as `Diagnostic` instances, giving consumers a single type to work with.
 
-`lint.py` exposes `lint_spec()`, which takes a parsed ZorkScript spec and returns a list of `Diagnostic` objects. It checks for common authoring mistakes -- dangling references, unused flags, unreachable rooms, and similar structural issues -- without compiling to a `.zork` database.
+`lint.py` exposes `lint_spec()`, which takes a parsed ZorkScript spec and returns a list of `Diagnostic` objects. It checks for common authoring mistakes -- dangling references, unused flags, unreachable rooms, and similar structural issues -- without compiling to a database.
 
-The two main consumers are:
+The main consumers are:
 
-- `anyzork lint` — runs `lint_spec()` and prints results grouped by severity with a summary count. Exits 0 if no errors (warnings are OK), 1 if errors are found.
-- `anyzork import --report` — runs `lint_spec()` alongside the full compile pipeline and prints a structured report of entity counts, lint findings, and the compile result.
+- `anyzork doctor` — runs `lint_spec()`, prints results grouped by severity with a summary count, and generates a fix prompt for LLM-assisted repair. Exits 0 if no errors (warnings are OK), 1 if errors are found.
 
 ### 2.11 ZorkScript Parser
 
@@ -219,18 +217,18 @@ After a prompt is resolved, `build_zorkscript_prompt()` in [anyzork/importer.py]
 The import pipeline then:
 
 1. Parses ZorkScript via the hand-written recursive descent parser in [anyzork/zorkscript.py](../../anyzork/zorkscript.py).
-2. Compiles the parsed spec into a `.zork` SQLite database.
+2. Compiles the parsed spec into a `.zork` archive (with an internal SQLite compilation cache).
 3. Runs deterministic validation against the compiled database.
 
 ## 4. Runtime State Model
 
-The `.zork` file is also the save:
+The `.zork` archive holds the authored source; the engine plays against a compiled SQLite database (either the compilation cache or a managed save copy):
 
 - world data is immutable in shape after generation
 - runtime tables track player state, visited rooms, score, quest status, and one-shot execution state
-- saving is just persisting the SQLite file
+- saving is just persisting the SQLite save file
 
-This means the engine never needs a separate save serializer.
+Save files are managed copies of the compiled database stored in `~/.anyzork/saves/`.
 
 ## 5. Validation Philosophy
 

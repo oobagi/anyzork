@@ -48,6 +48,7 @@ All `Config` fields can be set via environment variables prefixed with `ANYZORK_
 | `ANYZORK_NARRATOR_ENABLED` | `narrator_enabled` | `false` |
 | `ANYZORK_GAMES_DIR` | `games_dir` | `~/.anyzork/games` |
 | `ANYZORK_SAVES_DIR` | `saves_dir` | `~/.anyzork/saves` |
+| `ANYZORK_CACHE_DIR` | `cache_dir` | `~/.anyzork/cache` |
 | `ANYZORK_PUBLIC_CATALOG_DIR` | `public_catalog_dir` | `~/.anyzork/public_catalog` |
 | `ANYZORK_NARRATOR_TEMPERATURE` | `narrator_temperature` | `0.9` |
 | `ANYZORK_NARRATOR_MAX_TOKENS` | `narrator_max_tokens` | `4096` |
@@ -74,7 +75,7 @@ Each provider has a default model used when `model` is not set:
 
 ## Path fields
 
-`games_dir`, `saves_dir`, and `public_catalog_dir` are resolved to absolute paths at startup. Tilde (`~`) expansion is supported.
+`games_dir`, `saves_dir`, `cache_dir`, and `public_catalog_dir` are resolved to absolute paths at startup. Tilde (`~`) expansion is supported.
 
 ## Example config
 

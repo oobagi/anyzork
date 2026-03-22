@@ -1,0 +1,20 @@
+quest main:the_test {
+name        "Project Alpha"
+description "Comply with the test parameters to secure release from the facility."
+completion  test_complete
+score       50
+
+objective "Review chamber protocols" -> manual_read
+objective "Acquire level 1 access" -> door_opened
+objective "Exit the facility" -> test_complete
+}
+
+quest side:security_breach {
+name        "Off the Record"
+description "Disable the surveillance systems monitoring the test."
+completion  camera_smashed
+score       15
+
+objective "Find a suitable tool" -> manual_read
+objective "Destroy the security_camera" -> camera_smashed
+}

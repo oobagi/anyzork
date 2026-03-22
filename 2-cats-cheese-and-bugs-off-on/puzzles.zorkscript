@@ -1,0 +1,26 @@
+flag found_batteries "The player has found the batteries for the flashlight."
+flag flashlight_powered "The flashlight is equipped with batteries and ready for use."
+flag found_key "The player has secured the porch key."
+flag porch_unlocked "The garden gate has been unlocked."
+
+puzzle power_flashlight {
+  name        "Let There Be Light"
+  description "A cat cannot see in the pitch-black pantry without help."
+  require_flag flashlight_powered
+  solve_text  "The flashlight beam cuts through the gloom. You are no longer afraid of the dark."
+}
+
+puzzle open_exit {
+  name        "The Great Outdoors"
+  description "The way to the garden is barred by a locked glass door."
+  require_flag porch_unlocked
+  solve_text  "The click of the latch is the sweetest sound you've heard all morning."
+}
+
+lock back_porch_lock {
+  exit back_porch -> garden down
+  type "key"
+  key porch_key
+  locked "The door to the garden is locked tight. A cat's paw cannot turn the latch without a key."
+  unlocked "You stand on your hind legs, slip the key into the slot, and turn. The door swings open with a creak."
+}

@@ -7,8 +7,8 @@ Draft -- v0.1
 ## 1. Overview
 
 ZorkScript is a textual DSL for authoring AnyZork game worlds. It compiles to
-the same SQLite schema (`.zork` file) consumed by the deterministic runtime
-engine. No engine changes are required.
+a `.zork` archive (zip containing `manifest.toml` + `.zorkscript` source files)
+consumed by the deterministic runtime engine. No engine changes are required.
 
 ### Why not JSON?
 
@@ -1326,7 +1326,7 @@ Token reduction: roughly **65%** for equivalent content.
 ### What the compiler does
 
 The ZorkScript compiler is a straightforward transpiler. It parses the
-textual DSL and inserts rows into the existing SQLite schema. There is no
+textual DSL and inserts rows into a SQLite compilation cache. There is no
 intermediate representation, no optimization pass, and no code generation.
 
 ```
@@ -1342,7 +1342,7 @@ ZorkScript source
   [DB writer]  -- INSERT into existing schema tables
       |
       v
-  .zork file (SQLite)
+  .zork archive (zip)
 ```
 
 ### Parsing strategy
@@ -1561,7 +1561,7 @@ JSON compatibility path has been removed from the shipped app, so the import
 surface is now deliberately narrow:
 
 1. **ZorkScript import** (`anyzork import game.zorkscript`)
-2. **Standard output**: a compiled SQLite `.zork` game file
+2. **Standard output**: a compiled `.zork` game archive
 
 ### What the compiler must NOT do
 

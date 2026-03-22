@@ -1,0 +1,116 @@
+flag gate_powered "The resonance gate is active"
+flag lantern_activated "The lantern has been used to see"
+
+--- SPECIFIC commands ---
+on "push {target}" in [atrium] {
+require is_id(target, central_statue)
+require not_flag(statue_shattered)
+
+effect set_flag(statue_shattered)
+effect open_container(central_statue)
+effect add_score(5)
+success "You heave against the statue. It grinds aside, revealing a hidden compartment in its base."
+}
+
+--- GLOBAL FALLBACKS ---
+on "push {target}" {
+success "It doesn't budge."
+}
+
+on "climb {target}" {
+success "There's nothing here worth climbing."
+}
+
+on "pray" {
+success "The ancient gods of the atrium do not answer."
+}
+
+--- TRIGGERS ---
+when item_taken(ruby_shard) {
+effect set_flag(ruby_found)
+once
+}
+
+when item_taken(sapphire_shard) {
+effect set_flag(sapphire_found)
+once
+}
+
+when item_taken(emerald_shard) {
+effect set_flag(emerald_found)
+once
+}
+
+when room_enter(archive_wing) {
+require toggle_state(brass_lantern, "on")
+require not_flag(lantern_activated)
+
+effect set_flag(lantern_activated)
+message "Your lantern illuminates the dust and shadows of the archives."
+}
+
+when flag_set(ruby_found) {
+require has_flag(sapphire_found)
+require has_flag(emerald_found)
+
+effect set_flag(gate_powered)
+effect solve_puzzle(resonance_gate_puzzle)
+message "A harmonic hum fills the chamber as the third shard clicks into place. The gate is open!"
+}
+
+--- INTERACTION RESPONSES ---
+interaction shard_on_gate {
+tag      "shard"
+target   "fixture"
+response "You slot the {item} into the Resonance Gate. It begins to hum."
+effect   remove_item(_item)
+effect   add_score(5)
+}
+
+interaction focus_on_projector {
+tag      "focus"
+target   "mechanism"
+response "You slide the {item} into the projector. A beam of light shoots out, forming a solid bridge to the north!"
+effect   set_flag(bridge_extended)
+effect   reveal_exit(balcony_north)
+effect   solve_puzzle(projector_puzzle)
+effect   remove_item(light_focus)
+}
+
+interaction food_on_character {
+tag      "food"
+target   "character"
+response "You offer the {item} to {target}. They accept it with a ghostly nod."
+consumes 1
+effect   set_flag(guardian_satisfied)
+}
+
+interaction tool_on_furniture {
+tag      "tool"
+target   "furniture"
+response "You poke the {item} at the {target}, but it doesn't reveal anything new."
+}
+
+interaction shard_on_default {
+tag      "shard"
+target   "*"
+response "The shard pulses with light, but doesn't react to the {target}."
+}
+
+interaction food_on_default {
+tag      "food"
+target   "*"
+response "You shouldn't waste the food on that."
+}
+
+interaction tool_on_default {
+tag      "tool"
+target   "*"
+response "You use the {item} on the {target}, but nothing happens."
+}
+
+interaction key_on_default {
+tag      "key"
+target   "*"
+response "That doesn't have a keyhole."
+}[201

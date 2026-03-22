@@ -1,0 +1,9 @@
+[project]
+title = "Hunger games, part 1."
+slug = "hunger-games-part-1-4"
+author = ""
+description = ""
+tags = []
+
+[source]
+files = ["game.zorkscript", "rooms.zorkscript", "items.zorkscript", "npcs.zorkscript", "puzzles.zorkscript", "quests.zorkscript", "commands.zorkscript"]

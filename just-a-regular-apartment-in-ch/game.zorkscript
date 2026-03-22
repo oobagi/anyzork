@@ -1,0 +1,10 @@
+game {
+title       "Chico Chaos: The Apartment Chronicles"
+author      "A whimsical journey through domestic bliss."
+intro       "The afternoon sun streams through the window of your Chico apartment. It is a rare moment of peace, but Jazzy looks like she has a plan, and the cats are suspiciously quiet."
+win_text    "With the remote found, the cats fed, and Jaden finally away from his monitors, the movie night begins. Total cozy victory!"
+lose_text   "The apartment descends into chaos as the cats decide to start parkouring off the walls. Movie night is cancelled."
+max_score   100
+realism     "medium"
+win         [movie_started]
+}

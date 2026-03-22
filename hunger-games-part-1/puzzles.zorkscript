@@ -1,0 +1,30 @@
+flag cato_defeated "Cato has been bypassed or killed"
+flag woods_accessible "The deep woods are open"
+flag fed_rue "Rue has been fed"
+flag cato_attack "Cato is attacking the player"
+
+lock woods_lock {
+  exit     pine_forest -> deep_woods west
+  type     "flag"
+  flags    [fed_rue]
+  locked   "The undergrowth is too thick to pass here. You need someone who knows the trails."
+  unlocked "The path through the brambles is now visible."
+}
+
+puzzle cache_puzzle {
+  name        "The District 4 Cache"
+  description "Unlock the hidden supply box."
+  in          cliff_edge
+  score       15
+  steps       ["Find the note in the gully", "Enter the code into the cache"]
+  hint        "A note in the gully mentions a District number."
+}
+
+puzzle escape_bloodbath {
+  name        "Survival"
+  description "Get out of the Cornucopia clearing alive."
+  in          cornucopia_exterior
+  score       20
+  steps       ["Bypass Cato", "Feed Rue to find the path", "Enter the Deep Woods"]
+  hint        "Rue might know a way out if you show her kindness."
+}

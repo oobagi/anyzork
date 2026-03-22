@@ -1,0 +1,18 @@
+game {
+  title       "The 74th Hunger Games: The Bloodbath"
+  author      "Jaden Watson"
+  intro       "You stand upon a metal pedestal. The sun of the arena is blinding. Around you, sixty seconds tick down on a giant holographic clock. Ahead lies the Cornucopia, a golden horn overflowing with life-saving supplies. To your left and right, other Tributes tense, ready to kill or die. 5... 4... 3... 2... 1... The gong sounds!"
+  win_text    "You sprint into the dense treeline, clutching your supplies. Behind you, the cannons begin to fire, signaling the fallen. You have survived the Bloodbath."
+  lose_text   "The world fades as a spear finds its mark. Your games are over."
+  max_score   150
+  realism     "medium"
+  win         [escaped_bloodbath]
+}
+
+player {
+  start       pedestal
+  hp          100
+  max_hp      100
+}
+
+flag escaped_bloodbath "The player has successfully entered the woods with supplies"
