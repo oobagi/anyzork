@@ -796,6 +796,44 @@ class GameDB:
 
         return None
 
+    def find_items_by_name(
+        self, name: str, location_type: str, location_id: str
+    ) -> list[dict]:
+        """Like ``find_item_by_name`` but returns ALL matches at the best tier."""
+        name_lower = name.lower().strip()
+        if not name_lower:
+            return []
+
+        if location_type == "inventory":
+            candidates = self._fetchall(
+                "SELECT * FROM items "
+                "WHERE room_id IS NULL AND container_id IS NULL "
+                "AND is_visible = 1"
+            )
+        else:
+            candidates = self._fetchall(
+                "SELECT * FROM items WHERE room_id = ? AND is_visible = 1 AND container_id IS NULL",
+                (location_id,),
+            )
+
+        if not candidates:
+            return []
+
+        exact = [i for i in candidates if i["name"].lower() == name_lower]
+        if exact:
+            return exact
+
+        substring_matches = [i for i in candidates if name_lower in i["name"].lower()]
+        if substring_matches:
+            return substring_matches
+
+        input_words = name_lower.split()
+        word_matches = [
+            i for i in candidates
+            if any(iw in i["name"].lower().split() for iw in input_words)
+        ]
+        return word_matches
+
     def move_item(self, item_id: str, location_type: str, location_id: str) -> None:
         """Move an item to a new location.
 
