@@ -243,8 +243,17 @@ class GameEngine:
 
             intro = meta.get("intro_text", "")
             if intro:
+                display_intro = intro
+                if self._narrator is not None:
+                    with self.console.status("[dim italic]the narrator contemplates...[/]", spinner="dots"):
+                        narrated_intro = self._narrator.narrate_action(
+                            "intro", None, [intro]
+                        )
+                    if narrated_intro:
+                        from rich.markup import escape
+                        display_intro = escape(narrated_intro)
                 self.console.print()
-                self.console.print(intro, style=STYLE_PROSE)
+                self.console.print(display_intro, style=STYLE_PROSE)
 
         self.console.print()
 
@@ -254,7 +263,8 @@ class GameEngine:
         self._emit_event("room_enter", room_id=player["current_room_id"])
 
         # Show shortcut bar once after the very first room display.
-        if not self._shown_shortcut_bar:
+        # Suppressed in narrator mode to keep the immersive feel.
+        if not self._shown_shortcut_bar and self._narrator is None:
             self.console.print(
                 "  [dim]\\[I]nventory  \\[J]ournal  \\[L]ook  \\[H]elp[/]"
             )
@@ -414,7 +424,8 @@ class GameEngine:
             if result.success or (
                 result.messages and result.messages != ["I don't understand that."]
             ):
-                for msg in result.messages:
+                narrated_msgs = self._narrate_action(verb, None, result.messages)
+                for msg in narrated_msgs:
                     self.console.print(msg)
                 dsl_handled = True
 
@@ -873,6 +884,7 @@ class GameEngine:
 
         # Attempt narration if the narrator is active.
         display_body = body
+        narration_succeeded = False
         if self._narrator is not None:
             with self.console.status("[dim italic]the narrator contemplates...[/]", spinner="dots"):
                 narrated = self._narrator.narrate_room(
@@ -887,15 +899,19 @@ class GameEngine:
                 # Escape Rich markup in LLM output (e.g., [15] in "AR-15").
                 from rich.markup import escape
                 display_body = escape(narrated)
-            elif self._narrator._failure_count == 1:
+                narration_succeeded = True
+            elif self._narrator.failure_count == 1:
                 self.console.print(
                     "(Narrator unavailable for this turn -- showing engine output.)",
                     style=STYLE_SYSTEM,
                 )
 
-        scene_prose = self._build_scene_prose(display_body, list_items, list_npcs)
-        if scene_prose:
-            display_body = "\n\n".join([display_body, scene_prose])
+        # When narration succeeded, the prose already covers items/NPCs --
+        # suppress the "Nearby..." fallback list to avoid duplication.
+        if not narration_succeeded:
+            scene_prose = self._build_scene_prose(display_body, list_items, list_npcs)
+            if scene_prose:
+                display_body = "\n\n".join([display_body, scene_prose])
 
         # Highlight interactable names in the room body.
         all_npcs = self.db.get_npcs_in(room_id)
@@ -912,25 +928,27 @@ class GameEngine:
             )
         )
 
-        # Exits.
-        exits = self.db.get_exits(room_id)
-        if exits:
-            exit_strs: list[str] = []
-            for ex in exits:
-                direction_label = ex["direction"]
-                dest_name = ex.get("to_room_name", "???")
-                if ex.get("is_locked"):
-                    exit_strs.append(
-                        f"[{STYLE_DIRECTION_LOCKED}]{direction_label}[/]"
-                        f" [{STYLE_LOCKED}](locked)[/]"
-                    )
-                else:
-                    exit_strs.append(
-                        f"[{STYLE_DIRECTION}]{direction_label}[/] — {dest_name}"
-                    )
-            self.console.print(
-                "[bold]Exits:[/] " + "  |  ".join(exit_strs)
-            )
+        # Exits -- suppress when narrator prose covers the room, to keep
+        # the immersive feel.  The player can still use directions freely.
+        if not narration_succeeded:
+            exits = self.db.get_exits(room_id)
+            if exits:
+                exit_strs: list[str] = []
+                for ex in exits:
+                    direction_label = ex["direction"]
+                    dest_name = ex.get("to_room_name", "???")
+                    if ex.get("is_locked"):
+                        exit_strs.append(
+                            f"[{STYLE_DIRECTION_LOCKED}]{direction_label}[/]"
+                            f" [{STYLE_LOCKED}](locked)[/]"
+                        )
+                    else:
+                        exit_strs.append(
+                            f"[{STYLE_DIRECTION}]{direction_label}[/] — {dest_name}"
+                        )
+                self.console.print(
+                    "[bold]Exits:[/] " + "  |  ".join(exit_strs)
+                )
 
     # ------------------------------------------------------------------
     # Movement
@@ -946,13 +964,15 @@ class GameEngine:
         exit_row = self.db.get_exit_by_direction(current_room, direction)
 
         if exit_row is None:
-            self.console.print("You can't go that way.", style=STYLE_SYSTEM)
+            msg = self._narrate_single("go", direction, "You can't go that way.")
+            self.console.print(msg, style=STYLE_SYSTEM)
             return
 
         # Locked?
         if exit_row.get("is_locked"):
             lock = self.db.get_lock_for_exit(exit_row["id"])
             raw_msg = lock["locked_message"] if lock else "The way is blocked."
+            raw_msg = self._narrate_single("go", direction, raw_msg)
             self.console.print(raw_msg, style=STYLE_LOCKED)
             return
 
@@ -967,13 +987,27 @@ class GameEngine:
     # ------------------------------------------------------------------
 
     def show_inventory(self) -> None:
-        """Display the player's inventory as a styled table."""
+        """Display the player's inventory as a styled table.
+
+        In narrator mode, the table is replaced with flowing prose that
+        names every carried item.
+        """
         items = self.db.get_inventory()
 
         if not items:
             self.console.print("You are empty-handed.", style=STYLE_SYSTEM)
             return
 
+        # Narrator path -- replace the table with prose.
+        if self._narrator is not None:
+            with self.console.status("[dim italic]narrating...[/]", spinner="dots"):
+                narrated = self._narrator.narrate_inventory(items)
+            if narrated:
+                from rich.markup import escape
+                self.console.print(escape(narrated))
+                return
+
+        # Standard table display.
         table = Table(
             title="Inventory",
             title_style=STYLE_ROOM_NAME,
@@ -1042,15 +1076,12 @@ class GameEngine:
         """List built-in commands and game-specific DSL commands."""
 
         c = STYLE_COMMAND  # shorthand for readability in the help block
-        narrator_status = "ON" if self._narrator is not None else "OFF"
         sections = (
             "[bold]Built-in commands[/]\n"
             f"  [{c}]look[/] (l)           — redisplay the current room\n"
             f"  [{c}]inventory[/] (i)      — show what you're carrying\n"
             f"  [{c}]score[/]              — show your score and stats\n"
             f"  [{c}]quests[/] (j)          — view your quest log\n"
-            f"  [{c}]narrator on[/]/[{c}]off[/]    — toggle narrator mode "
-            f"(currently {narrator_status})\n"
             f"  [{c}]save[/]               — show the active save path\n"
             f"  [{c}]help[/] (h)           — this message\n"
             f"  [{c}]quit[/] / [{c}]exit[/] / [{c}]q[/]    — leave the game\n"
@@ -1164,7 +1195,11 @@ class GameEngine:
     # ------------------------------------------------------------------
 
     def _show_quests(self) -> None:
-        """Display the player's quest log."""
+        """Display the player's quest log.
+
+        In narrator mode, the structured quest log is replaced with
+        flowing prose that summarizes the player's active objectives.
+        """
         db = self.db
         all_quests = db.get_all_quests()
 
@@ -1177,6 +1212,9 @@ class GameEngine:
             )
             return
 
+        # Build a plain-text summary for narrator consumption.
+        plain_parts: list[str] = []
+
         lines: list[str] = []
         lines.append(f"[{STYLE_ROOM_NAME}]{'=' * 12} Quest Log {'=' * 12}[/]")
         lines.append("")
@@ -1188,14 +1226,25 @@ class GameEngine:
             lines.append(f"  [{STYLE_QUEST_HEADER}]MAIN QUEST[/]")
             self._format_quest_entry(quest, lines)
             lines.append("")
+            plain_parts.append(f"Main: {quest['name']} ({quest['status']}): {quest['description']}")
 
         if side_quests:
             lines.append(f"  [{STYLE_QUEST_HEADER}]SIDE QUESTS[/]")
             for quest in side_quests:
                 self._format_quest_entry(quest, lines)
                 lines.append("")
+                plain_parts.append(f"Side: {quest['name']} ({quest['status']}): {quest['description']}")
 
         lines.append(f"[{STYLE_ROOM_NAME}]{'=' * 39}[/]")
+
+        # Narrator path -- replace the structured log with prose.
+        if self._narrator is not None and plain_parts:
+            with self.console.status("[dim italic]narrating...[/]", spinner="dots"):
+                narrated = self._narrator.narrate_quest_log("\n".join(plain_parts))
+            if narrated:
+                from rich.markup import escape
+                self.console.print(escape(narrated))
+                return
 
         for line in lines:
             self.console.print(line)
@@ -1338,6 +1387,7 @@ class GameEngine:
                 return
             db.move_item(item["id"], "inventory", "")
             msg = item.get("take_message") or "Taken."
+            msg = self._narrate_single("take", item["name"], msg)
             self.console.print(msg)
             self._emit_event("item_taken", item_id=item["id"])
             return
@@ -1352,6 +1402,7 @@ class GameEngine:
                     return
                 db.take_item_from_container(found["id"])
                 msg = found.get("take_message") or "Taken."
+                msg = self._narrate_single("take", found["name"], msg)
                 self.console.print(msg)
                 self._emit_event("item_taken", item_id=found["id"])
                 return
@@ -1374,6 +1425,7 @@ class GameEngine:
 
         db.move_item(item["id"], "room", current_room_id)
         msg = item.get("drop_message") or "Dropped."
+        msg = self._narrate_single("drop", item["name"], msg)
         self.console.print(msg)
         self._emit_event("item_dropped", item_id=item["id"], room_id=current_room_id)
 
@@ -1396,6 +1448,7 @@ class GameEngine:
                 desc = item["read_description"]
             else:
                 desc = item.get("examine_description") or item.get("description", "")
+            desc = self._narrate_single("examine", item["name"], desc)
             self.console.print(desc)
 
             # Toggle state appendix.
@@ -1453,6 +1506,7 @@ class GameEngine:
         npc = db.find_npc_by_name(target_name, current_room_id)
         if npc is not None:
             desc = npc.get("examine_description") or npc.get("description", "")
+            desc = self._narrate_single("examine", npc["name"], desc)
             self.console.print(desc)
             return
 
@@ -1892,11 +1946,9 @@ class GameEngine:
             return
 
         db.take_item_from_container(found["id"])
-        msg = found.get("take_message")
-        if msg:
-            self.console.print(msg)
-        else:
-            self.console.print("Taken.")
+        msg = found.get("take_message") or "Taken."
+        msg = self._narrate_single("take", found["name"], msg)
+        self.console.print(msg)
         self._emit_event("item_taken", item_id=found["id"])
 
     def _handle_put_in(
@@ -2035,7 +2087,9 @@ class GameEngine:
             return
 
         db.toggle_item_state(item["id"], new_state)
-        self.console.print(self._get_toggle_message(item, new_state))
+        msg = self._get_toggle_message(item, new_state)
+        msg = self._narrate_single("use", item["name"], msg)
+        self.console.print(msg)
         self._render_toggle_lighting_change(
             item,
             room_id=current_room_id,
@@ -2068,7 +2122,9 @@ class GameEngine:
             return
 
         db.toggle_item_state(item["id"], target_state)
-        self.console.print(self._get_toggle_message(item, target_state))
+        msg = self._get_toggle_message(item, target_state)
+        msg = self._narrate_single("turn", item["name"], msg)
+        self.console.print(msg)
         self._render_toggle_lighting_change(
             item,
             room_id=current_room_id,
@@ -2130,6 +2186,7 @@ class GameEngine:
         text = response["response"]
         text = text.replace("{item}", inv_item["name"])
         text = text.replace("{target}", target_display)
+        text = self._narrate_single("use", target_display, text)
         self.console.print(text)
 
         # Apply all interaction mutations atomically — effects, consume,
@@ -2211,8 +2268,17 @@ class GameEngine:
         if root_node is None:
             default = npc.get("default_dialogue", "")
             if default:
+                display = default
+                if self._narrator is not None:
+                    with self.console.status("[dim italic]narrating...[/]", spinner="dots"):
+                        narrated = self._narrator.narrate_dialogue(
+                            npc["name"], default, f"default:{npc['id']}"
+                        )
+                    if narrated:
+                        from rich.markup import escape
+                        display = escape(narrated)
                 self.console.print(
-                    f"[{STYLE_NPC}]{npc['name']}[/]: {default}"
+                    f"[{STYLE_NPC}]{npc['name']}[/]: {display}"
                 )
             else:
                 self.console.print(
@@ -2388,7 +2454,19 @@ class GameEngine:
     ) -> None:
         """Render a dialogue panel showing the NPC's text and options."""
         lines: list[str] = []
-        lines.append(f"\n{node['content']}\n")
+
+        # Narrate the NPC's speech when narrator is active.
+        content = node["content"]
+        if self._narrator is not None:
+            with self.console.status("[dim italic]narrating...[/]", spinner="dots"):
+                narrated = self._narrator.narrate_dialogue(
+                    npc["name"], content, node["id"]
+                )
+            if narrated:
+                from rich.markup import escape
+                content = escape(narrated)
+
+        lines.append(f"\n{content}\n")
 
         has_terminal = any(opt.get("next_node_id") is None for opt in visible_options)
 
@@ -2488,11 +2566,12 @@ class GameEngine:
 
         if win_flags and all(self.db.has_flag(f) for f in win_flags):
             self.db.update_player(game_state="won")
-            win_text = meta.get("win_text", "")
+            win_text = meta.get("win_text", "") or "Congratulations! You have won the game!"
+            win_text = self._narrate_single("victory", None, win_text)
             self.console.print()
             self.console.print(
                 Panel(
-                    win_text or "Congratulations! You have won the game!",
+                    win_text,
                     title=f"[{STYLE_VICTORY_TITLE}]Victory[/]",
                     border_style=STYLE_VICTORY_BORDER,
                     padding=(1, 2),
@@ -2518,11 +2597,12 @@ class GameEngine:
 
         if lost:
             self.db.update_player(game_state="lost")
-            lose_text = meta.get("lose_text", "")
+            lose_text = meta.get("lose_text", "") or "You have lost the game."
+            lose_text = self._narrate_single("defeat", None, lose_text)
             self.console.print()
             self.console.print(
                 Panel(
-                    lose_text or "You have lost the game.",
+                    lose_text,
                     title=f"[{STYLE_DEFEAT_TITLE}]Defeat[/]",
                     border_style=STYLE_DEFEAT_BORDER,
                     padding=(1, 2),
@@ -2851,8 +2931,22 @@ class GameEngine:
         with self.console.status("[dim italic]narrating...[/]", spinner="dots"):
             narrated = self._narrator.narrate_action(verb, target, messages)
         if narrated:
-            return [narrated]
+            from rich.markup import escape
+            return [escape(narrated)]
         return messages
+
+    def _narrate_single(
+        self, verb: str, target: str | None, message: str
+    ) -> str:
+        """Narrate a single feedback message. Returns original on failure."""
+        if self._narrator is None:
+            return message
+        with self.console.status("[dim italic]narrating...[/]", spinner="dots"):
+            narrated = self._narrator.narrate_feedback(verb, target, message)
+        if narrated:
+            from rich.markup import escape
+            return escape(narrated)
+        return message
 
     @staticmethod
     def _parse_direction(tokens: list[str]) -> str | None:
