@@ -1,15 +1,22 @@
 # Narrator Mode
 
-Narrator mode adds an optional LLM prose layer on top of AnyZork's deterministic engine. When enabled, room descriptions and action results are rewritten into atmospheric, novel-style prose before they reach your terminal. The narrator is strictly read-only -- it cannot change game state, alter item positions, or influence outcomes. If the LLM call fails for any reason, the engine falls back to its own deterministic output and the game continues normally.
+Narrator mode adds an optional LLM prose layer on top of AnyZork's deterministic engine. When enabled, every major player-facing output -- room descriptions, action results, dialogue, inventory, quest logs, and system feedback -- is rewritten into atmospheric, novel-style prose before it reaches your terminal. The narrator is strictly read-only -- it cannot change game state, alter item positions, or influence outcomes. If the LLM call fails for any reason, the engine falls back to its own deterministic output and the game continues normally.
 
 ## How it works
 
-Every turn, the engine produces its standard output (room description, item lists, NPC presence, action results). When narrator mode is active, that output is sent to an LLM provider as a prompt, along with a system prompt derived from the game's metadata (title, tone, era, setting). The LLM rewrites the output as grounded prose -- mentioning every item and NPC by name, adding no new information, and never suggesting what the player should do.
+Every turn, the engine produces its standard output (room description, item lists, NPC presence, action results). When narrator mode is active, that output is sent to an LLM provider as a prompt, along with a system prompt derived from the game's metadata (title and author prompt). The LLM rewrites the output as grounded prose -- mentioning every item and NPC by name, adding no new information, and never suggesting what the player should do.
 
-Two kinds of output get narrated:
+Output types that get narrated:
 
-- **Room descriptions** -- the full room body including items and NPCs present.
-- **Action results** -- output from commands like `take`, `use`, `open`, etc. Short outputs (under 20 characters) are skipped and shown as-is.
+- **Room descriptions** -- the full room body including items and NPCs present. When narration succeeds, UI chrome (item lists, NPC lists, exit bars) is suppressed for a cleaner, more immersive feel.
+- **Action results** -- output from commands like `take`, `drop`, `examine`, `use`, `unlock`, `open`, etc.
+- **Dialogue** -- NPC speech is rewritten as natural dialogue prose.
+- **Inventory** -- the inventory table is replaced with flowing prose that names every carried item.
+- **Quest log** -- the structured quest log is summarized as narrative prose.
+- **System feedback** -- movement blocks, locked doors, and other engine messages are narrated when long enough.
+- **Win/lose endings** -- victory and defeat text is narrated for a cinematic finish.
+
+Short outputs (under 20 characters) are shown as-is without narration.
 
 ## Enabling narrator mode
 
@@ -48,19 +55,9 @@ provider = "claude"
 # narrator_max_tokens = 4096   # optional — max tokens per narrator response
 ```
 
-### In-game toggle
+### Setup wizard
 
-You can turn the narrator on or off during gameplay without restarting:
-
-```
-> narrator on
-Narrator mode enabled.
-
-> narrator off
-Narrator mode disabled.
-```
-
-The `narrator on` / `narrator off` preference is saved with your game, so if you enable it mid-session it will remain enabled the next time you load that save.
+Run `anyzork narrator` to configure your provider and API key interactively. The wizard walks through provider selection, API key entry, and validation.
 
 ## Provider setup
 
@@ -136,8 +133,8 @@ model = "claude-sonnet-4-5"
 
 Two settings control the narrator's LLM behavior:
 
-- **`narrator_temperature`** — Controls randomness in narrated prose. Default `0.9`. Range 0.0--2.0. Lower values produce more predictable, consistent prose; higher values add variety and surprise. A value around 0.7--1.0 works well for most games.
-- **`narrator_max_tokens`** — Maximum tokens the LLM may generate per narrator response. Default `4096`. Minimum 1. Lower values reduce latency and cost but may truncate longer room descriptions.
+- **`narrator_temperature`** -- Controls randomness in narrated prose. Default `0.9`. Range 0.0--2.0. Lower values produce more predictable, consistent prose; higher values add variety and surprise. A value around 0.7--1.0 works well for most games.
+- **`narrator_max_tokens`** -- Maximum tokens the LLM may generate per narrator response. Default `4096`. Minimum 1. Lower values reduce latency and cost but may truncate longer room descriptions.
 
 ### Config file
 
@@ -156,14 +153,28 @@ export ANYZORK_NARRATOR_MAX_TOKENS=2048
 
 CLI flags and environment variables override config file values as described in the [Configuration guide](configuration.md).
 
+## World context
+
+The narrator reads game identity from metadata at session start. This includes:
+
+- **Title** -- used in the system prompt to ground the narrator's voice.
+- **Author prompt** -- the first sentence is extracted as a setting hint, giving the narrator world-appropriate tone without needing extra metadata columns.
+- **Realism level** -- stored from metadata for future use in tuning prose style.
+
+This context is read once and reused for every narration call in the session, avoiding redundant database reads.
+
 ## Caching
 
-The narrator caches results to avoid redundant API calls:
+The narrator caches results aggressively to avoid redundant API calls:
 
 - **Room cache**: Keyed by room ID and the set of items/NPCs present. If you revisit a room and nothing has changed (no items taken or dropped, no NPCs moved), the cached narration is reused. If the room state changes -- say you pick up a key -- the cache is invalidated and a fresh narration is generated.
 - **Action cache**: Keyed by verb, target, and the exact message content. Repeating the same action with the same outcome (e.g., trying to open a locked door twice) reuses the cached narration.
+- **Dialogue cache**: Keyed by dialogue node ID. Revisiting the same dialogue node reuses the cached narration.
+- **Inventory cache**: Keyed by the sorted set of item names. The same inventory state always returns the same prose.
+- **Quest cache**: Keyed by the plain-text quest summary. Unchanged quest state returns cached prose.
+- **Feedback cache**: Keyed by verb, target, and message. Identical system messages always return cached prose.
 
-Both caches are in-memory and last for the duration of the session. They are not persisted to disk.
+All caches are in-memory and last for the duration of the session. They are not persisted to disk.
 
 ## Fallback behavior
 
@@ -178,10 +189,22 @@ Transient errors (rate limits, server errors, connection problems) are retried u
 
 If the narrator cannot be initialized at all (missing API key, missing SDK), a message is shown at startup and the game proceeds without narration.
 
+## UI chrome suppression
+
+In narrator mode, several UI elements are suppressed when narration succeeds to maintain the immersive feel:
+
+- The "Nearby..." item/NPC fallback list below room descriptions
+- The "Exits:" direction bar below room panels
+- The shortcut bar shown after the first room display
+- The structured inventory table (replaced with prose)
+- The structured quest log (replaced with prose)
+
+When narration fails, all standard UI chrome appears as usual.
+
 ## Limitations
 
 - **Latency**: Each narrated turn requires a round-trip API call. You will see a brief "the narrator contemplates..." spinner while waiting. Cached turns are instant.
-- **Cost**: Narrator mode consumes API tokens on every uncached turn. Room descriptions and action results each make a separate call.
+- **Cost**: Narrator mode consumes API tokens on every uncached turn. The system prompt is kept compact to reduce per-call cost.
 - **No offline mode**: Narrator mode requires an active internet connection and a valid API key.
 - **Short outputs are skipped**: Action results shorter than 20 characters are shown as-is without narration.
 - **No game state influence**: The narrator cannot unlock doors, move items, or change scores. It is purely cosmetic. If you notice a discrepancy between narrated prose and actual game state, the game state is always authoritative.

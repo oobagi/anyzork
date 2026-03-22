@@ -28,25 +28,41 @@ class NarratorGameContext:
     """Cached game identity -- read once from metadata, stable for the session."""
 
     title: str = "Untitled"
-    theme: str = ""
-    tone: str = ""
-    era: str = ""
-    setting: str = ""
+    author_prompt: str = ""
+    realism: str = "medium"
 
 
 # ---------------------------------------------------------------------------
-# System prompt template
+# System prompt template -- kept tight to reduce token cost.
+# The author_prompt line is injected only when the field is non-empty.
 # ---------------------------------------------------------------------------
 
 _SYSTEM_TEMPLATE = """\
-Narrator for "{title}". {tone} tone, {era}, {setting}.
+Narrator for "{title}".{world_line}
 
-Rewrite room descriptions as grounded, natural prose. Write like a good novel — \
-not purple, not flowery, not dramatic. Just clear, evocative, specific. \
-Mention every item and NPC by their full name — never group or summarize them. \
-Do NOT add anything not in the engine output. Do NOT contradict it. \
-Do NOT suggest what the player should do. No markdown. One paragraph.\
+Rules: rewrite engine output as grounded prose. Clear, evocative, specific — \
+not purple or dramatic. Mention every item and NPC by full name. Add nothing. \
+Contradict nothing. Never suggest actions. No markdown. One paragraph.\
 """
+
+# Variant instructions appended per output type so the LLM knows what kind
+# of content it is rewriting.  Kept as short fragments.
+
+_VARIANT_ROOM = ""
+_VARIANT_ACTION = " Keep it to one or two sentences."
+_VARIANT_DIALOGUE = (
+    " Rewrite the NPC's speech as natural dialogue. "
+    "Preserve every concrete detail and name."
+)
+_VARIANT_INVENTORY = (
+    " Describe what the player is carrying as a brief, "
+    "flowing sentence. Name every item."
+)
+_VARIANT_QUEST = (
+    " Summarize the quest status as the player would "
+    "think about it. Name every objective."
+)
+_VARIANT_FEEDBACK = " One sentence, in second person."
 
 
 class Narrator:
@@ -80,23 +96,43 @@ class Narrator:
     def _load_game_context(self) -> NarratorGameContext:
         """Read game identity from metadata. Called once at init."""
         meta = self._db.get_all_meta()
-        title = meta.get("title", "Untitled") if meta else "Untitled"
+        if not meta:
+            return NarratorGameContext()
 
         return NarratorGameContext(
-            title=title,
+            title=meta.get("title", "Untitled"),
+            author_prompt=meta.get("author_prompt", ""),
+            realism=meta.get("realism", "medium"),
         )
 
     def _build_system_prompt(self) -> str:
-        """Construct the session-stable system prompt from game identity."""
+        """Construct the session-stable base system prompt from game identity.
+
+        Output-type-specific variant suffixes are appended per-call in
+        :meth:`_call_provider`.
+        """
         ctx = self._game_ctx
+
+        # Derive a concise world-flavour line from the author prompt.
+        world_line = ""
+        if ctx.author_prompt:
+            # Take the first sentence (or first 120 chars) as a setting hint.
+            hint = ctx.author_prompt.split(".")[0].strip()
+            if len(hint) > 120:
+                hint = hint[:117] + "..."
+            world_line = f" Setting: {hint}."
+
         return _SYSTEM_TEMPLATE.format(
             title=ctx.title,
-            tone=ctx.tone or "neutral",
-            era=ctx.era or "unspecified",
-            setting=ctx.setting or "unspecified",
+            world_line=world_line,
         )
 
     # ---------------------------------------------------------------- public API
+
+    @property
+    def failure_count(self) -> int:
+        """Number of consecutive provider failures."""
+        return self._failure_count
 
     def narrate_room(
         self,
@@ -125,7 +161,7 @@ class Narrator:
             f"NPCs: {npcs_text}"
         )
 
-        prose = self._call_provider(prompt)
+        prose = self._call_provider(prompt, _VARIANT_ROOM)
         if prose:
             self._room_cache[room_id] = (cache_key, prose)
         return prose
@@ -155,23 +191,114 @@ class Narrator:
         target_text = f" {target}" if target else ""
         prompt = f"{verb}{target_text}: {combined}"
 
-        prose = self._call_provider(prompt)
+        prose = self._call_provider(prompt, _VARIANT_ACTION)
+        if prose:
+            self._action_cache[cache_key] = prose
+        return prose
+
+    def narrate_dialogue(
+        self, npc_name: str, content: str, node_id: str
+    ) -> str | None:
+        """Narrate a dialogue node. Returns prose or None on failure/skip.
+
+        Cached by node_id so revisiting the same dialogue node is free.
+        """
+        cache_key = f"dlg:{node_id}"
+        cached = self._action_cache.get(cache_key)
+        if cached:
+            return cached
+
+        if len(content) < MIN_NARRATION_LENGTH:
+            return None
+
+        prompt = f"{npc_name} says: {content}"
+        prose = self._call_provider(prompt, _VARIANT_DIALOGUE)
+        if prose:
+            self._action_cache[cache_key] = prose
+        return prose
+
+    def narrate_inventory(self, items: list[dict]) -> str | None:
+        """Narrate an inventory listing. Returns prose or None on failure/skip."""
+        if not items:
+            return None
+
+        names = [it.get("name", "something") for it in items]
+        raw = f"inv:{'|'.join(sorted(names))}"
+        cache_key = hashlib.md5(raw.encode()).hexdigest()
+        cached = self._action_cache.get(cache_key)
+        if cached:
+            return cached
+
+        item_lines: list[str] = []
+        for it in items:
+            desc = it.get("description", "")
+            line = it["name"]
+            if desc:
+                line += f" ({desc})"
+            item_lines.append(line)
+
+        prompt = "Inventory: " + ", ".join(item_lines)
+        prose = self._call_provider(prompt, _VARIANT_INVENTORY)
+        if prose:
+            self._action_cache[cache_key] = prose
+        return prose
+
+    def narrate_quest_log(self, quest_text: str) -> str | None:
+        """Narrate a quest log display. Returns prose or None on failure/skip."""
+        if len(quest_text) < MIN_NARRATION_LENGTH:
+            return None
+
+        cache_key = hashlib.md5(f"quest:{quest_text}".encode()).hexdigest()
+        cached = self._action_cache.get(cache_key)
+        if cached:
+            return cached
+
+        prompt = f"Quest log:\n{quest_text}"
+        prose = self._call_provider(prompt, _VARIANT_QUEST)
+        if prose:
+            self._action_cache[cache_key] = prose
+        return prose
+
+    def narrate_feedback(
+        self, verb: str, target: str | None, message: str
+    ) -> str | None:
+        """Narrate a short system feedback message.
+
+        Unlike narrate_action, this is for single-line outputs like
+        "Taken.", "Dropped.", "Unlocked." etc.
+        """
+        if len(message) < MIN_NARRATION_LENGTH:
+            return None
+
+        cache_key = hashlib.md5(
+            f"fb:{verb}:{target}:{message}".encode()
+        ).hexdigest()
+        cached = self._action_cache.get(cache_key)
+        if cached:
+            return cached
+
+        target_text = f" {target}" if target else ""
+        prompt = f"{verb}{target_text}: {message}"
+        prose = self._call_provider(prompt, _VARIANT_FEEDBACK)
         if prose:
             self._action_cache[cache_key] = prose
         return prose
 
     # --------------------------------------------------------------- internals
 
-    def _call_provider(self, prompt: str) -> str | None:
+    def _call_provider(self, prompt: str, variant: str = "") -> str | None:
         """Call the LLM provider with the narrator system prompt and turn prompt.
 
         Returns the prose string on success, None on any failure.
         Never raises -- all exceptions are caught and logged.
         """
+        # Build the system prompt with the output-type variant appended.
+        system = self._system_prompt + variant if variant else self._system_prompt
+
         ctx = NarratorContext(
-            system_prompt=self._system_prompt,
-            theme=self._game_ctx.theme,
-            tone=self._game_ctx.tone,
+            system_prompt=system,
+            theme="",
+            tone="",
             temperature=self._temperature,
             max_tokens=self._max_tokens,
         )
@@ -194,16 +321,8 @@ class Narrator:
             return None
 
     def _format_item_list(self, items: list[dict]) -> str:
-        """Format items for the narrator prompt -- names with descriptions."""
-        parts: list[str] = []
-        for it in items:
-            name = it.get("name", "something")
-            desc = it.get("room_description") or it.get("description", "")
-            if desc:
-                parts.append(f"{name} ({desc})")
-            else:
-                parts.append(name)
-        return ", ".join(parts)
+        """Format items for the narrator prompt -- names only to save tokens."""
+        return ", ".join(it.get("name", "something") for it in items)
 
     def _make_cache_key(
         self,
