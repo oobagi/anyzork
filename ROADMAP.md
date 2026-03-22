@@ -16,7 +16,7 @@ Stabilize the shipped `generate -> import -> play` pipeline before adding featur
 Make it easier to write, fix, and iterate on games.
 
 - [x] [#13 Author-facing tooling: lint, import --report, diagnostics](https://github.com/oobagi/anyzork/issues/13)
-- [ ] [#27 anyzork doctor: generate LLM fix-it prompt from import errors](https://github.com/oobagi/anyzork/issues/27)
+- [x] [#27 anyzork doctor: generate LLM fix-it prompt from import errors](https://github.com/oobagi/anyzork/issues/27)
 - [ ] [#18 Deterministic author/debug tooling: inspect, doctor, playtest/replay](https://github.com/oobagi/anyzork/issues/18)
 
 ## 3. Narrator and Provider UX
