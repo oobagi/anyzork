@@ -146,8 +146,11 @@ room courtyard {
 # requires: item dependency (e.g. flashlight requires batteries).
 #   "use batteries on flashlight" auto-works when requires is set.
 # Consumables: quantity/max_quantity/quantity_unit/depleted_msg.
-# Tags and categories enable the interaction matrix.
+# Tags and categories enable the interaction matrix AND color highlighting.
 # EVERY item MUST have tags. EVERY item and NPC MUST have a category.
+# Categories with distinct highlight colors: furniture (dim), weapon (red),
+# container (bold), key (yellow), food (green), tool (yellow), clothing (magenta),
+# clue (bright yellow), document (white). Use these categories for visual clarity.
 # When an NPC dies, the engine auto-spawns "{Name}'s Body" as a searchable
 # container. Use triggers to move_item_to_container loot into the body.
 
@@ -634,7 +637,7 @@ when room_enter(cellar) {
 # IMPORTANT RULES:
 #   - EVERY item MUST have tags: tags ["weapon", "tool", "food", etc.]
 #   - EVERY item and NPC MUST have a category: category "character", "furniture",
-#     "device", "fixture", "container", "consumable", etc.
+#     "device", "fixture", "container", "consumable", "clue", "document", etc.
 #   - Without tags and categories, "use X on Y" silently fails.
 #
 # Tags and categories are OPEN-ENDED. Invent whatever fits your world!
@@ -768,9 +771,10 @@ Constraints:
 - Use plain ASCII punctuation. Avoid em dashes, curly quotes, and smart punctuation.
 - Most fields are optional. Only include fields that add value. Keep declarations lean.
   Defaults: takeable true, visible true, dark false, start false, open false, locked false.
-- Do NOT author on blocks for built-in verbs: go, take, drop, examine, read, open,
-  close, unlock, search, use, give, show, put, turn, talk, eat, drink.
+- Do NOT author on blocks for built-in verbs: go, take, drop, examine, read,
+  close, unlock, search/open, use, give, show, put, turn, talk, eat, drink.
   The engine handles these automatically through items, containers, locks, and toggles.
+  "open" is an alias for "search" — both open containers and list their contents.
   ONLY use on blocks for custom verbs: pull, push, ring, climb, dig, accuse, combine, etc.
 - Every custom verb MUST have a global fallback on block with no room scope.
 - Trigger event types MUST be one of: room_enter, flag_set, item_taken, item_dropped, dialogue_node.

@@ -43,7 +43,7 @@ STYLE_NPC = "magenta"                       # NPC names (default)
 
 # Category-based item styling — items with a category get a distinct color.
 STYLE_BY_CATEGORY: dict[str, str] = {
-    "furniture": "bright_blue",
+    "furniture": "dim cyan",
     "weapon": "bold red",
     "body": "dim red",
     "character": "magenta",
@@ -51,6 +51,9 @@ STYLE_BY_CATEGORY: dict[str, str] = {
     "tool": "yellow",
     "key": "bright_yellow",
     "clothing": "bright_magenta",
+    "container": "bold cyan",
+    "clue": "bright_yellow",
+    "document": "bright_white",
 }
 STYLE_DIRECTION = "green"                   # exit directions (unlocked)
 STYLE_DIRECTION_LOCKED = "red"              # exit directions (locked)
@@ -324,6 +327,7 @@ class GameEngine:
 
         raw = raw.strip()
         if not raw:
+            self.console.print("Type something, or 'help' for commands.", style=STYLE_SYSTEM)
             return self._can_continue()
 
         if self._dialogue_state is not None:
@@ -507,7 +511,7 @@ class GameEngine:
 
         if verb == "open" and len(tokens) >= 2:
             target_name = " ".join(tokens[1:])
-            self._handle_open(target_name, player["current_room_id"])
+            self._handle_search(target_name, player["current_room_id"])
             self._tick()
             return self._can_continue()
 
@@ -852,11 +856,8 @@ class GameEngine:
                 current_scene = "\n\n".join(parts + prose_items)
                 if not self._scene_mentions_name(current_scene, it["name"]):
                     prose_items.append(prose)
-            elif home == room_id:
-                # Home item without prose — skip (caught by validation)
-                pass
             else:
-                # Foreign item without prose — fall back to "Nearby..." list
+                # Item without prose — fall back to "Nearby..." list
                 list_items.append(it)
 
         # NPCs present — fetched early because the narrator needs them.
@@ -1085,11 +1086,11 @@ class GameEngine:
             f"  [{c}]examine[/] / [{c}]x[/] / [{c}]look at[/] {{thing}}  "
             "— examine something closely\n"
             f"  [{c}]read[/] {{item}}        — read a document or inscription\n"
-            f"  [{c}]open[/] {{thing}}       — open a container or locked exit\n"
             f"  [{c}]unlock[/] {{thing}}     — try to unlock something locked\n"
             f"  [{c}]use[/] {{item}} [{c}]on[/] {{thing}}  — use an item on something\n"
             f"  [{c}]turn on[/]/[{c}]off[/] {{item}}  — toggle an item on or off\n"
-            f"  [{c}]search[/] / [{c}]look in[/] {{container}}  — search inside a container\n"
+            f"  [{c}]open[/] / [{c}]search[/] / [{c}]look in[/] {{container}}"
+            f"  — search inside a container\n"
             f"  [{c}]put[/] {{item}} [{c}]in[/] {{container}}  — put something into a container\n"
             f"  [{c}]talk to[/] {{npc}}      — start a conversation\n"
             "\n"
@@ -1307,6 +1308,25 @@ class GameEngine:
 
         return None
 
+    def _find_accessible_items(self, name: str, current_room_id: str) -> list[dict]:
+        """Like ``_find_accessible_item`` but returns all matches at the best tier."""
+        db = self.db
+        items = db.find_items_by_name(name, "room", current_room_id)
+        if items:
+            return items
+        items = db.find_items_by_name(name, "inventory", "")
+        if items:
+            return items
+        return []
+
+    @staticmethod
+    def _disambiguation_message(items: list[dict]) -> str:
+        """Format a 'Which do you mean' message for ambiguous matches."""
+        names = [f"the {it['name']}" for it in items]
+        if len(names) == 2:
+            return f"Which do you mean: {names[0]} or {names[1]}?"
+        return "Which do you mean: " + ", ".join(names[:-1]) + ", or " + names[-1] + "?"
+
     @staticmethod
     def _container_hint(child: dict, db: GameDB) -> str:
         """Return a hint suffix for a child item that is itself a non-empty, accessible container.
@@ -1331,7 +1351,11 @@ class GameEngine:
         db = self.db
 
         # Check if the item is in the current room.
-        item = db.find_item_by_name(item_name, "room", current_room_id)
+        room_matches = db.find_items_by_name(item_name, "room", current_room_id)
+        if len(room_matches) > 1:
+            self.console.print(self._disambiguation_message(room_matches), style=STYLE_SYSTEM)
+            return
+        item = room_matches[0] if room_matches else None
         if item is not None:
             if not item["is_takeable"]:
                 self.console.print("You can't take that.", style=STYLE_SYSTEM)
@@ -1454,6 +1478,12 @@ class GameEngine:
         if npc is not None:
             desc = npc.get("examine_description") or npc.get("description", "")
             self.console.print(desc)
+            return
+
+        # Disambiguate if multiple items could have matched.
+        candidates = self._find_accessible_items(target_name, current_room_id)
+        if len(candidates) > 1:
+            self.console.print(self._disambiguation_message(candidates), style=STYLE_SYSTEM)
             return
 
         self.console.print("You don't see that here.", style=STYLE_SYSTEM)
@@ -1808,11 +1838,15 @@ class GameEngine:
         # Find the target in the room, inventory, or inside accessible containers.
         item = self._find_accessible_item(target_name, current_room_id)
         if item is None:
+            candidates = self._find_accessible_items(target_name, current_room_id)
+            if len(candidates) > 1:
+                self.console.print(self._disambiguation_message(candidates), style=STYLE_SYSTEM)
+                return
             self.console.print("You don't see that here.", style=STYLE_SYSTEM)
             return
 
         if not item.get("is_container"):
-            self.console.print("There's nothing to search.", style=STYLE_SYSTEM)
+            self.console.print("Try examining it instead.", style=STYLE_SYSTEM)
             return
 
         # Locked?
