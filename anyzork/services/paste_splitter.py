@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 
-
 # ZorkScript top-level keywords that start blocks
 _ZORKSCRIPT_KEYWORDS = {
     "game", "player", "room", "item", "npc", "quest", "flag", "lock",
@@ -133,10 +132,7 @@ def _split_by_filename_markers(
     # Extract content between file headers
     result: dict[str, str] = {}
     for idx, (start_line, filename) in enumerate(file_starts):
-        if idx + 1 < len(file_starts):
-            end_line = file_starts[idx + 1][0]
-        else:
-            end_line = len(lines)
+        end_line = file_starts[idx + 1][0] if idx + 1 < len(file_starts) else len(lines)
 
         content_lines = lines[start_line + 1 : end_line]
         content = "\n".join(content_lines).strip()

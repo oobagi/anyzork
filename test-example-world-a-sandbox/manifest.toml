@@ -1,9 +1,0 @@
-[project]
-title = "Test example world. a sandbox. blank world style. kind of like valve's portal es"
-slug = "test-example-world-a-sandbox"
-author = ""
-description = ""
-tags = []
-
-[source]
-files = ["rooms.zorkscript", "npcs.zorkscript", "quests.zorkscript", "commands.zorkscript"]

@@ -1,9 +1,0 @@
-[project]
-title = "test world. empty, 1 room. override. blank room. items to play with."
-slug = "test-world-empty-1-room-ove"
-author = ""
-description = ""
-tags = []
-
-[source]
-files = ["rooms.zorkscript", "npcs.zorkscript", "quests.zorkscript", "commands.zorkscript"]

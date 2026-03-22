@@ -213,8 +213,6 @@ def _read_paste(console: Console) -> str:
     sys.stdout.write("\033[?2004h")
     sys.stdout.flush()
 
-    collected: list[str] = []
-
     # Simple approach: read everything in raw mode, then strip escape sequences after
     try:
         tty.setraw(fd)
@@ -241,11 +239,7 @@ def _read_paste(console: Console) -> str:
     raw = "".join(raw_chars)
     import re as _paste_re
     pastes = _paste_re.findall(r"\x1b\[200~(.*?)\x1b\[201~", raw, _paste_re.DOTALL)
-    if pastes:
-        text = "\n".join(pastes)
-    else:
-        # No bracket paste sequences — use raw input minus control chars
-        text = raw
+    text = "\n".join(pastes) if pastes else raw
 
     # Normalize line endings
     text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -407,7 +401,10 @@ def _resolve_publish_listing_metadata(
 
 @cli.command("publish")
 @click.argument("game_ref", type=str, required=False)
-@click.option("--status", "status_slug", type=str, default=None, help="Check publish status for a catalog slug.")
+@click.option(
+    "--status", "status_slug", type=str, default=None,
+    help="Check publish status for a catalog slug.",
+)
 def publish_game(game_ref: str | None, status_slug: str | None) -> None:
     """Package and upload a .zork archive or project directory to the catalog."""
     if status_slug is not None:
@@ -420,7 +417,6 @@ def publish_game(game_ref: str | None, status_slug: str | None) -> None:
     import tempfile
 
     from anyzork.archive import is_zork_archive, pack_project
-    from anyzork.sharing import create_share_package, upload_share_package
 
     cfg = Config()
 
@@ -805,7 +801,10 @@ def doctor(source: str) -> None:
         importing_service.import_zorkscript_spec(spec=spec, cfg=Config())
         console.print(f"  [green]✓[/green] Imported: {source_path.stem}")
         console.print()
-        console.print(f"[bold green]Fixed![/bold green] Play it with:  anyzork play {source_path.stem}")
+        console.print(
+            f"[bold green]Fixed![/bold green] Play it with:"
+            f"  anyzork play {source_path.stem}"
+        )
     except Exception as exc:
         console.print(f"  [yellow]⚠[/yellow] Still has errors: {exc}")
         _show_error_context(corrected, exc)
@@ -1081,8 +1080,8 @@ def generate(
 
     # ── Create project directory ──────────────────────────────────────
     from anyzork.manifest import _slugify
-    from anyzork.services.stepgen import build_generation_prompt, OUTPUT_FILES
     from anyzork.services.doctor import copy_to_clipboard
+    from anyzork.services.stepgen import OUTPUT_FILES, build_generation_prompt
 
     concept_slug = _slugify(
         str(authoring_fields.get("world_description", resolved_prompt))[:30]
@@ -1139,7 +1138,10 @@ def generate(
     else:
         console.print(generation_prompt, highlight=False)
 
-    console.print("[dim]Paste into your LLM. Copy the entire response back (including file headers).[/dim]")
+    console.print(
+        "[dim]Paste into your LLM. Copy the entire response back"
+        " (including file headers).[/dim]"
+    )
 
     if sys.stdin.isatty():
         pasted_text = _read_paste(console)
@@ -1181,10 +1183,9 @@ def generate(
         console.print()
         console.print("[dim]Compiling...[/dim]")
         try:
+            from anyzork.archive import pack_project
             from anyzork.project import load_project
             from anyzork.zorkscript import parse_zorkscript
-
-            from anyzork.archive import pack_project
 
             project = load_project(project_dir)
             spec = parse_zorkscript(project.text)
@@ -1195,11 +1196,14 @@ def generate(
 
             # Pack archive into games_dir so `play` can find it
             cfg.games_dir.mkdir(parents=True, exist_ok=True)
-            archive_path = pack_project(project_dir, cfg.games_dir / f"{project_dir.name}.zork")
+            pack_project(project_dir, cfg.games_dir / f"{project_dir.name}.zork")
 
             console.print(f"  [green]✓[/green] Imported: {project_dir.name}")
             console.print()
-            console.print(f"[bold green]Done![/bold green] Play it with:  anyzork play {project_dir.name}")
+            console.print(
+                f"[bold green]Done![/bold green] Play it with:"
+                f"  anyzork play {project_dir.name}"
+            )
         except Exception as exc:
             console.print(f"  [yellow]⚠[/yellow] Import failed: {exc}")
             _show_error_context(project.text, exc)
@@ -1356,7 +1360,10 @@ def list_games(saves: bool) -> None:
 
 @cli.command("delete")
 @click.argument("game_ref", type=str)
-@click.option("--save", "slot", default=None, help="Delete only this save instead of the whole game.")
+@click.option(
+    "--save", "slot", default=None,
+    help="Delete only this save instead of the whole game.",
+)
 @click.option("--yes", is_flag=True, help="Delete without prompting for confirmation.")
 def delete_game(game_ref: str, slot: str | None, yes: bool) -> None:
     """Delete a library game (and saves), or a single save with --save."""

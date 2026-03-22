@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+
 from anyzork.diagnostics import (
     Diagnostic,
     from_import_spec_error,

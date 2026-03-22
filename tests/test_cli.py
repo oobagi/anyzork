@@ -26,7 +26,10 @@ def test_generate_outputs_prompt_for_freeform_concept(tmp_path: Path) -> None:
         assert result.exit_code == 0, result.output
         content = Path("prompts.txt").read_text()
         assert "A haunted lighthouse on a foggy coast" in content
-        assert "You are authoring a complete, playable text adventure in ZorkScript format" in content
+        assert (
+            "You are authoring a complete, playable text adventure"
+            " in ZorkScript format" in content
+        )
 
 
 def test_import_reads_zorkscript_from_stdin(tmp_path: Path, minimal_zorkscript: str) -> None:

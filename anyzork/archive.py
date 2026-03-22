@@ -5,9 +5,12 @@ from __future__ import annotations
 import tempfile
 import zipfile
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from anyzork.manifest import ManifestError, load_manifest
 
+if TYPE_CHECKING:
+    from anyzork.project import ProjectSource
 
 ZORK_ARCHIVE_SUFFIX = ".zork"
 
@@ -66,7 +69,7 @@ def is_zork_archive(path: Path) -> bool:
     return zipfile.is_zipfile(path)
 
 
-def load_project_from_archive(archive_path: Path) -> "ProjectSource":
+def load_project_from_archive(archive_path: Path) -> ProjectSource:
     """Load a project directly from a .zork archive without extracting to disk.
 
     Uses a temp directory internally, cleaned up after loading.

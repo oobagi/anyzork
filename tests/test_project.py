@@ -9,8 +9,7 @@ from click.testing import CliRunner
 
 from anyzork.cli import cli
 from anyzork.manifest import ManifestError, _slugify, load_manifest
-from anyzork.project import ProjectSource, is_project_dir, load_project
-
+from anyzork.project import is_project_dir, load_project
 
 # -- Shared ZorkScript fragments for multi-file projects ---------------------
 
@@ -173,7 +172,7 @@ class TestManifestAutoSlug:
 
 class TestManifestNoManifest:
     def test_no_manifest(self, tmp_path: Path) -> None:
-        with pytest.raises(ManifestError, match="No manifest.toml"):
+        with pytest.raises(ManifestError, match=r"No manifest\.toml"):
             load_manifest(tmp_path)
 
 

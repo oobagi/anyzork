@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from click.testing import CliRunner
 
 from anyzork.archive import (
@@ -14,8 +13,7 @@ from anyzork.archive import (
     unpack_archive,
 )
 from anyzork.cli import cli
-from anyzork.manifest import _slugify, load_manifest
-
+from anyzork.manifest import load_manifest
 
 # -- Shared ZorkScript fragments for multi-file projects ---------------------
 

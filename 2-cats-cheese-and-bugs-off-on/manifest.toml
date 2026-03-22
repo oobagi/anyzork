@@ -1,9 +1,0 @@
-[project]
-title = "2 cats, cheese and bugs off on an adventure. cheese is stoic. bugs is chaotic. b"
-slug = "2-cats-cheese-and-bugs-off-on"
-author = ""
-description = ""
-tags = []
-
-[source]
-files = ["game.zorkscript", "rooms.zorkscript", "items.zorkscript", "npcs.zorkscript", "puzzles.zorkscript", "quests.zorkscript", "commands.zorkscript"]

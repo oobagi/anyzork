@@ -40,9 +40,8 @@ def _slugify_name(value: str) -> str:
 def _read_archive_manifest(path: Path) -> dict:
     """Read manifest.toml from a .zork zip archive."""
     try:
-        with zipfile.ZipFile(path) as zf:
-            with zf.open(_ARCHIVE_MANIFEST_FILENAME) as f:
-                return tomllib.load(f)
+        with zipfile.ZipFile(path) as zf, zf.open(_ARCHIVE_MANIFEST_FILENAME) as f:
+            return tomllib.load(f)
     except (KeyError, zipfile.BadZipFile, tomllib.TOMLDecodeError) as exc:
         raise SharePackageError(
             f"Could not read manifest from .zork archive {path}: {exc}"

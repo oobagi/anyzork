@@ -1,9 +1,0 @@
-[project]
-title = "test world"
-slug = "test-world"
-author = ""
-description = ""
-tags = []
-
-[source]
-files = ["rooms.zorkscript", "npcs.zorkscript", "quests.zorkscript", "commands.zorkscript"]

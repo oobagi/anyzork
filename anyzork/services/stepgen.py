@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 from anyzork.importer.prompt import (
-    ZORKSCRIPT_AUTHORING_TEMPLATE,
     _REALISM_GUIDANCE,
+    ZORKSCRIPT_AUTHORING_TEMPLATE,
     _build_authoring_requirements,
     _build_quality_requirements,
 )
@@ -61,7 +61,10 @@ def build_generation_prompt(
         "npcs.zorkscript": "all npc{} blocks with their talk/dialogue trees",
         "puzzles.zorkscript": "puzzle{} and lock{} blocks with related flag definitions",
         "quests.zorkscript": "quest{} blocks with objectives",
-        "commands.zorkscript": "on{} command blocks, when{} triggers, interaction{} responses, and remaining flags",
+        "commands.zorkscript": (
+            "on{} command blocks, when{} triggers,"
+            " interaction{} responses, and remaining flags"
+        ),
     }
     for filename in OUTPUT_FILES:
         desc = file_descriptions.get(filename, "")

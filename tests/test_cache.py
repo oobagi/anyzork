@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import zipfile
 from pathlib import Path
 
 from click.testing import CliRunner
@@ -10,7 +9,6 @@ from click.testing import CliRunner
 from anyzork import cli as cli_module
 from anyzork.cli import cli
 from anyzork.config import DEFAULT_CATALOG_URL, DEFAULT_UPLOAD_URL
-from anyzork.importer import compile_import_spec
 from anyzork.services import library as library_service
 from anyzork.services.cache import clear_cache, ensure_compiled
 
@@ -166,7 +164,7 @@ def test_play_with_archive(
     library_dir.mkdir()
 
     project_dir = _make_project_dir(tmp_path, minimal_zorkscript)
-    archive_path = _pack_archive(project_dir, library_dir / "fixture-game.zork")
+    _pack_archive(project_dir, library_dir / "fixture-game.zork")
     started_paths: list[Path] = []
 
     class FakeConfig:

@@ -127,9 +127,8 @@ def read_archive_metadata(path: Path) -> dict | None:
         import tomllib
         import zipfile
 
-        with zipfile.ZipFile(path, "r") as zf:
-            with zf.open("manifest.toml") as f:
-                data = tomllib.load(f)
+        with zipfile.ZipFile(path, "r") as zf, zf.open("manifest.toml") as f:
+            data = tomllib.load(f)
         project = data.get("project", {})
         return {
             "title": project.get("title", "Untitled"),
