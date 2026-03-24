@@ -28,24 +28,6 @@ from anyzork.versioning import RUNTIME_COMPAT_VERSION
 console = Console()
 
 
-def _complete_game_ref(
-    ctx: click.Context, param: click.Parameter, incomplete: str
-) -> list[click.shell_completion.CompletionItem]:
-    """Shell completion for game_ref arguments."""
-    try:
-        cfg = Config()
-        if not cfg.games_dir.exists():
-            return []
-        refs = sorted(p.stem for p in cfg.games_dir.glob("*.zork"))
-        return [
-            click.shell_completion.CompletionItem(ref)
-            for ref in refs
-            if ref.startswith(incomplete)
-        ]
-    except Exception:
-        return []
-
-
 CLI_VERSION = (
     f"{__version__} "
     f"(runtime {RUNTIME_COMPAT_VERSION}, prompt {current_prompt_system_version()})"
@@ -57,7 +39,7 @@ def cli() -> None:
 
 
 @cli.command()
-@click.argument("game_ref", type=str, required=False, shell_complete=_complete_game_ref)
+@click.argument("game_ref", type=str, required=False)
 @click.option(
     "--save",
     "slot",
@@ -402,7 +384,7 @@ def _resolve_publish_listing_metadata(
 
 
 @cli.command("publish")
-@click.argument("game_ref", type=str, required=False, shell_complete=_complete_game_ref)
+@click.argument("game_ref", type=str, required=False)
 @click.option(
     "--status", "status_slug", type=str, default=None,
     help="Check publish status for a catalog slug.",
@@ -1390,6 +1372,7 @@ def browse_games(limit: int) -> None:
     console.print()
 
     table = Table(show_lines=False)
+    table.add_column("#", style="dim", justify="right")
     table.add_column("Ref", style="cyan", no_wrap=True)
     table.add_column("Title", style="bold")
     table.add_column("Author", style="magenta")
@@ -1398,7 +1381,7 @@ def browse_games(limit: int) -> None:
     table.add_column("Runtime", style="dim")
     table.add_column("Package", style="dim")
 
-    for game in games:
+    for idx, game in enumerate(games, 1):
         genres = ", ".join(game.get("genres", [])) or "-"
         package_source = str(game.get("package_url") or "")
         parsed_source = urlparse(package_source)
@@ -1413,6 +1396,7 @@ def browse_games(limit: int) -> None:
         if game.get("featured"):
             title = f"{title} [dim](featured)[/dim]"
         table.add_row(
+            str(idx),
             str(game.get("slug") or ""),
             title,
             str(game.get("author") or "-"),
@@ -1832,6 +1816,7 @@ def list_games(saves: bool) -> None:
                 title_by_slug[slug] = str(lmeta.get("title") or slug)
 
         saves_table = Table(title="Managed Saves", show_lines=False)
+        saves_table.add_column("#", style="dim", justify="right")
         saves_table.add_column("Ref", style="cyan", no_wrap=True)
         saves_table.add_column("Title", style="bold")
         saves_table.add_column("Save", style="bold")
@@ -1840,12 +1825,13 @@ def list_games(saves: bool) -> None:
         saves_table.add_column("Moves", justify="right", style="green")
         saves_table.add_column("Updated", style="dim")
 
-        for save_file in save_files:
+        for idx, save_file in enumerate(save_files, 1):
             save_meta = library_service.read_zork_metadata(save_file) or {}
             player = library_service.read_player_state(save_file) or {}
             save_slug = save_file.parent.name
             game_label = title_by_slug.get(save_slug, save_slug)
             saves_table.add_row(
+                str(idx),
                 save_slug,
                 game_label,
                 str(save_meta.get("save_slot") or save_file.stem),
@@ -1861,7 +1847,7 @@ def list_games(saves: bool) -> None:
 
 
 @cli.command("delete")
-@click.argument("game_ref", type=str, shell_complete=_complete_game_ref)
+@click.argument("game_ref", type=str)
 @click.option(
     "--save", "slot", default=None,
     help="Delete only this save instead of the whole game.",
@@ -1885,13 +1871,10 @@ def delete_game(game_ref: str, slot: str | None, yes: bool) -> None:
 
     # Delete a single save
     if slot is not None:
-        save_path = cfg.saves_dir / game_slug / f"{library_service.sanitize_slot_name(slot)}.zork"
-        if not save_path.exists():
-            console.print(
-                f"[dim]No save named[/dim] [cyan]{slot}[/cyan] "
-                f"[dim]for[/dim] [cyan]{source_path.stem}[/cyan]"
-            )
-            return
+        try:
+            save_path = library_service.resolve_save_reference(game_slug, slot, cfg)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="--save") from exc
         save_path.unlink()
         console.print(
             f"[green]Deleted save[/green] [cyan]{slot}[/cyan] "
