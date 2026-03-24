@@ -512,7 +512,10 @@ class _Parser:
         "examine": "examine_description",
         "examine_text": "examine_description",
         "in": "room_id",
+        "location": "room_id",
+        "room": "room_id",
         "takeable": "is_takeable",
+        "portable": "is_takeable",
         "visible": "is_visible",
         "consumable": "is_consumed_on_use",
         # Container fields
@@ -576,6 +579,8 @@ class _Parser:
         "examine": "examine_description",
         "examine_text": "examine_description",
         "in": "room_id",
+        "location": "room_id",
+        "room": "room_id",
         "dialogue": "default_dialogue",
         "room_desc": "room_description",
         "drop_desc": "drop_description",
@@ -776,6 +781,8 @@ class _Parser:
 
     _PUZZLE_FIELD_MAP: ClassVar[dict[str, str]] = {
         "in": "room_id",
+        "location": "room_id",
+        "room": "room_id",
         "score": "score_value",
         "steps": "solution_steps",
         "hint": "hint_text",

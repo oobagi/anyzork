@@ -622,3 +622,58 @@ def test_browse_reports_invalid_catalog_counts(monkeypatch) -> None:
     assert "invalid room_count" in result.output
 
 
+# -- _looks_like_path --------------------------------------------------------
+
+
+def test_looks_like_path_with_slash() -> None:
+    from anyzork.cli import _looks_like_path
+
+    assert _looks_like_path("./game.zork") is True
+    assert _looks_like_path("/tmp/game.zork") is True
+
+
+def test_looks_like_path_with_extension() -> None:
+    from anyzork.cli import _looks_like_path
+
+    assert _looks_like_path("game.zork") is True
+    assert _looks_like_path("game.zorkscript") is True
+
+
+def test_looks_like_path_bare_name() -> None:
+    from anyzork.cli import _looks_like_path
+
+    assert _looks_like_path("my_game") is False
+    assert _looks_like_path("-") is False
+
+
+# -- bail-out on missing path -------------------------------------------------
+
+
+def test_import_bails_on_missing_file() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["import", "/nonexistent/path/game.zork"])
+    assert result.exit_code == 1
+    assert "File not found" in result.output
+
+
+def test_repair_bails_on_missing_file() -> None:
+    runner = CliRunner()
+    result = runner.invoke(cli, ["repair", "/nonexistent/path/game.zork"])
+    assert result.exit_code == 1
+    assert "File not found" in result.output
+
+
+# -- play: ValueError -> BadParameter ----------------------------------------
+
+
+def test_play_nonexistent_game_ref(monkeypatch) -> None:
+    runner = CliRunner()
+
+    def fake_resolve(game_ref, cfg):
+        raise ValueError("No game matching 'zzz_no_such_game'")
+
+    monkeypatch.setattr(library_service, "resolve_game_reference", fake_resolve)
+    result = runner.invoke(cli, ["play", "zzz_no_such_game"])
+    assert result.exit_code != 0
+    assert "No game matching" in result.output
+

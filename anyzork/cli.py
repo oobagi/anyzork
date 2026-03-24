@@ -114,7 +114,10 @@ def play(
         cfg = Config()
 
     if game_ref:
-        source_path = library_service.resolve_game_reference(game_ref, cfg)
+        try:
+            source_path = library_service.resolve_game_reference(game_ref, cfg)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="game_ref") from exc
     else:
         source_path = _prompt_for_play_target(cfg)
         if source_path is None:
@@ -576,6 +579,8 @@ def import_game(
     cfg = Config()
     resolved_source = _resolve_import_source(spec_source)
 
+    _bail_if_missing_path(resolved_source)
+
     # -- Parse spec ----------------------------------------------------------
     # Check for project directory or archive
     source_path = Path(resolved_source).expanduser()
@@ -689,6 +694,8 @@ def repair(source: str) -> None:
     from anyzork.services.doctor import build_fix_prompt, collect_diagnostics, copy_to_clipboard
 
     resolved_source = _resolve_import_source(source)
+
+    _bail_if_missing_path(resolved_source)
 
     # Read raw text (handle project directory and archive)
     source_path = Path(resolved_source).expanduser()
@@ -1230,6 +1237,23 @@ def _print_doctor_hint(source_ref: str) -> None:
         f"for your LLM.[/dim]"
     )
 
+
+
+def _looks_like_path(source: str) -> bool:
+    """Return True when the source string looks like a file or directory path."""
+    return "/" in source or "\\" in source or Path(source).suffix != ""
+
+
+def _bail_if_missing_path(resolved_source: str) -> None:
+    """Exit early with a clean error if *resolved_source* looks like a path that doesn't exist."""
+    if resolved_source != "-" and _looks_like_path(resolved_source):
+        candidate = Path(resolved_source).expanduser()
+        if not candidate.exists():
+            fatal_error(
+                console,
+                "File not found",
+                f"No such file or directory: {resolved_source}",
+            )
 
 
 def _resolve_import_source(spec_source: str) -> str:
