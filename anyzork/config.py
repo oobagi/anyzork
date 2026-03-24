@@ -75,6 +75,8 @@ def load_config_file() -> dict:
         "public_catalog_dir",
         "catalog_url",
         "upload_url",
+        "session_token",
+        "publisher_email",
     )
     for key in anyzork_keys:
         if key in anyzork_section:
@@ -87,6 +89,9 @@ def load_config_file() -> dict:
             result[f"{key_type}_api_key"] = keys_section[key_type]
 
     return result
+
+
+_SENTINEL = object()  # distinguishes "not passed" from None
 
 
 def _format_toml(data: dict) -> str:
@@ -114,6 +119,8 @@ def save_config_file(
     model: str | None = None,
     api_key: tuple[str, str] | None = None,
     narrator_enabled: bool | None = None,
+    session_token: str | None = _SENTINEL,
+    publisher_email: str | None = _SENTINEL,
 ) -> None:
     """Update ~/.anyzork/config.toml, preserving existing values.
 
@@ -123,6 +130,8 @@ def save_config_file(
         api_key: Tuple of (key_type, key_value) to set in [keys] section.
                  key_type is "anthropic", "openai", or "google".
         narrator_enabled: Whether narrator is enabled by default.
+        session_token: Session token for publisher auth (use "" to clear).
+        publisher_email: Publisher email (use "" to clear).
     """
     # Read existing raw TOML structure.
     if CONFIG_FILE.is_file():
@@ -150,6 +159,16 @@ def save_config_file(
     if api_key is not None:
         key_type, key_value = api_key
         data["keys"][key_type] = key_value
+    if session_token is not _SENTINEL:
+        if session_token:
+            data["anyzork"]["session_token"] = session_token
+        else:
+            data["anyzork"].pop("session_token", None)
+    if publisher_email is not _SENTINEL:
+        if publisher_email:
+            data["anyzork"]["publisher_email"] = publisher_email
+        else:
+            data["anyzork"].pop("publisher_email", None)
 
     # Remove empty sections before writing.
     if not data["anyzork"]:
@@ -160,6 +179,7 @@ def save_config_file(
     # Write back.
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(_format_toml(data))
+    os.chmod(CONFIG_FILE, 0o600)
 
 
 def validate_api_key(provider: LLMProvider, api_key: str) -> tuple[bool, str]:
@@ -255,6 +275,10 @@ class Config(BaseSettings):
     # --- URLs ---
     catalog_url: str = DEFAULT_CATALOG_URL
     upload_url: str = DEFAULT_UPLOAD_URL
+
+    # --- Publisher session ---
+    session_token: str | None = None
+    publisher_email: str | None = None
 
     # --- Paths ---
     games_dir: Path = Field(default_factory=lambda: Path.home() / ".anyzork" / "games")
