@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
+import secrets
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -12,6 +15,17 @@ from anyzork.sharing import create_share_package
 fastapi = pytest.importorskip("fastapi")
 testclient = pytest.importorskip("fastapi.testclient")
 create_catalog_app = importlib.import_module("anyzork.catalog_api").create_catalog_app
+
+
+def _create_test_session(
+    store: CatalogStore, email: str = "test@example.com",
+) -> tuple[str, str]:
+    """Create a session and return (raw_token, email_hash)."""
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    email_hash = hashlib.sha256(email.encode()).hexdigest()
+    store.create_session(token_hash, email_hash)
+    return token, email_hash
 
 
 def test_catalog_store_builds_public_catalog(
@@ -155,3 +169,335 @@ def test_catalog_api_ignores_client_filename_paths(
 
     assert response.status_code == 201, response.text
     assert not outside_target.exists()
+
+
+# -- Auth endpoint tests ---------------------------------------------------
+
+
+def test_login_creates_code_in_db(tmp_path: Path) -> None:
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    response = client.post(
+        "/api/auth/login",
+        json={"email": "test@example.com"},
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["message"] == "Code sent."
+    assert data["email"] == "test@example.com"
+
+
+def test_verify_correct_code_returns_session(tmp_path: Path) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    # Manually create a code in the DB.
+    email = "test@example.com"
+    code = "123456"
+    email_hash = hashlib.sha256(email.encode()).hexdigest()
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+    expires_at = (datetime.now(UTC) + timedelta(minutes=10)).isoformat()
+    store.create_auth_code(email_hash, code_hash, expires_at)
+
+    response = client.post(
+        "/api/auth/verify",
+        json={"email": email, "code": code},
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert "session_token" in data
+    assert data["email"] == email
+
+
+def test_verify_expired_code_rejected(tmp_path: Path) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    email = "test@example.com"
+    code = "123456"
+    email_hash = hashlib.sha256(email.encode()).hexdigest()
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+    # Expired 5 minutes ago.
+    expires_at = (datetime.now(UTC) - timedelta(minutes=5)).isoformat()
+    store.create_auth_code(email_hash, code_hash, expires_at)
+
+    response = client.post(
+        "/api/auth/verify",
+        json={"email": email, "code": code},
+    )
+
+    assert response.status_code == 401, response.text
+
+
+def test_verify_max_attempts_rejected(tmp_path: Path) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    email = "test@example.com"
+    code = "123456"
+    email_hash = hashlib.sha256(email.encode()).hexdigest()
+    code_hash = hashlib.sha256(code.encode()).hexdigest()
+    expires_at = (datetime.now(UTC) + timedelta(minutes=10)).isoformat()
+    store.create_auth_code(email_hash, code_hash, expires_at)
+
+    # Submit 5 wrong codes.
+    for _ in range(5):
+        client.post(
+            "/api/auth/verify",
+            json={"email": email, "code": "000000"},
+        )
+
+    # Now even the correct code should fail.
+    response = client.post(
+        "/api/auth/verify",
+        json={"email": email, "code": code},
+    )
+
+    assert response.status_code == 401, response.text
+
+
+def test_rate_limiting_fourth_code_rejected(tmp_path: Path) -> None:
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    # Request 3 codes (allowed).
+    for _ in range(3):
+        resp = client.post(
+            "/api/auth/login",
+            json={"email": "test@example.com"},
+        )
+        assert resp.status_code == 200
+
+    # 4th should be rate-limited.
+    resp = client.post(
+        "/api/auth/login",
+        json={"email": "test@example.com"},
+    )
+    assert resp.status_code == 429
+
+
+def test_session_validation(tmp_path: Path) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    token, email_hash = _create_test_session(store)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+
+    result = store.validate_session(token_hash)
+    assert result == email_hash
+
+    # Invalid token returns None.
+    assert store.validate_session("invalid_hash") is None
+
+
+def test_logout_deletes_session(tmp_path: Path) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    token, _email_hash = _create_test_session(store)
+
+    response = client.post(
+        "/api/auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+
+    # Session should now be invalid.
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    assert store.validate_session(token_hash) is None
+
+
+def test_my_games_requires_auth(tmp_path: Path) -> None:
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    response = client.get("/api/my/games")
+    assert response.status_code == 401
+
+
+def test_my_games_filters_by_owner(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    token, _email_hash = _create_test_session(store)
+
+    # Upload a game with auth.
+    package_path = tmp_path / "fixture_game.zork"
+    create_share_package(
+        zork_archive_path,
+        package_path,
+        slug="my-game",
+    )
+    with package_path.open("rb") as handle:
+        upload_resp = client.post(
+            "/api/games",
+            files={
+                "package": (
+                    "fixture_game.zork", handle, "application/zip",
+                ),
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert upload_resp.status_code == 201, upload_resp.text
+
+    # Upload another game without auth.
+    package_path_2 = tmp_path / "other_game.zork"
+    create_share_package(
+        zork_archive_path,
+        package_path_2,
+        slug="other-game",
+    )
+    with package_path_2.open("rb") as handle:
+        client.post(
+            "/api/games",
+            files={
+                "package": (
+                    "other_game.zork", handle, "application/zip",
+                ),
+            },
+        )
+
+    # my-games should only return the authed user's game.
+    response = client.get(
+        "/api/my/games",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    games = response.json()["games"]
+    assert len(games) == 1
+    assert games[0]["slug"] == "my_game"
+
+
+def test_upload_with_session_stores_email_hash(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    token, email_hash = _create_test_session(store)
+
+    package_path = tmp_path / "fixture_game.zork"
+    create_share_package(
+        zork_archive_path, package_path, slug="auth-game",
+    )
+    with package_path.open("rb") as handle:
+        response = client.post(
+            "/api/games",
+            files={
+                "package": (
+                    "fixture_game.zork", handle, "application/zip",
+                ),
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 201, response.text
+
+    game = store.get_game("auth_game")
+    assert game is not None
+    assert game.email_hash == email_hash
+
+
+def test_delete_ownership_enforcement(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    token_a, _hash_a = _create_test_session(
+        store, email="alice@example.com",
+    )
+    token_b, _hash_b = _create_test_session(
+        store, email="bob@example.com",
+    )
+
+    # Alice uploads.
+    package_path = tmp_path / "fixture_game.zork"
+    create_share_package(
+        zork_archive_path, package_path, slug="alice-game",
+    )
+    with package_path.open("rb") as handle:
+        client.post(
+            "/api/games",
+            files={
+                "package": (
+                    "fixture_game.zork", handle, "application/zip",
+                ),
+            },
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+
+    # Bob tries to delete Alice's game.
+    resp = client.delete(
+        "/api/games/alice_game",
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert resp.status_code == 403
+
+    # Alice can delete her own game.
+    resp = client.delete(
+        "/api/games/alice_game",
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert resp.status_code == 200
+
+
+def test_put_ownership_enforcement_and_auto_unpublish(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    store = CatalogStore(tmp_path / "catalog")
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+
+    token_a, _hash_a = _create_test_session(
+        store, email="alice@example.com",
+    )
+    token_b, _hash_b = _create_test_session(
+        store, email="bob@example.com",
+    )
+
+    # Alice uploads and gets published.
+    package_path = tmp_path / "fixture_game.zork"
+    create_share_package(
+        zork_archive_path, package_path, slug="alice-pub",
+    )
+    with package_path.open("rb") as handle:
+        client.post(
+            "/api/games",
+            files={
+                "package": (
+                    "fixture_game.zork", handle, "application/zip",
+                ),
+            },
+            headers={"Authorization": f"Bearer {token_a}"},
+        )
+    store.set_published("alice_pub", published=True)
+
+    # Bob cannot update Alice's game.
+    resp = client.put(
+        "/api/games/alice_pub",
+        data={"title": "Hijacked"},
+        headers={"Authorization": f"Bearer {token_b}"},
+    )
+    assert resp.status_code == 403
+
+    # Alice updates her game.
+    resp = client.put(
+        "/api/games/alice_pub",
+        data={"title": "Updated Title"},
+        headers={"Authorization": f"Bearer {token_a}"},
+    )
+    assert resp.status_code == 200
+    game = resp.json()["game"]
+    assert game["title"] == "Updated Title"
+    assert game["published"] is False  # auto-unpublished

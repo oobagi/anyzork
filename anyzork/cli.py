@@ -504,6 +504,7 @@ def _do_publish(source_path: Path, cfg: Config) -> None:
             payload = upload_share_package(
                 package_path,
                 cfg.upload_url,
+                session_token=cfg.session_token,
             )
         except SharePackageError as exc:
             fatal_error(console, "Upload failed", exc)
@@ -517,6 +518,218 @@ def _do_publish(source_path: Path, cfg: Config) -> None:
     console.print(
         f"[dim]Submitted for review. Check status with:[/dim]"
         f"  anyzork publish --status {uploaded_slug}"
+    )
+
+
+@cli.command("login")
+def login_cmd() -> None:
+    """Log in to AnyZork with email OTP."""
+    from anyzork.config import save_config_file
+    from anyzork.sharing import request_login_code, verify_login_code
+
+    cfg = Config()
+    if cfg.session_token:
+        console.print(
+            f"[dim]Already logged in as[/dim] "
+            f"[cyan]{cfg.publisher_email or 'unknown'}[/cyan]"
+        )
+        if not click.confirm("Log in again?", default=False):
+            return
+
+    email = click.prompt("Email address").strip()
+    if not email:
+        fatal_error(console, "Login failed", "No email provided.")
+
+    base_url = cfg.upload_url
+    try:
+        request_login_code(base_url, email)
+    except SharePackageError as exc:
+        fatal_error(console, "Login failed", exc)
+
+    console.print(
+        f"[dim]A 6-digit code was sent to[/dim] [cyan]{email}[/cyan]"
+    )
+    code = click.prompt("Enter your 6-digit code").strip()
+
+    try:
+        result = verify_login_code(base_url, email, code)
+    except SharePackageError as exc:
+        fatal_error(console, "Verification failed", exc)
+
+    token = str(result.get("session_token", ""))
+    save_config_file(
+        session_token=token, publisher_email=email,
+    )
+    console.print(
+        "[bold green]Logged in![/bold green] "
+        "Session saved to ~/.anyzork/config.toml"
+    )
+
+
+@cli.command("logout")
+def logout_cmd() -> None:
+    """Log out of AnyZork."""
+    from anyzork.config import save_config_file
+    from anyzork.sharing import logout as sharing_logout
+
+    cfg = Config()
+    if not cfg.session_token:
+        console.print("[dim]Not logged in.[/dim]")
+        return
+
+    base_url = cfg.upload_url
+    with contextlib.suppress(Exception):
+        sharing_logout(base_url, cfg.session_token)
+
+    save_config_file(session_token="", publisher_email="")
+    console.print("[bold green]Logged out.[/bold green]")
+
+
+@cli.command("my-games")
+def my_games_cmd() -> None:
+    """List your published games."""
+    from rich.table import Table
+
+    from anyzork.sharing import list_my_games
+
+    cfg = Config()
+    if not cfg.session_token:
+        fatal_error(
+            console, "Not logged in",
+            "Run 'anyzork login' first.",
+        )
+
+    try:
+        games = list_my_games(cfg.upload_url, cfg.session_token)
+    except SharePackageError as exc:
+        fatal_error(console, "Request failed", exc)
+
+    if not games:
+        console.print("[dim]No games found. Publish one first![/dim]")
+        return
+
+    table = Table(title="My Games", show_lines=False)
+    table.add_column("Slug", style="cyan", no_wrap=True)
+    table.add_column("Title", style="bold")
+    table.add_column("Status", style="green")
+    table.add_column("Updated", style="dim")
+
+    for game in games:
+        status = (
+            "[green]published[/green]"
+            if game.get("published")
+            else "[yellow]pending[/yellow]"
+        )
+        table.add_row(
+            str(game.get("slug", "")),
+            str(game.get("title", "")),
+            status,
+            str(game.get("updated_at", "")),
+        )
+
+    console.print(table)
+
+
+@cli.command("update")
+@click.argument("slug", type=str)
+@click.option("--title", type=str, default=None, help="New title.")
+@click.option("--author", type=str, default=None, help="New author.")
+@click.option(
+    "--description", type=str, default=None, help="New description.",
+)
+@click.option("--tagline", type=str, default=None, help="New tagline.")
+@click.option(
+    "--genres", type=str, default=None,
+    help="Comma-separated genre tags.",
+)
+@click.option(
+    "--package", "package_file", type=click.Path(exists=True, path_type=Path),
+    default=None, help="New .zork package file.",
+)
+def update_cmd(
+    slug: str,
+    title: str | None,
+    author: str | None,
+    description: str | None,
+    tagline: str | None,
+    genres: str | None,
+    package_file: Path | None,
+) -> None:
+    """Update a published game's metadata or package."""
+    from anyzork.sharing import update_published_game
+
+    cfg = Config()
+    if not cfg.session_token:
+        fatal_error(
+            console, "Not logged in",
+            "Run 'anyzork login' first.",
+        )
+
+    metadata: dict[str, str | None] = {}
+    if title is not None:
+        metadata["title"] = title
+    if author is not None:
+        metadata["author"] = author
+    if description is not None:
+        metadata["description"] = description
+    if tagline is not None:
+        metadata["tagline"] = tagline
+    if genres is not None:
+        metadata["genres"] = genres
+
+    try:
+        result = update_published_game(
+            cfg.upload_url,
+            slug,
+            cfg.session_token,
+            package_path=package_file,
+            **metadata,
+        )
+    except SharePackageError as exc:
+        fatal_error(console, "Update failed", exc)
+
+    game = dict(result.get("game") or {})
+    console.print(
+        f"[bold green]Updated![/bold green] "
+        f"[cyan]{game.get('title', slug)}[/cyan] "
+        f"[dim](auto-unpublished for re-review)[/dim]"
+    )
+
+
+@cli.command("unpublish")
+@click.argument("slug", type=str)
+@click.option(
+    "--yes", "-y", is_flag=True,
+    help="Skip confirmation prompt.",
+)
+def unpublish_cmd(slug: str, yes: bool) -> None:
+    """Remove a published game from the catalog."""
+    from anyzork.sharing import delete_published_game
+
+    cfg = Config()
+    if not cfg.session_token:
+        fatal_error(
+            console, "Not logged in",
+            "Run 'anyzork login' first.",
+        )
+
+    if not yes and not confirm_or_abort(
+        f"Delete game '{slug}' from the catalog?",
+        default=False,
+        console=console,
+    ):
+        return
+
+    try:
+        delete_published_game(
+            cfg.upload_url, slug, cfg.session_token,
+        )
+    except SharePackageError as exc:
+        fatal_error(console, "Unpublish failed", exc)
+
+    console.print(
+        f"[bold green]Removed![/bold green] "
+        f"[cyan]{slug}[/cyan] has been deleted from the catalog."
     )
 
 

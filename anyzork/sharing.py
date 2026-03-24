@@ -209,6 +209,7 @@ def upload_share_package(
     slug: str | None = None,
     homepage_url: str | None = None,
     cover_image_url: str | None = None,
+    session_token: str | None = None,
 ) -> dict[str, object]:
     """Upload a share package to an AnyZork catalog service."""
     package_path = package_path.expanduser().resolve()
@@ -237,28 +238,37 @@ def upload_share_package(
         file_bytes=package_path.read_bytes(),
         file_content_type="application/zip",
     )
+    headers: dict[str, str] = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Accept": "application/json",
+    }
+    if session_token:
+        headers["Authorization"] = f"Bearer {session_token}"
     request = Request(
         upload_url,
         data=body,
         method="POST",
-        headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Accept": "application/json",
-        },
+        headers=headers,
     )
     try:
         with urlopen(request, timeout=30) as response:
             payload = response.read().decode("utf-8")
     except HTTPError as exc:
         detail = _read_http_error_detail(exc)
-        raise SharePackageError(f"Upload failed with HTTP {exc.code}: {detail}") from exc
+        raise SharePackageError(
+            f"Upload failed with HTTP {exc.code}: {detail}",
+        ) from exc
     except OSError as exc:
-        raise SharePackageError(f"Could not upload shared game to {upload_url}: {exc}") from exc
+        raise SharePackageError(
+            f"Could not upload shared game to {upload_url}: {exc}",
+        ) from exc
 
     try:
         return json.loads(payload)
     except ValueError as exc:
-        raise SharePackageError("Upload service returned invalid JSON.") from exc
+        raise SharePackageError(
+            "Upload service returned invalid JSON.",
+        ) from exc
 
 
 def install_shared_game(
@@ -575,6 +585,203 @@ def _read_http_error_detail(exc: HTTPError) -> str:
     if isinstance(parsed, dict) and parsed.get("detail"):
         return str(parsed["detail"])
     return payload
+
+
+def request_login_code(
+    api_base_url: str, email: str,
+) -> dict[str, object]:
+    """POST /api/auth/login — request an OTP code."""
+    url = _resolve_api_url(api_base_url, "api/auth/login")
+    body = json.dumps({"email": email}).encode("utf-8")
+    request = Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    return _json_request(request, "Login request failed")
+
+
+def verify_login_code(
+    api_base_url: str, email: str, code: str,
+) -> dict[str, object]:
+    """POST /api/auth/verify — verify an OTP code."""
+    url = _resolve_api_url(api_base_url, "api/auth/verify")
+    body = json.dumps({"email": email, "code": code}).encode("utf-8")
+    request = Request(
+        url,
+        data=body,
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+    )
+    return _json_request(request, "Verification failed")
+
+
+def logout(
+    api_base_url: str, session_token: str,
+) -> None:
+    """POST /api/auth/logout — invalidate a session."""
+    url = _resolve_api_url(api_base_url, "api/auth/logout")
+    request = Request(
+        url,
+        data=b"",
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {session_token}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            response.read()
+    except HTTPError as exc:
+        detail = _read_http_error_detail(exc)
+        raise SharePackageError(
+            f"Logout failed with HTTP {exc.code}: {detail}",
+        ) from exc
+    except OSError as exc:
+        raise SharePackageError(f"Logout failed: {exc}") from exc
+
+
+def list_my_games(
+    api_base_url: str, session_token: str,
+) -> list[dict[str, object]]:
+    """GET /api/my/games — list games owned by the session user."""
+    url = _resolve_api_url(api_base_url, "api/my/games")
+    request = Request(
+        url,
+        method="GET",
+        headers={
+            "Authorization": f"Bearer {session_token}",
+            "Accept": "application/json",
+        },
+    )
+    result = _json_request(request, "Could not fetch your games")
+    return list(result.get("games", []))
+
+
+def update_published_game(
+    api_base_url: str,
+    slug: str,
+    session_token: str,
+    *,
+    package_path: Path | None = None,
+    **metadata: str | None,
+) -> dict[str, object]:
+    """PUT /api/games/{slug} — update a published game."""
+    url = _resolve_api_url(api_base_url, f"api/games/{slug}")
+    boundary = f"anyzork-{uuid4().hex}"
+
+    fields: dict[str, str | None] = {}
+    for key in (
+        "title", "author", "description", "tagline",
+        "genres", "homepage_url", "cover_image_url",
+    ):
+        if key in metadata and metadata[key] is not None:
+            fields[key] = str(metadata[key])
+
+    if package_path is not None:
+        body = _encode_multipart_request(
+            boundary,
+            fields=fields,
+            file_field="package",
+            file_name=package_path.name,
+            file_bytes=package_path.read_bytes(),
+            file_content_type="application/zip",
+        )
+    else:
+        # Build a multipart body with just text fields.
+        parts: list[bytes] = []
+        for key, value in fields.items():
+            if value is None:
+                continue
+            parts.extend([
+                f"--{boundary}\r\n".encode(),
+                f'Content-Disposition: form-data; name="{key}"'
+                f"\r\n\r\n".encode(),
+                value.encode("utf-8"),
+                b"\r\n",
+            ])
+        parts.append(f"--{boundary}--\r\n".encode())
+        body = b"".join(parts)
+
+    request = Request(
+        url,
+        data=body,
+        method="PUT",
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Authorization": f"Bearer {session_token}",
+            "Accept": "application/json",
+        },
+    )
+    return _json_request(request, "Update failed")
+
+
+def delete_published_game(
+    api_base_url: str, slug: str, session_token: str,
+) -> None:
+    """DELETE /api/games/{slug} — remove a published game."""
+    url = _resolve_api_url(api_base_url, f"api/games/{slug}")
+    request = Request(
+        url,
+        method="DELETE",
+        headers={
+            "Authorization": f"Bearer {session_token}",
+            "Accept": "application/json",
+        },
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            response.read()
+    except HTTPError as exc:
+        detail = _read_http_error_detail(exc)
+        raise SharePackageError(
+            f"Delete failed with HTTP {exc.code}: {detail}",
+        ) from exc
+    except OSError as exc:
+        raise SharePackageError(f"Delete failed: {exc}") from exc
+
+
+def _resolve_api_url(base_url: str, path: str) -> str:
+    """Resolve an API path relative to a base URL."""
+    base = base_url.rstrip("/")
+    # Strip /catalog.json or /api/games suffix to get the root.
+    for suffix in ("/catalog.json", "/api/games"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    return f"{base.rstrip('/')}/{path}"
+
+
+def _json_request(
+    request: Request, error_prefix: str,
+) -> dict[str, object]:
+    """Execute a request and parse JSON response."""
+    try:
+        with urlopen(request, timeout=30) as response:
+            payload = response.read().decode("utf-8")
+    except HTTPError as exc:
+        detail = _read_http_error_detail(exc)
+        raise SharePackageError(
+            f"{error_prefix} (HTTP {exc.code}): {detail}",
+        ) from exc
+    except OSError as exc:
+        raise SharePackageError(
+            f"{error_prefix}: {exc}",
+        ) from exc
+    try:
+        return json.loads(payload)
+    except ValueError as exc:
+        raise SharePackageError(
+            f"{error_prefix}: invalid JSON response.",
+        ) from exc
 
 
 def _encode_multipart_request(
