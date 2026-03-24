@@ -121,6 +121,39 @@ def sorted_save_files(save_dir: Path) -> list[Path]:
     return sorted(save_dir.glob("*.zork"), key=save_last_played_timestamp, reverse=True)
 
 
+def resolve_save_reference(game_slug: str, save_ref: str, cfg: Config | None = None) -> Path:
+    """Resolve a save reference (slot name or numeric index) to a .zork path."""
+    cfg = cfg or Config()
+    save_dir = cfg.saves_dir / game_slug
+
+    # Direct slot name match
+    direct = save_dir / f"{sanitize_slot_name(save_ref)}.zork"
+    if direct.exists():
+        return direct
+
+    # Numeric index (1-based, matching `anyzork list --saves` order)
+    if save_ref.isdigit():
+        saves = sorted_save_files(save_dir)
+        idx = int(save_ref) - 1
+        if 0 <= idx < len(saves):
+            return saves[idx]
+        raise ValueError(
+            f"Save index {save_ref} out of range ({len(saves)} save(s) for '{game_slug}')."
+        )
+
+    # Substring matching
+    if save_dir.exists():
+        needle = save_ref.lower()
+        matches = [s for s in save_dir.glob("*.zork") if needle in s.stem.lower()]
+        if len(matches) == 1:
+            return matches[0]
+        if matches:
+            refs = ", ".join(s.stem for s in matches)
+            raise ValueError(f"Ambiguous save ref '{save_ref}' matches: {refs}")
+
+    raise ValueError(f"No save found for '{save_ref}' in game '{game_slug}'.")
+
+
 def read_archive_metadata(path: Path) -> dict | None:
     """Read metadata from a .zork archive's manifest.toml."""
     try:
