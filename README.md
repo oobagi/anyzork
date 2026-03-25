@@ -13,15 +13,42 @@
 
 ---
 
-## Quickstart
+## Install
 
 > Requires Python 3.11+
 
+The recommended way to install AnyZork is with [pipx](https://pipx.pypa.io/), which gives you an isolated environment and puts the `anyzork` command on your PATH:
+
 ```bash
-git clone https://github.com/oobagi/anyzork.git
-cd anyzork && python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e .
+pipx install anyzork
 ```
+
+To enable [Narrator Mode](docs/guides/NARRATOR.md) (optional LLM-powered prose), install with the narrator extra:
+
+```bash
+pipx install 'anyzork[narrator]'
+```
+
+**Upgrade** to the latest release:
+
+```bash
+pipx upgrade anyzork
+```
+
+<details>
+<summary>Alternative: install with pip</summary>
+
+If you prefer a regular pip install into a virtual environment:
+
+```bash
+pip install anyzork            # core only
+pip install 'anyzork[narrator]'  # with narrator providers
+```
+</details>
+
+> **Homebrew**: A Homebrew formula is not available yet. We want to prove out the Python packaging path first and will revisit Homebrew support once the release cadence is stable.
+
+## Quickstart
 
 Browse and play a community game:
 
@@ -89,8 +116,13 @@ MIT-licensed, solo-maintained. Issues and PRs welcome — small focused changes 
 
 ## Development
 
+For contributors working on AnyZork itself:
+
 ```bash
-pip install -e ".[dev]"
+git clone https://github.com/oobagi/anyzork.git
+cd anyzork
+python3.11 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev,narrator,catalog]"
 ruff check .
 pytest -q
 ```
