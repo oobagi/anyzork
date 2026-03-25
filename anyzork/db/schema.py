@@ -365,7 +365,7 @@ CREATE INDEX IF NOT EXISTS idx_interactions_tag_cat
 CREATE TABLE IF NOT EXISTS triggers (
     id              TEXT PRIMARY KEY,
     event_type      TEXT    NOT NULL,       -- room_enter | flag_set | dialogue_node
-                                            -- | item_taken | item_dropped
+                                            -- | item_taken | item_dropped | command_exec
     event_data      TEXT    NOT NULL DEFAULT '{}',
                                             -- JSON: partial match against
                                             -- emitted event data
@@ -375,7 +375,8 @@ CREATE TABLE IF NOT EXISTS triggers (
     priority        INTEGER NOT NULL DEFAULT 0,     -- Higher = evaluated first
     one_shot        INTEGER NOT NULL DEFAULT 0,     -- 1 = fire only once
     executed        INTEGER NOT NULL DEFAULT 0,     -- 1 = already fired (for one-shot)
-    is_enabled      INTEGER NOT NULL DEFAULT 1      -- 0 = disabled
+    is_enabled      INTEGER NOT NULL DEFAULT 1,     -- 0 = disabled
+    disarm_flag     TEXT                            -- Flag ID: when set, trigger is skipped (trap disarmed)
 );
 CREATE INDEX IF NOT EXISTS idx_triggers_event_type ON triggers(event_type);
 CREATE INDEX IF NOT EXISTS idx_triggers_event_data ON triggers(event_data);

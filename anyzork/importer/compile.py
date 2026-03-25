@@ -385,6 +385,7 @@ def _insert_triggers(db: GameDB, spec: dict[str, Any]) -> None:
             one_shot=bool_to_int(trigger.get("one_shot", False)),
             executed=bool_to_int(trigger.get("executed", False)),
             is_enabled=bool_to_int(trigger.get("is_enabled", True)),
+            disarm_flag=optional_str(trigger.get("disarm_flag")),
         )
 
 

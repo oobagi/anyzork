@@ -309,7 +309,7 @@ def lint_spec(spec: dict[str, Any]) -> list[Diagnostic]:
                     )
                 )
 
-    # Triggers: event_type, preconditions, effects
+    # Triggers: event_type, preconditions, effects, disarm_flag
     for trigger in spec.get("triggers", []):
         evt = trigger.get("event_type")
         if evt and evt not in VALID_TRIGGER_EVENT_TYPES:
@@ -318,6 +318,15 @@ def lint_spec(spec: dict[str, Any]) -> list[Diagnostic]:
                     "error", "dsl",
                     f"trigger '{trigger['id']}' unknown event type '{evt}'",
                     None, valid_evt_hint,
+                )
+            )
+        disarm_flag = trigger.get("disarm_flag")
+        if disarm_flag and disarm_flag not in flag_ids:
+            diags.append(
+                _ref_check(
+                    disarm_flag, flag_ids, "reference",
+                    f"trigger '{trigger['id']}' disarm_flag '{disarm_flag}' "
+                    f"not in flags",
                 )
             )
         for pre in trigger.get("preconditions", []):
