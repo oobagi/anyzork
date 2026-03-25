@@ -36,7 +36,7 @@ Ship the CLI as a real installable product.
 
 Deepen the deterministic engine with new mechanics. Each builds on a stable core.
 
-- [ ] [#23 Quest failure states](https://github.com/oobagi/anyzork/issues/23)
+- [x] [#23 Quest failure states](https://github.com/oobagi/anyzork/issues/23)
 - [ ] [#24 Reactive NPC triggers: theft, attacks, disposition](https://github.com/oobagi/anyzork/issues/24)
 - [x] [#25 Trap system: first-class trigger subtype](https://github.com/oobagi/anyzork/issues/25)
 - [ ] [#28 General-purpose variables: set_var, change_var, var_check](https://github.com/oobagi/anyzork/issues/28)
