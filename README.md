@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/oobagi/anyzork/main/assets/anyzork-header.pnglt="AnyZork" width="520">
+      <img src="assets/anyzork-header.png" alt="AnyZork" width="520">
   <h1>AnyZork</h1>
   <p><strong>A Zork-style text adventure generator. Describe a world to any LLM, get back a complete game, and play it on a fully deterministic engine — no AI needed at runtime.</strong></p>
   <p>
