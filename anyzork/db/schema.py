@@ -376,7 +376,7 @@ CREATE TABLE IF NOT EXISTS triggers (
     one_shot        INTEGER NOT NULL DEFAULT 0,     -- 1 = fire only once
     executed        INTEGER NOT NULL DEFAULT 0,     -- 1 = already fired (for one-shot)
     is_enabled      INTEGER NOT NULL DEFAULT 1,     -- 0 = disabled
-    disarm_flag     TEXT                            -- Flag ID: when set, trigger is skipped (trap disarmed)
+    disarm_flag     TEXT                            -- when set, trap is skipped
 );
 CREATE INDEX IF NOT EXISTS idx_triggers_event_type ON triggers(event_type);
 CREATE INDEX IF NOT EXISTS idx_triggers_event_data ON triggers(event_data);

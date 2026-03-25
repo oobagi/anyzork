@@ -78,12 +78,12 @@ def test_parse_trap_block() -> None:
 def test_trap_compiles_to_db(tmp_path: Path) -> None:
     spec = parse_zorkscript(_minimal_trap_zorkscript())
     output_path = tmp_path / "trap_test.zork"
-    compiled_path, warnings = compile_import_spec(spec, output_path)
+    compiled_path, _warnings = compile_import_spec(spec, output_path)
 
     with GameDB(compiled_path) as db:
         triggers = db.get_triggers_for_event("room_enter")
         assert len(triggers) >= 1
-        trap = [t for t in triggers if t["id"] == "spike_pit"][0]
+        trap = next(t for t in triggers if t["id"] == "spike_pit")
         assert trap["disarm_flag"] == "spike_pit_disarmed"
         assert trap["one_shot"] == 1
         assert trap["message"] == "The floor gives way beneath you!"
@@ -101,7 +101,7 @@ def test_trap_disarm_flag_skips_trigger(tmp_path: Path) -> None:
 
         # Get triggers - the trap should still be in the DB
         triggers = db.get_triggers_for_event("room_enter")
-        trap = [t for t in triggers if t["id"] == "spike_pit"][0]
+        trap = next(t for t in triggers if t["id"] == "spike_pit")
         assert trap["disarm_flag"] == "spike_pit_disarmed"
 
         # Verify the engine would skip it (disarm_flag is set)
@@ -115,7 +115,7 @@ def test_trap_one_shot_respected(tmp_path: Path) -> None:
 
     with GameDB(compiled_path) as db:
         triggers = db.get_triggers_for_event("room_enter")
-        trap = [t for t in triggers if t["id"] == "spike_pit"][0]
+        trap = next(t for t in triggers if t["id"] == "spike_pit")
         assert trap["one_shot"] == 1
         assert trap["executed"] == 0
 
