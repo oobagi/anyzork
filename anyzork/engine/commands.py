@@ -585,7 +585,17 @@ def apply_effect(
 
     elif effect_type == "fail_quest":
         quest_ref = _substitute_slots(effect["quest"], slots)
-        db.update_quest_status(quest_ref, "failed")
+        quest = db.get_quest(quest_ref)
+        if quest and quest["status"] not in ("completed", "failed"):
+            db.update_quest_status(quest_ref, "failed")
+            # Set the failure_flag so the state machine sees it as already failed.
+            if quest.get("failure_flag"):
+                was_set = db.has_flag(quest["failure_flag"])
+                db.set_flag(quest["failure_flag"], "true")
+                if emit_event is not None and not was_set:
+                    emit_event("flag_set", flag=quest["failure_flag"])
+            if quest.get("fail_message"):
+                messages.append(quest["fail_message"])
 
     elif effect_type == "complete_quest":
         quest_ref = _substitute_slots(effect["quest"], slots)

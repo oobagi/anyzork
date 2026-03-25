@@ -341,6 +341,8 @@ def _insert_quests(db: GameDB, spec: dict[str, Any]) -> None:
             status=quest.get("status", "undiscovered"),
             discovery_flag=optional_str(quest.get("discovery_flag")),
             completion_flag=quest["completion_flag"],
+            failure_flag=optional_str(quest.get("failure_flag")),
+            fail_message=optional_str(quest.get("fail_message")),
             score_value=int(quest.get("score_value", 0)),
             sort_order=int(quest.get("sort_order", 0)),
         )

@@ -867,6 +867,7 @@ class _Parser:
             field_map = {
                 "completion": "completion_flag",
                 "discovery": "discovery_flag",
+                "failure": "failure_flag",
                 "score": "score_value",
             }
             mapped_key = field_map.get(key, key)

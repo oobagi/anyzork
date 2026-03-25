@@ -1423,6 +1423,17 @@ def _check_quests(db: GameDB) -> list[ValidationError]:
                 )
             )
 
+        # Validate failure_flag.
+        fail = quest.get("failure_flag")
+        if fail is not None and fail not in flag_set:
+            errors.append(
+                ValidationError(
+                    "warning",
+                    "quest",
+                    f"Quest '{qid}' failure_flag '{fail}' not found in flags table.",
+                )
+            )
+
         # Validate completion_flag.
         comp = quest.get("completion_flag", "")
         if comp and comp not in flag_set:

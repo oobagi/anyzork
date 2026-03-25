@@ -475,6 +475,18 @@ def _normalize_quests(spec: dict[str, Any]) -> None:
             )
             existing_flag_ids.add(completion_flag)
 
+        # Auto-generate failure_flag entry if provided but not in flags table.
+        failure_flag = optional_str(quest.get("failure_flag"))
+        if failure_flag and failure_flag not in existing_flag_ids:
+            generated_flags.append(
+                {
+                    "id": failure_flag,
+                    "value": "false",
+                    "description": f"Auto-generated failure flag for quest {quest_id}.",
+                }
+            )
+            existing_flag_ids.add(failure_flag)
+
         objectives = quest.setdefault("objectives", [])
         for objective in objectives:
             objective_id = str(objective["id"])
