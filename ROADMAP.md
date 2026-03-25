@@ -30,7 +30,7 @@ Improve the optional LLM layer and provider onboarding.
 
 Ship the CLI as a real installable product.
 
-- [ ] [#21 Packaging and distribution: wheels, pipx, Homebrew](https://github.com/oobagi/anyzork/issues/21)
+- [x] [#21 Packaging and distribution: wheels, pipx, Homebrew](https://github.com/oobagi/anyzork/issues/21)
 
 ## 5. Engine Depth
 
