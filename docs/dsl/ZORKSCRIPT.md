@@ -567,6 +567,8 @@ quest main:seal_the_gate {
   description "Find the three keys and seal the gate."
   discovery   met_wizard
   completion  gate_sealed
+  failure     wizard_killed
+  fail_message "The wizard is dead. The gate can never be sealed."
   score       50
   sort_order  0
 
@@ -588,6 +590,8 @@ Quest fields:
 | `quest_type`      | string  | yes      | | `"main"` or `"side"`. Can use prefix syntax: `quest main:id` |
 | `discovery_flag`  | id      | no       | | Shorthand: `discovery` |
 | `completion_flag` | id      | yes      | | Shorthand: `completion` |
+| `failure_flag`    | id      | no       | | Shorthand: `failure`. When this flag is set, quest transitions to failed and objectives lock. |
+| `fail_message`    | string  | no       | | Authored flavor text displayed when the quest fails. Falls back to `description` if omitted. |
 | `score_value`     | integer | no       | 0 | Shorthand: `score` |
 | `sort_order`      | integer | no       | 0 | |
 

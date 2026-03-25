@@ -64,6 +64,7 @@ STYLE_SCORE_LABEL = "bold"                  # score/moves/HP labels
 STYLE_SCORE_VALUE = "green"                 # score breakdown points
 STYLE_QUEST_HEADER = "bold bright_cyan"         # quest notification headers
 STYLE_QUEST_COMPLETE = "bold bright_green"      # quest completion panel
+STYLE_QUEST_FAILED = "bold red"                 # quest failure panel
 STYLE_PROMPT = "bold yellow"                # input prompt ">"
 STYLE_COMMAND = "cyan"                      # command/verb names in help text
 STYLE_VICTORY_BORDER = "bright_green"       # win panel border
@@ -1270,7 +1271,8 @@ class GameEngine:
             lines.append(
                 f"  {quest['name']}            [bold red][FAILED][/]"
             )
-            lines.append(f"  {quest['description']}")
+            fail_msg = quest.get("fail_message")
+            lines.append(f"  {fail_msg}" if fail_msg else f"  {quest['description']}")
             return
 
         # Active quest -- show objectives with checkboxes.
@@ -2811,6 +2813,35 @@ class GameEngine:
                     objectives = db.get_quest_objectives(quest["id"])
                     for obj in objectives:
                         self._objective_cache[obj["id"]] = db.has_flag(obj["completion_flag"])
+
+            # --- Check failure_flag (active or undiscovered) ---
+            failure_flag = quest.get("failure_flag")
+            if (
+                failure_flag
+                and db.has_flag(failure_flag)
+                and quest["status"] in ("active", "undiscovered")
+            ):
+                db.update_quest_status(quest["id"], "failed")
+                quest["status"] = "failed"
+                # Notify if the player was already tracking the quest, or just
+                # discovered it this tick (discovery_flag set simultaneously).
+                discovered_this_tick = (
+                    status == "undiscovered"
+                    and quest.get("discovery_flag")
+                    and db.has_flag(quest["discovery_flag"])
+                )
+                if status == "active" or discovered_this_tick:
+                    fail_text = quest.get("fail_message") or quest["description"]
+                    self._notify("")
+                    self._notify(
+                        Panel(
+                            f"Quest Failed: {quest['name']}\n"
+                            f"{fail_text}",
+                            style=STYLE_QUEST_FAILED,
+                            padding=(1, 2),
+                        )
+                    )
+                continue
 
             # --- Active quests: check objective progress ---
             if quest["status"] == "active":

@@ -287,6 +287,8 @@ CREATE TABLE IF NOT EXISTS quests (
     status          TEXT    NOT NULL DEFAULT 'undiscovered',
     discovery_flag  TEXT,
     completion_flag TEXT    NOT NULL,
+    failure_flag    TEXT,              -- when set, quest transitions to failed
+    fail_message    TEXT,              -- authored flavor text shown on failure
     score_value     INTEGER NOT NULL DEFAULT 0,
     sort_order      INTEGER NOT NULL DEFAULT 0
 );
