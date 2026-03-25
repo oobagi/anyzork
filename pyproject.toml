@@ -62,6 +62,7 @@ catalog = [
 Homepage = "https://github.com/oobagi/anyzork"
 Repository = "https://github.com/oobagi/anyzork"
 Issues = "https://github.com/oobagi/anyzork/issues"
+Changelog = "https://github.com/oobagi/anyzork/releases"
 
 [project.scripts]
 anyzork = "anyzork.cli:main"
@@ -72,6 +73,10 @@ exclude = [
     "/.github",
     "/AGENTS.md",
     "/CLAUDE.md",
+    "/ROADMAP.md",
+    "/assets",
+    "/docs",
+    "/tests",
 ]
 
 [tool.ruff]
