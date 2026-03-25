@@ -366,6 +366,8 @@ class _Parser:
                 self._parse_command_block()
             elif keyword == "trigger":
                 self._parse_trigger_block()
+            elif keyword == "trap":
+                self._parse_trap_block()
             elif keyword == "dialogue":
                 self._parse_standalone_dialogue_block()
             elif keyword == "option":
@@ -1026,6 +1028,7 @@ class _Parser:
         "item_taken": "item_id",
         "item_dropped": "item_id",
         "dialogue_node": "node_id",
+        "command_exec": "command_id",
     }
 
     def _parse_when_block(self) -> None:
@@ -1168,19 +1171,25 @@ class _Parser:
         cmd.setdefault("context_room_ids", [])
         self._commands.append(cmd)
 
-    # -- Standalone trigger block (from Architect spec) --
+    # -- Standalone trigger / trap blocks --
 
     def _parse_trigger_block(self) -> None:
         """Parse: trigger id { on, when, require, effect, ... }"""
-        self._expect("IDENT", "trigger")
-        trigger_id_tok = self._expect("IDENT")
-        trigger_id = trigger_id_tok.value
+        self._parse_trigger_or_trap("trigger")
+
+    def _parse_trap_block(self) -> None:
+        """Parse: trap id { on, when, disarm, require, effect, message, once, ... }"""
+        self._parse_trigger_or_trap("trap")
+
+    def _parse_trigger_or_trap(self, keyword: str) -> None:
+        self._expect("IDENT", keyword)
+        block_id = self._expect("IDENT").value
         self._expect("LBRACE")
 
         preconditions: list[dict[str, Any]] = []
         effects: list[dict[str, Any]] = []
         trigger: dict[str, Any] = {
-            "id": trigger_id,
+            "id": block_id,
             "one_shot": False,
             "priority": 0,
             "executed": False,
@@ -1207,11 +1216,17 @@ class _Parser:
                 wd_val = self._parse_value()
                 event_data[wd_key] = wd_val
                 continue
+            if tok.kind == "IDENT" and tok.value == "once":
+                self._advance()
+                trigger["one_shot"] = True
+                continue
 
             key_tok = self._expect("IDENT")
             key = key_tok.value
             if key == "on":
                 trigger["event_type"] = self._parse_value()
+            elif key in ("disarm", "disarm_flag"):
+                trigger["disarm_flag"] = self._parse_value()
             elif key == "one_shot":
                 trigger["one_shot"] = self._parse_value()
             elif key == "message":

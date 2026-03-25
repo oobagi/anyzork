@@ -377,6 +377,7 @@ def _normalize_interaction_responses(spec: dict[str, Any]) -> None:
 def _normalize_triggers(spec: dict[str, Any]) -> None:
     for trigger in spec.get("triggers", []):
         trigger.setdefault("event_data", {})
+        trigger.setdefault("disarm_flag", None)
         if not trigger["event_data"].get("room_id") and trigger.get("room_id"):
             trigger["event_data"]["room_id"] = trigger.get("room_id")
         if (

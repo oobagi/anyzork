@@ -93,6 +93,7 @@ VALID_TRIGGER_EVENT_TYPES: frozenset[str] = frozenset(
         "dialogue_node",
         "item_taken",
         "item_dropped",
+        "command_exec",
     }
 )
 
@@ -1571,6 +1572,19 @@ def _check_triggers(db: GameDB) -> list[ValidationError]:
                         f"{trig_label} event_data references non-existent room '{room_val}'.",
                     )
                 )
+        elif event_type == "command_exec":
+            pass  # command_id is free-form; no cross-reference check needed
+
+        disarm_flag_val = trigger.get("disarm_flag")
+        if disarm_flag_val and disarm_flag_val not in flag_set:
+            errors.append(
+                ValidationError(
+                    "warning",
+                    "trigger",
+                    f"{trig_label} disarm_flag references unknown flag "
+                    f"'{disarm_flag_val}'.",
+                )
+            )
 
         try:
             preconds = json.loads(trigger.get("preconditions", "[]"))

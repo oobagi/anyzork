@@ -919,6 +919,7 @@ when room_enter(courtyard) {
 | `dialogue_node` | `node_id`           | A dialogue node is visited |
 | `item_taken`    | `item_id`           | Player takes an item |
 | `item_dropped`  | `item_id`           | Player drops an item |
+| `command_exec`  | `command_id`        | A DSL command executes successfully |
 
 ### `when` clause compilation (named `trigger` form)
 
@@ -938,6 +939,58 @@ Compiles to:
 
 In the shorthand `when` form, the event argument is mapped automatically:
 `when room_enter(hut)` compiles to `{"event_type": "room_enter", "event_data": {"room_id": "hut"}}`.
+
+### Trap blocks
+
+A `trap` is a first-class trigger subtype for environmental hazards. It compiles
+to a regular trigger row with an additional `disarm_flag` column.
+
+```zorkscript
+trap spike_pit {
+  on       room_enter
+  when     room_id = dungeon_corridor
+  disarm   spike_pit_disarmed
+
+  require not_flag(spike_pit_disarmed)
+
+  effect change_health(-25)
+  effect set_flag(spike_pit_triggered)
+
+  message "The floor gives way beneath you! Spikes tear at your legs."
+  once
+}
+```
+
+| Field     | Type        | Required | Notes |
+|-----------|-------------|----------|-------|
+| `on`      | string      | yes      | Event type (`room_enter`, `item_taken`, `command_exec`, etc). |
+| `when`    | key=value   | 0+       | Event data filters. Same as `trigger`. |
+| `disarm`  | string      | no       | Flag ID. When this flag is set, the trap is skipped. |
+| `require` | precondition| 0+       | Same syntax as triggers/commands. |
+| `effect`  | effect      | 0+       | Same syntax as triggers/commands. |
+| `message` | string      | no       | Display text when the trap fires. |
+| `priority`| integer     | no       | Default 0. Higher = evaluated first. |
+| `once`    | keyword     | no       | Sets `one_shot` to true (fire only once). |
+
+The `disarm` field (alias: `disarm_flag`) is checked at runtime *before*
+preconditions. If the named flag is set in game state, the trap silently
+does nothing.
+
+### `command_exec` event type
+
+The `command_exec` event fires after a DSL command executes successfully.
+Use `command_id` in event data to target a specific command:
+
+```zorkscript
+trap cursed_lever {
+  on       command_exec
+  when     command_id = pull_lever
+
+  effect change_health(-10)
+  message "The lever sends a shock through your body!"
+  once
+}
+```
 
 
 ## 7. Dialogue Trees

@@ -429,6 +429,8 @@ class GameEngine:
                 for msg in narrated_msgs:
                     self.console.print(msg)
                 dsl_handled = True
+                if result.success and result.command_id and result.effects_applied:
+                    self._emit_event("command_exec", command_id=result.command_id)
 
         if dsl_handled:
             self._tick()
@@ -2677,6 +2679,11 @@ class GameEngine:
         for trigger in matching:
             # Double-check one-shot execution (defensive).
             if trigger["one_shot"] and trigger["executed"]:
+                continue
+
+            # Check disarm_flag — if set, this trap has been disarmed.
+            disarm_flag = trigger.get("disarm_flag")
+            if disarm_flag and db.has_flag(disarm_flag):
                 continue
 
             # Check preconditions.

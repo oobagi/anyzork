@@ -600,12 +600,13 @@ on "hit {target}" {
 }
 
 # -- Triggers -- when event_type(arg) blocks. Same require/effect syntax.
-# ONLY these 5 event types exist (do not invent new ones):
+# ONLY these 6 event types exist (do not invent new ones):
 #   room_enter(room_id)    -- player enters a room
 #   flag_set(flag_id)      -- a flag becomes true
 #   item_taken(item_id)    -- player takes an item
 #   item_dropped(item_id)  -- player drops an item
 #   dialogue_node(node_id) -- a dialogue node is visited
+#   command_exec(command_id) -- a DSL command executes successfully
 #
 # Quest declarations may use main:/side: prefixes (quest side:lost_recipe { ... })
 # but effect references use the NORMALIZED quest id only:
