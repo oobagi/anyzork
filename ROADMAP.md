@@ -38,7 +38,7 @@ Deepen the deterministic engine with new mechanics. Each builds on a stable core
 
 - [ ] [#23 Quest failure states](https://github.com/oobagi/anyzork/issues/23)
 - [ ] [#24 Reactive NPC triggers: theft, attacks, disposition](https://github.com/oobagi/anyzork/issues/24)
-- [ ] [#25 Trap system: first-class trigger subtype](https://github.com/oobagi/anyzork/issues/25)
+- [x] [#25 Trap system: first-class trigger subtype](https://github.com/oobagi/anyzork/issues/25)
 - [ ] [#28 General-purpose variables: set_var, change_var, var_check](https://github.com/oobagi/anyzork/issues/28)
 - [ ] [#29 spawn_npc effect for dynamic NPC creation](https://github.com/oobagi/anyzork/issues/29)
 - [ ] [#30 Turn-based triggers: when turn_count(N) and schedule_trigger](https://github.com/oobagi/anyzork/issues/30)
