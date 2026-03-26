@@ -385,6 +385,14 @@ CREATE TABLE IF NOT EXISTS triggers (
 );
 CREATE INDEX IF NOT EXISTS idx_triggers_event_type ON triggers(event_type);
 CREATE INDEX IF NOT EXISTS idx_triggers_event_data ON triggers(event_data);
+
+-- -------------------------------------------------------
+-- variables: general-purpose numerical variables
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS variables (
+    name  TEXT PRIMARY KEY,
+    value INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -1284,6 +1292,39 @@ class GameDB:
         """Set a flag's value to ``'false'``."""
         self._mutate(
             "UPDATE flags SET value = 'false' WHERE id = ?", (name,)
+        )
+
+    # ----------------------------------------------------------- variables
+
+    def get_var(self, name: str) -> int:
+        """Return a variable's value, or ``0`` if the variable does not exist."""
+        row = self._fetchone("SELECT value FROM variables WHERE name = ?", (name,))
+        return row["value"] if row else 0
+
+    def set_var(self, name: str, value: int) -> None:
+        """Set a variable to a specific integer value.
+
+        Creates the variable if it does not exist.
+        """
+        self._mutate(
+            """
+            INSERT INTO variables (name, value) VALUES (?, ?)
+            ON CONFLICT(name) DO UPDATE SET value = excluded.value
+            """,
+            (name, value),
+        )
+
+    def change_var(self, name: str, delta: int) -> None:
+        """Increment (or decrement) a variable by *delta*.
+
+        Creates the variable if it does not exist.
+        """
+        self._mutate(
+            """
+            INSERT INTO variables (name, value) VALUES (?, ?)
+            ON CONFLICT(name) DO UPDATE SET value = variables.value + excluded.value
+            """,
+            (name, delta),
         )
 
     # ---------------------------------------------------------------- locks

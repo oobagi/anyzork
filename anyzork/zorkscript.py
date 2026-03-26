@@ -46,6 +46,7 @@ _TOKEN_SPEC = [
     ("RPAREN",   r"\)"),
     ("COMMA",    r","),
     ("COLON",    r":"),
+    ("CMP",      r"[><!]=|==|[><]"),  # comparison operators: >=, <=, !=, ==, >, <
     ("EQUALS",   r"="),
     ("NUMBER",   r"-?[0-9]+"),
     ("IDENT",    r"[a-zA-Z_][a-zA-Z0-9_]*"),
@@ -233,7 +234,7 @@ class _Parser:
             elif tok.kind == "IDENT" and tok.value in ("true", "false"):
                 self._advance()
                 args.append(tok.value == "true")
-            elif tok.kind == "IDENT":
+            elif tok.kind in ("CMP", "IDENT"):
                 self._advance()
                 args.append(tok.value)
             else:
@@ -262,6 +263,7 @@ class _Parser:
         "has_quantity":           ["item", "min"],
         "toggle_state":           ["item", "state"],
         "npc_disposition":        ["npc", "disposition"],
+        "var_check":              ["name", "operator", "value"],
     }
 
     _EFFECT_ARGS: ClassVar[dict[str, list[str]]] = {
@@ -302,6 +304,9 @@ class _Parser:
         # NPC disposition and forced dialogue
         "set_disposition":         ["npc", "disposition"],
         "force_dialogue":          ["npc", "node"],
+        # General-purpose variables
+        "set_var":                 ["name", "value"],
+        "change_var":              ["name", "delta"],
         # Target-aware effects (interaction response context only)
         "kill_target":             [],
         "damage_target":           ["amount"],

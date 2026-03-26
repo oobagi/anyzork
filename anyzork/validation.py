@@ -50,6 +50,7 @@ VALID_PRECONDITION_TYPES: frozenset[str] = frozenset(
         "has_quantity",
         "toggle_state",
         "npc_disposition",
+        "var_check",
     }
 )
 
@@ -86,6 +87,8 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "make_takeable",
         "set_disposition",
         "force_dialogue",
+        "set_var",
+        "change_var",
     }
 )
 
