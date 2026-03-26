@@ -814,6 +814,94 @@ def apply_effect(
 
 
 # ---------------------------------------------------------------------------
+# Unified rule evaluation — check preconditions then apply effects
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RuleResult:
+    """Outcome of evaluating a single rule (preconditions + effects).
+
+    Attributes:
+        passed: Whether all preconditions were satisfied.
+        messages: Ordered list of text messages produced by effects.
+        effects_applied: List of effect type strings that were executed.
+    """
+
+    passed: bool
+    messages: list[str] = field(default_factory=list)
+    effects_applied: list[str] = field(default_factory=list)
+
+
+def evaluate_rule(
+    *,
+    db: GameDB,
+    preconditions: str | list[dict] | None = None,
+    effects: str | list[dict] | None = None,
+    slots: dict[str, str] | None = None,
+    command_id: str = "",
+    emit_event: Callable[..., None] | None = None,
+) -> RuleResult:
+    """Evaluate a rule: check preconditions, then apply effects.
+
+    This is the unified pipeline that all subsystems (commands, triggers,
+    interactions, NPC behaviors, dialogue) route through once a rule has
+    been matched/dispatched.
+
+    Preconditions and effects accept either a JSON string or an already-
+    parsed list of dicts.  ``None`` or empty values are treated as empty
+    lists (i.e. always-passing preconditions / no effects).
+
+    Args:
+        db: The game database connection.
+        preconditions: JSON string or list of precondition dicts.
+        effects: JSON string or list of effect dicts.
+        slots: Resolved slot values for template substitution.
+        command_id: Identifier for score-entry deduplication.
+        emit_event: Optional callback to emit game events from effects.
+
+    Returns a ``RuleResult`` with ``passed=False`` (empty messages) when
+    any precondition fails, or ``passed=True`` with collected messages
+    when all preconditions pass and effects are applied.
+    """
+    # -- Parse JSON strings if needed ------------------------------------
+    parsed_preconditions: list[dict] = _parse_json_list(preconditions)
+    parsed_effects: list[dict] = _parse_json_list(effects)
+
+    # -- Check preconditions ---------------------------------------------
+    if not all(
+        check_precondition(cond, db, slots) for cond in parsed_preconditions
+    ):
+        return RuleResult(passed=False)
+
+    # -- Apply effects ---------------------------------------------------
+    all_messages: list[str] = []
+    applied: list[str] = []
+    for eff in parsed_effects:
+        msgs = apply_effect(
+            eff, db, slots,
+            command_id=command_id,
+            emit_event=emit_event,
+        )
+        applied.append(eff["type"])
+        all_messages.extend(msgs)
+
+    return RuleResult(passed=True, messages=all_messages, effects_applied=applied)
+
+
+def _parse_json_list(value: str | list | None) -> list[dict]:
+    """Coerce a JSON string, list, or None into a list of dicts."""
+    if not value:
+        return []
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value)
+        return parsed if isinstance(parsed, list) else []
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Main entry point — resolve a player command
 # ---------------------------------------------------------------------------
 
@@ -878,8 +966,8 @@ def resolve_command(
 
     for cmd in candidates:
         # Parse preconditions and effects from JSON strings
-        preconditions = json.loads(cmd["preconditions"]) if cmd["preconditions"] else []
-        effects = json.loads(cmd["effects"]) if cmd["effects"] else []
+        preconditions = _parse_json_list(cmd["preconditions"])
+        effects = _parse_json_list(cmd["effects"])
 
         # Try pattern match
         match = parse_player_input(raw_input, cmd["pattern"])
@@ -907,13 +995,15 @@ def resolve_command(
                     best_done_command_id = cmd["id"]
             continue
 
-        # Check all preconditions
-        all_pass = all(
-            check_precondition(cond, db, resolved_slots)
-            for cond in preconditions
+        # Check all preconditions via unified pipeline (effects=None
+        # means preconditions-only check).
+        pre_result = evaluate_rule(
+            db=db,
+            preconditions=preconditions,
+            slots=resolved_slots,
         )
 
-        if not all_pass:
+        if not pre_result.passed:
             # Record the failure message from the most specific matching command
             fail_msg = cmd.get("failure_message")
             if fail_msg:
@@ -938,17 +1028,16 @@ def resolve_command(
 
         # Execute all effects atomically — if any effect raises, the
         # entire command is rolled back and we try the next candidate.
-        applied: list[str] = []
         try:
             with db.transaction():
-                for eff in effects:
-                    msgs = apply_effect(
-                        eff, db, resolved_slots,
-                        command_id=cmd["id"],
-                        emit_event=emit_event,
-                    )
-                    applied.append(eff["type"])
-                    all_messages.extend(msgs)
+                result = evaluate_rule(
+                    db=db,
+                    effects=effects,
+                    slots=resolved_slots,
+                    command_id=cmd["id"],
+                    emit_event=emit_event,
+                )
+                all_messages.extend(result.messages)
 
                 # Mark one-shot commands as executed inside the transaction
                 # so it rolls back together with effects on failure.
@@ -963,7 +1052,7 @@ def resolve_command(
         return CommandResult(
             success=True,
             messages=all_messages,
-            effects_applied=applied,
+            effects_applied=result.effects_applied,
             command_id=cmd["id"],
         )
 

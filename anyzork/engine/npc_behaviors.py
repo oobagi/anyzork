@@ -6,7 +6,6 @@ preconditions and effects.
 
 from __future__ import annotations
 
-import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -23,7 +22,7 @@ class NPCBehaviorMixin:
         2. Only show messages for NPCs in the same room as the player.
         3. One-shot behaviors are marked executed after firing.
         """
-        from anyzork.engine.commands import apply_effect, check_precondition
+        from anyzork.engine.commands import evaluate_rule
 
         db = self.db
         player = db.get_player()
@@ -42,48 +41,21 @@ class NPCBehaviorMixin:
             behaviors = db.get_npc_behaviors(npc_id)
 
             for behavior in behaviors:
-                # Check preconditions
-                try:
-                    preconditions = (
-                        json.loads(behavior["preconditions"])
-                        if behavior["preconditions"]
-                        else []
-                    )
-                except (json.JSONDecodeError, TypeError):
-                    preconditions = []
-
-                all_pass = all(
-                    check_precondition(cond, db) for cond in preconditions
+                # Evaluate preconditions and apply effects via unified pipeline.
+                result = evaluate_rule(
+                    db=db,
+                    preconditions=behavior["preconditions"],
+                    effects=behavior["effects"],
+                    command_id=f"npc_behavior:{npc_id}:{behavior['id']}",
+                    emit_event=self._emit_event,
                 )
-                if not all_pass:
+                if not result.passed:
                     continue
 
-                # Apply effects
-                try:
-                    effects = (
-                        json.loads(behavior["effects"])
-                        if behavior["effects"]
-                        else []
-                    )
-                except (json.JSONDecodeError, TypeError):
-                    effects = []
-
-                for effect in effects:
-                    try:
-                        msgs = apply_effect(
-                            effect, db,
-                            command_id=f"npc_behavior:{npc_id}:{behavior['id']}",
-                            emit_event=self._emit_event,
-                        )
-                        # Only show effect messages for NPCs in the player's room
-                        if npc_room == player_room:
-                            for msg in msgs:
-                                self.console.print(msg)
-                    except Exception:
-                        logger.exception(
-                            "NPC behavior effect failed: %s for NPC %s",
-                            effect, npc_id,
-                        )
+                # Only show messages for NPCs in the player's room
+                if npc_room == player_room:
+                    for msg in result.messages:
+                        self.console.print(msg)
 
                 # Show behavior message only for NPCs in the player's room
                 if behavior.get("message") and npc_room == player_room:

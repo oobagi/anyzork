@@ -1133,7 +1133,7 @@ class GameEngine(
 
     def _show_hint(self) -> None:
         """Evaluate all hints and display the highest-priority applicable one."""
-        from anyzork.engine.commands import check_precondition
+        from anyzork.engine.commands import evaluate_rule
 
         hints = self.db.get_all_hints()
         if not hints:
@@ -1143,19 +1143,12 @@ class GameEngine(
         for hint in hints:
             if hint.get("used"):
                 continue
-            # Parse preconditions
-            preconditions_raw = hint.get("preconditions", "[]")
-            try:
-                preconditions = (
-                    json.loads(preconditions_raw)
-                    if isinstance(preconditions_raw, str)
-                    else preconditions_raw
-                )
-            except (json.JSONDecodeError, TypeError):
-                preconditions = []
-
-            # Check all preconditions are met
-            if all(check_precondition(cond, self.db) for cond in preconditions):
+            # Check all preconditions via unified pipeline.
+            result = evaluate_rule(
+                db=self.db,
+                preconditions=hint.get("preconditions", "[]"),
+            )
+            if result.passed:
                 self.console.print(f"[{STYLE_SYSTEM}]Hint:[/] {hint['text']}")
                 self.db.mark_hint_used(hint["id"])
                 return
@@ -2214,45 +2207,39 @@ class GameEngine(
 
         # Apply all interaction mutations atomically — effects, consume,
         # and flag_to_set are wrapped in a single transaction.
-        effects_json = response.get("effects")
+        from anyzork.engine.commands import evaluate_rule
+
         consumes = response.get("consumes", 0)
         flag = response.get("flag_to_set")
 
+        # Determine target identity for target-aware effects.
+        if target_npc is not None:
+            target_id = target_npc["id"]
+            target_type = "npc"
+        elif target_item is not None:
+            target_id = target_item["id"]
+            target_type = "item"
+        else:
+            target_id = ""
+            target_type = ""
+
+        target_slots = {
+            "_target_id": target_id,
+            "_target_type": target_type,
+        }
+
         try:
             with db.transaction():
-                if effects_json:
-                    from anyzork.engine.commands import apply_effect
-
-                    parsed_effects = (
-                        json.loads(effects_json)
-                        if isinstance(effects_json, str)
-                        else effects_json
-                    )
-                    # Determine target identity for target-aware effects.
-                    if target_npc is not None:
-                        target_id = target_npc["id"]
-                        target_type = "npc"
-                    elif target_item is not None:
-                        target_id = target_item["id"]
-                        target_type = "item"
-                    else:
-                        target_id = ""
-                        target_type = ""
-
-                    target_slots = {
-                        "_target_id": target_id,
-                        "_target_type": target_type,
-                    }
-                    for eff in parsed_effects:
-                        msgs = apply_effect(
-                            eff,
-                            db,
-                            target_slots,
-                            command_id=f"interaction:{response['id']}",
-                            emit_event=self._emit_event,
-                        )
-                        for msg in msgs:
-                            self.console.print(msg)
+                # Evaluate effects via unified pipeline.
+                result = evaluate_rule(
+                    db=db,
+                    effects=response.get("effects"),
+                    slots=target_slots,
+                    command_id=f"interaction:{response['id']}",
+                    emit_event=self._emit_event,
+                )
+                for msg in result.messages:
+                    self.console.print(msg)
 
                 # Consume quantity if specified.
                 if consumes and consumes > 0:
