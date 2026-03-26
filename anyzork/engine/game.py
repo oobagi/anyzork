@@ -373,6 +373,10 @@ class GameEngine:
             self._tick()
             return self._can_continue()
 
+        if verb == "status" and len(tokens) == 1:
+            self._show_status()
+            return self._can_continue()
+
         if verb in ("help", "h", "?") and len(tokens) == 1:
             self.show_help()
             self._has_seen_help = True
@@ -1093,6 +1097,15 @@ class GameEngine:
                 table.add_row(entry["reason"], str(entry["value"]), str(entry["move_number"]))
             self.console.print(table)
 
+    def _show_status(self) -> None:
+        """Display the player's current HP."""
+        player = self.db.get_player()
+        if player is None:
+            return
+        self.console.print(
+            f"[{STYLE_SCORE_LABEL}]HP:[/] {player['hp']} / {player['max_hp']}"
+        )
+
     # ------------------------------------------------------------------
     # Hints
     # ------------------------------------------------------------------
@@ -1143,6 +1156,7 @@ class GameEngine:
             f"  [{c}]look[/] (l)           — redisplay the current room\n"
             f"  [{c}]inventory[/] (i)      — show what you're carrying\n"
             f"  [{c}]score[/]              — show your score and stats\n"
+            f"  [{c}]status[/]             — show your current HP\n"
             f"  [{c}]quests[/] (j)          — view your quest log\n"
             f"  [{c}]hint[/]               — get a context-aware hint\n"
             f"  [{c}]save[/]               — show the active save path\n"
@@ -1163,6 +1177,7 @@ class GameEngine:
             f"  — search inside a container\n"
             f"  [{c}]put[/] {{item}} [{c}]in[/] {{container}}  — put something into a container\n"
             f"  [{c}]talk to[/] {{npc}}      — start a conversation\n"
+            f"  [{c}]attack[/] {{npc}}       — attack an NPC with your weapon\n"
             "\n"
             "[bold]Movement[/]\n"
             f"  Type a direction: [{c}]north[/], [{c}]south[/], [{c}]east[/], "
@@ -2349,12 +2364,14 @@ class GameEngine:
         return True
 
     def _handle_attack(self, target_name: str, current_room_id: str) -> None:
-        """Handle bare ``attack <target>`` commands.
+        """Handle ``attack <target>`` with deterministic combat.
 
-        Emits an ``on_attacked`` event so triggers can react. If the player
-        has no weapon, a generic message is shown. With a weapon, the
-        interaction matrix is attempted first; if no matrix match exists,
-        the attack event is still emitted for trigger-based reactions.
+        If the NPC has combat stats (hp, damage), the engine runs a full
+        combat round: player deals weapon damage (minus NPC defense, min 1),
+        weakness doubles damage, NPC retaliates if still alive.
+
+        Falls back to the interaction matrix and trigger system for NPCs
+        without combat stats.
         """
         db = self.db
 
@@ -2389,7 +2406,15 @@ class GameEngine:
             )
             return
 
-        # Try the interaction matrix first.
+        # --- Stat-based combat ---
+        # If the NPC has hp and the weapon has damage, use deterministic combat.
+        npc_hp = npc.get("hp")
+        weapon_damage = weapon.get("damage")
+        if npc_hp is not None and npc_hp > 0 and weapon_damage is not None:
+            self._combat_round(npc, weapon, current_room_id)
+            return
+
+        # --- Fallback: interaction matrix / trigger system ---
         handled = self._handle_interaction(
             weapon["name"], target_name, current_room_id
         )
@@ -2403,6 +2428,97 @@ class GameEngine:
                 npc_id=npc["id"],
                 item_id=weapon["id"],
                 room_id=current_room_id,
+            )
+
+    def _combat_round(
+        self, npc: dict, weapon: dict, current_room_id: str
+    ) -> None:
+        """Execute one deterministic combat round.
+
+        1. Player deals damage = weapon.damage - npc.defense (min 1).
+        2. If weapon tags match NPC weakness, double the damage.
+        3. If NPC HP <= 0, NPC dies and drops its loot.
+        4. Otherwise NPC retaliates: npc.damage - 0 (no player defense yet).
+        5. If player HP <= 0, game over is handled by check_end_conditions.
+        """
+        db = self.db
+        player = db.get_player()
+        if player is None:
+            return
+
+        # -- Player attack phase --
+        base_damage = int(weapon.get("damage") or 0)
+        npc_defense = int(npc.get("defense") or 0)
+        raw_damage = max(1, base_damage - npc_defense)
+
+        # Weakness check: if weapon tags contain the NPC's weakness, double.
+        weakness = npc.get("weakness")
+        is_weak = False
+        if weakness:
+            raw_tags = weapon.get("item_tags")
+            if raw_tags:
+                with suppress(json.JSONDecodeError, TypeError):
+                    tags = (
+                        json.loads(raw_tags) if isinstance(raw_tags, str) else raw_tags
+                    )
+                    if weakness in tags:
+                        is_weak = True
+                        raw_damage *= 2
+
+        # Apply damage to NPC.
+        updated_npc = db.damage_npc(npc["id"], raw_damage)
+
+        if is_weak:
+            self.console.print(
+                f"You strike {npc['name']} with the {weapon['name']}. "
+                f"It's super effective! ({raw_damage} damage)"
+            )
+        else:
+            self.console.print(
+                f"You strike {npc['name']} with the {weapon['name']}. "
+                f"({raw_damage} damage)"
+            )
+
+        # Emit on_attacked event.
+        self._emit_event(
+            "on_attacked",
+            npc_id=npc["id"],
+            item_id=weapon["id"],
+            room_id=current_room_id,
+        )
+
+        # Check if NPC is dead.
+        if updated_npc is None or not updated_npc.get("is_alive", True):
+            self.console.print(
+                f"{npc['name']} is defeated!",
+                style=STYLE_SUCCESS,
+            )
+            # Drop loot into the body container.
+            drop_item_id = npc.get("drop_item")
+            if drop_item_id:
+                body_id = f"{npc['id']}_body"
+                drop_item = db.get_item(drop_item_id)
+                if drop_item:
+                    db.move_item_to_container(drop_item_id, body_id)
+                    self.console.print(
+                        f"{npc['name']} dropped {drop_item['name']}.",
+                    )
+            return
+
+        # -- NPC retaliation phase --
+        npc_damage = int(updated_npc.get("damage") or 0)
+        if npc_damage > 0:
+            actual_damage = max(1, npc_damage)
+            new_hp = max(0, player["hp"] - actual_damage)
+            db.update_player(hp=new_hp)
+            self.console.print(
+                f"{npc['name']} attacks you! ({actual_damage} damage, "
+                f"HP: {new_hp}/{player['max_hp']})"
+            )
+            remaining_npc_hp = updated_npc.get("hp", 0) or 0
+            self.console.print(
+                f"{npc['name']}: {remaining_npc_hp} HP remaining.",
+                style=STYLE_SYSTEM,
             )
 
     def _start_dialogue(self, npc_name: str, current_room_id: str) -> None:

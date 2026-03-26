@@ -138,6 +138,8 @@ CREATE TABLE IF NOT EXISTS items (
     requires_message    TEXT,           -- Message when required item is missing/depleted
     -- Interaction matrix
     item_tags           TEXT,           -- JSON array of tags: ["weapon", "firearm", "light_source"]
+    -- Combat
+    damage              INTEGER,        -- Weapon damage (NULL = not a weapon)
     -- Consumables
     quantity            INTEGER,        -- Current quantity (NULL = not stackable)
     max_quantity        INTEGER,        -- Maximum quantity
@@ -168,6 +170,9 @@ CREATE TABLE IF NOT EXISTS npcs (
     default_dialogue  TEXT    NOT NULL,
     hp                INTEGER,
     damage            INTEGER,
+    defense           INTEGER,        -- damage reduction (incoming damage - defense, min 1)
+    weakness          TEXT,            -- tag that makes NPC take double damage (e.g., "ice")
+    drop_item         TEXT    REFERENCES items(id),  -- item dropped on death
     category          TEXT,   -- NPC category tag for interaction matrix:
                                 -- "character", "merchant", "hostile"
     home_room_id      TEXT    REFERENCES rooms(id),

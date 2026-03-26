@@ -558,6 +558,38 @@ Healing:
 }
 ```
 
+### 4.7a `heal_player`
+
+Restores player HP by a fixed amount, capped at `max_hp`.
+
+| Field    | Type    | Required | Description |
+|----------|---------|----------|-------------|
+| `type`   | string  | yes      | `"heal_player"` |
+| `amount` | integer | yes      | The amount of HP to restore. |
+
+```json
+{
+  "type": "heal_player",
+  "amount": 30
+}
+```
+
+### 4.7b `damage_player`
+
+Deals damage to the player, reducing HP (minimum 0).
+
+| Field    | Type    | Required | Description |
+|----------|---------|----------|-------------|
+| `type`   | string  | yes      | `"damage_player"` |
+| `amount` | integer | yes      | The amount of damage to deal. |
+
+```json
+{
+  "type": "damage_player",
+  "amount": 15
+}
+```
+
 ### 4.8 `add_score`
 
 Adds points to the player's score.
@@ -1343,6 +1375,8 @@ A follow-up command for re-examining the bookshelf after the passage is revealed
 | `move_player` | `room` | Teleport player to room |
 | `spawn_item` | `item`, `location` | Place a pre-defined item into the world |
 | `change_health` | `amount` | Modify player health (+ or -) |
+| `heal_player` | `amount` | Restore player HP (capped at max_hp) |
+| `damage_player` | `amount` | Deal damage to the player |
 | `add_score` | `points` | Add to player score |
 | `reveal_exit` | `exit` | Make a hidden exit visible |
 | `solve_puzzle` | `puzzle` | Mark puzzle as solved |

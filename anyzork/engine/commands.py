@@ -429,7 +429,8 @@ def apply_effect(
 
     Supports all effect types from the DSL spec:
     ``move_item``, ``remove_item``, ``set_flag``, ``unlock``, ``move_player``,
-    ``spawn_item``, ``change_health``, ``add_score``, ``reveal_exit``,
+    ``spawn_item``, ``change_health``, ``heal_player``, ``damage_player``,
+    ``add_score``, ``reveal_exit``,
     ``solve_puzzle``, ``discover_quest``, ``open_container``,
     ``move_item_to_container``, ``take_item_from_container``, ``print``,
     ``consume_quantity``, ``restore_quantity``, ``set_toggle_state``,
@@ -532,6 +533,16 @@ def apply_effect(
     elif effect_type == "change_health":
         amount = effect["amount"]
         new_hp = max(0, min(player["max_hp"], player["hp"] + amount))
+        db.update_player(hp=new_hp)
+
+    elif effect_type == "heal_player":
+        amount = max(0, int(effect["amount"]))
+        new_hp = min(player["max_hp"], player["hp"] + amount)
+        db.update_player(hp=new_hp)
+
+    elif effect_type == "damage_player":
+        amount = max(0, int(effect["amount"]))
+        new_hp = max(0, player["hp"] - amount)
         db.update_player(hp=new_hp)
 
     elif effect_type == "add_score":

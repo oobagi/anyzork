@@ -270,7 +270,7 @@ Every player action beyond the built-in verbs is defined as a command rule in th
 
 ### Effect Types
 
-`move_item`, `remove_item`, `set_flag`, `unlock`, `move_player`, `spawn_item`, `change_health`, `add_score`, `reveal_exit`, `solve_puzzle`, `discover_quest`, `print`, `open_container`, `move_item_to_container`, `take_item_from_container`, `consume_quantity`, `restore_quantity`, `set_toggle_state`, `move_npc`, `fail_quest`, `complete_quest`, `kill_npc`, `remove_npc`, `lock_exit`, `hide_exit`, `change_description`, `make_visible`, `make_hidden`, `make_takeable`.
+`move_item`, `remove_item`, `set_flag`, `unlock`, `move_player`, `spawn_item`, `change_health`, `heal_player`, `damage_player`, `add_score`, `reveal_exit`, `solve_puzzle`, `discover_quest`, `print`, `open_container`, `move_item_to_container`, `take_item_from_container`, `consume_quantity`, `restore_quantity`, `set_toggle_state`, `move_npc`, `fail_quest`, `complete_quest`, `kill_npc`, `remove_npc`, `lock_exit`, `hide_exit`, `change_description`, `make_visible`, `make_hidden`, `make_takeable`.
 
 ---
 

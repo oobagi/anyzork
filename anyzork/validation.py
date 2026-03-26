@@ -92,6 +92,8 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "force_dialogue",
         "set_var",
         "change_var",
+        "heal_player",
+        "damage_player",
         "schedule_trigger",
         "set_faction_hostile",
         "kill_faction",
