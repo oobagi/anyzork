@@ -484,4 +484,76 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
         store.set_published(slug, published=False)
         return {"game": store.get_game(slug).to_api_dict()}
 
+    @app.delete("/api/admin/games/{slug}")
+    def admin_delete_game(
+        slug: str,
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        game = store.get_game(slug)
+        if game is None:
+            raise HTTPException(
+                status_code=404, detail="Game not found.",
+            )
+        store.delete_game(slug)
+        return {"message": f"Game '{slug}' deleted."}
+
+    @app.get("/api/admin/games/{slug}/files")
+    def admin_list_game_files(
+        slug: str,
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        game = store.get_game(slug)
+        if game is None:
+            raise HTTPException(
+                status_code=404, detail="Game not found.",
+            )
+        return {"files": store.list_game_files(slug)}
+
+    @app.get("/api/admin/games/{slug}/files/{filename}")
+    def admin_read_game_file(
+        slug: str,
+        filename: str,
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        try:
+            content = store.read_game_file(slug, filename)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail=str(exc),
+            ) from exc
+        if content is None:
+            raise HTTPException(
+                status_code=404, detail="File not found.",
+            )
+        return {"filename": filename, "content": content}
+
+    @app.put("/api/admin/games/{slug}/files/{filename}")
+    def admin_write_game_file(
+        slug: str,
+        filename: str,
+        request_body: dict[str, str],
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        content = request_body.get("content")
+        if content is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Request body must include 'content'.",
+            )
+        try:
+            success = store.write_game_file(slug, filename, content)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail=str(exc),
+            ) from exc
+        if not success:
+            raise HTTPException(
+                status_code=404, detail="Game not found.",
+            )
+        return {"filename": filename, "message": "File updated."}
+
     return app

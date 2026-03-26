@@ -5,7 +5,10 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import re
 import sqlite3
+import typing
+import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -384,6 +387,114 @@ class CatalogStore:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute("DELETE FROM games WHERE slug = ?", (slug,))
             conn.commit()
+
+    # ------------------------------------------------------------------
+    # Game file operations (read/list/write inside .zork packages)
+    # ------------------------------------------------------------------
+
+    _SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+    _EDITABLE_EXTENSIONS: typing.ClassVar[set[str]] = {".toml", ".zorkscript"}
+
+    @classmethod
+    def _validate_filename(cls, filename: str) -> None:
+        """Raise ValueError for unsafe filenames."""
+        if not cls._SAFE_FILENAME_RE.match(filename):
+            raise ValueError(
+                f"Invalid filename: {filename!r}. "
+                "Only alphanumeric, dots, hyphens, and underscores are allowed."
+            )
+        # Extra guard against path traversal.
+        if ".." in filename or "/" in filename or "\\" in filename:
+            raise ValueError(f"Path traversal detected in filename: {filename!r}")
+
+    def list_game_files(self, slug: str) -> list[dict[str, object]]:
+        """Return a list of files inside a game's .zork package."""
+        game = self.get_game(slug)
+        if game is None:
+            return []
+        package_path = Path(game.package_path)
+        if not package_path.exists() or not zipfile.is_zipfile(package_path):
+            return []
+        files: list[dict[str, object]] = []
+        with zipfile.ZipFile(package_path) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                try:
+                    self._validate_filename(info.filename)
+                except ValueError:
+                    continue  # skip entries with paths/unusual names
+                ext = Path(info.filename).suffix
+                files.append({
+                    "filename": info.filename,
+                    "size": info.file_size,
+                    "editable": ext in self._EDITABLE_EXTENSIONS,
+                })
+        return files
+
+    def read_game_file(self, slug: str, filename: str) -> str | None:
+        """Read a text file from a game's .zork package. Returns None if not found."""
+        self._validate_filename(filename)
+        game = self.get_game(slug)
+        if game is None:
+            return None
+        package_path = Path(game.package_path)
+        if not package_path.exists() or not zipfile.is_zipfile(package_path):
+            return None
+        try:
+            with zipfile.ZipFile(package_path) as zf:
+                return zf.read(filename).decode("utf-8")
+        except (KeyError, UnicodeDecodeError):
+            return None
+
+    def write_game_file(self, slug: str, filename: str, content: str) -> bool:
+        """Write a text file into a game's .zork package. Returns True on success."""
+        self._validate_filename(filename)
+        ext = Path(filename).suffix
+        if ext not in self._EDITABLE_EXTENSIONS:
+            raise ValueError(
+                f"Cannot edit files with extension {ext!r}. "
+                f"Allowed: {', '.join(sorted(self._EDITABLE_EXTENSIONS))}"
+            )
+        game = self.get_game(slug)
+        if game is None:
+            return False
+        package_path = Path(game.package_path)
+        if not package_path.exists() or not zipfile.is_zipfile(package_path):
+            return False
+
+        # Read all existing entries, then rewrite the archive.
+        entries: list[tuple[zipfile.ZipInfo, bytes]] = []
+        found = False
+        with zipfile.ZipFile(package_path) as zf:
+            for info in zf.infolist():
+                if info.filename == filename:
+                    entries.append((info, content.encode("utf-8")))
+                    found = True
+                else:
+                    entries.append((info, zf.read(info.filename)))
+
+        if not found:
+            # Add as new entry.
+            new_info = zipfile.ZipInfo(filename)
+            entries.append((new_info, content.encode("utf-8")))
+
+        tmp_path = package_path.with_suffix(".zork.tmp")
+        with zipfile.ZipFile(tmp_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for info, data in entries:
+                zf.writestr(info, data)
+        tmp_path.replace(package_path)  # atomic on POSIX
+
+        # Update checksum and timestamp.
+        now = datetime.now(UTC).isoformat()
+        new_checksum = _sha256_file(package_path)
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE games SET checksum_sha256 = ?, updated_at = ? WHERE slug = ?",
+                (new_checksum, now, slug),
+            )
+            conn.commit()
+        return True
 
     def update_game_metadata(
         self, slug: str, **fields: object,
