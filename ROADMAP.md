@@ -37,37 +37,37 @@ Ship the CLI as a real installable product.
 Deepen the deterministic engine with new mechanics. Each builds on a stable core.
 
 - [x] [#23 Quest failure states](https://github.com/oobagi/anyzork/issues/23)
-- [ ] [#24 Reactive NPC triggers: theft, attacks, disposition](https://github.com/oobagi/anyzork/issues/24)
+- [x] [#24 Reactive NPC triggers: theft, attacks, disposition](https://github.com/oobagi/anyzork/issues/24)
 - [x] [#25 Trap system: first-class trigger subtype](https://github.com/oobagi/anyzork/issues/25)
-- [ ] [#28 General-purpose variables: set_var, change_var, var_check](https://github.com/oobagi/anyzork/issues/28)
-- [ ] [#29 spawn_npc effect for dynamic NPC creation](https://github.com/oobagi/anyzork/issues/29)
-- [ ] [#30 Turn-based triggers: when turn_count(N) and schedule_trigger](https://github.com/oobagi/anyzork/issues/30)
-- [ ] [#19 Higher-level deterministic systems: clock triggers, NPC blockers, hints](https://github.com/oobagi/anyzork/issues/19)
+- [x] [#28 General-purpose variables: set_var, change_var, var_check](https://github.com/oobagi/anyzork/issues/28)
+- [x] [#29 spawn_npc effect for dynamic NPC creation](https://github.com/oobagi/anyzork/issues/29)
+- [x] [#30 Turn-based triggers: when turn_count(N) and schedule_trigger](https://github.com/oobagi/anyzork/issues/30)
+- [x] [#19 Higher-level deterministic systems: clock triggers, NPC blockers, hints](https://github.com/oobagi/anyzork/issues/19)
 
 ## 6. NPC Systems
 
 Advanced NPC behavior — depends on reactive triggers (#24) and variables (#28).
 
-- [ ] [#31 NPC faction system: group hostility and mass operations](https://github.com/oobagi/anyzork/issues/31)
-- [ ] [#32 NPC behavior loop: autonomous actions each turn](https://github.com/oobagi/anyzork/issues/32)
+- [x] [#31 NPC faction system: group hostility and mass operations](https://github.com/oobagi/anyzork/issues/31)
+- [x] [#32 NPC behavior loop: autonomous actions each turn](https://github.com/oobagi/anyzork/issues/32)
 
 ## 7. Combat
 
 Optional turn-based combat — depends on quest failure (#23), reactive NPCs (#24), and variables (#28).
 
-- [ ] [#26 Optional turn-based combat system](https://github.com/oobagi/anyzork/issues/26)
+- [x] [#26 Optional turn-based combat system](https://github.com/oobagi/anyzork/issues/26)
 
 ## 8. Catalog and Sharing
 
 Mature the public catalog once the authoring and engine layers are solid.
 
-- [ ] [#34 Admin UI: delete games, view/edit ZorkScript and manifest](https://github.com/oobagi/anyzork/issues/34)
-- [ ] [#20 Catalog moderation and curation workflow](https://github.com/oobagi/anyzork/issues/20)
+- [x] [#34 Admin UI: delete games, view/edit ZorkScript and manifest](https://github.com/oobagi/anyzork/issues/34)
+- [x] [#20 Catalog moderation and curation workflow](https://github.com/oobagi/anyzork/issues/20)
 
 ## 9. Architecture Cleanup
 
 Larger refactors that are safe to defer until the feature surface stabilizes.
 
-- [ ] [#15 Break up GameEngine into smaller systems](https://github.com/oobagi/anyzork/issues/15)
-- [ ] [#16 Break up GameDB into domain-focused persistence layers](https://github.com/oobagi/anyzork/issues/16)
-- [ ] [#17 Unify interaction responses and command effects into single rules pipeline](https://github.com/oobagi/anyzork/issues/17)
+- [x] [#15 Break up GameEngine into smaller systems](https://github.com/oobagi/anyzork/issues/15)
+- [x] [#16 Break up GameDB into domain-focused persistence layers](https://github.com/oobagi/anyzork/issues/16)
+- [x] [#17 Unify interaction responses and command effects into single rules pipeline](https://github.com/oobagi/anyzork/issues/17)

@@ -65,6 +65,6 @@ No LLM is required at runtime unless the player explicitly enables narrator mode
 - Deterministic runtime with archive-backed world data and SQLite compilation cache
 - ZorkScript-based authoring and local compilation
 - Structured command DSL for game logic
-- Quest, trigger, container, dialogue, and item-state systems
+- Quest, trigger, container, dialogue, item-state, faction, combat, NPC behavior, and variable systems
 - Portable single-file games and saves
 - Optional narrator mode layered on top of deterministic output
