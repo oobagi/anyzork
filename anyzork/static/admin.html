@@ -217,8 +217,14 @@
     color: var(--text-muted);
   }
 
+  .card-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 0;
+  }
+
   .btn-publish {
-    width: 100%;
+    flex: 1;
     padding: 12px;
     border: none;
     border-radius: 8px;
@@ -244,6 +250,194 @@
   .btn-do-unpublish:hover:not(:disabled) {
     background: rgba(231, 76, 60, 0.2);
   }
+
+  .btn-detail {
+    padding: 12px 20px;
+    background: var(--bg);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-detail:hover { border-color: var(--accent); color: var(--accent); }
+
+  .btn-delete {
+    padding: 12px 20px;
+    background: var(--red-bg);
+    color: var(--red);
+    border: 1px solid rgba(231, 76, 60, 0.25);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-delete:hover:not(:disabled) {
+    background: rgba(231, 76, 60, 0.25);
+  }
+  .btn-delete:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* Detail / files view */
+  .detail-section {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  .detail-section h3 {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .file-list {
+    list-style: none;
+    margin-bottom: 16px;
+  }
+  .file-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 8px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .file-item:hover { border-color: var(--accent); }
+  .file-item.active { border-color: var(--accent); background: var(--surface-hover); }
+  .file-name { font-weight: 500; font-family: "SF Mono", Monaco, Consolas, monospace; }
+  .file-size { color: var(--text-muted); font-size: 0.78rem; }
+  .file-badge {
+    font-size: 0.68rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 600;
+    margin-left: 8px;
+  }
+
+  .editor-wrap {
+    margin-top: 12px;
+  }
+  .editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .editor-filename {
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 0.85rem;
+    color: var(--accent);
+  }
+  .btn-save {
+    padding: 8px 20px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-save:hover { background: var(--accent-hover); }
+  .btn-save:disabled { opacity: 0.5; cursor: not-allowed; }
+  .editor-textarea {
+    width: 100%;
+    min-height: 300px;
+    padding: 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: "SF Mono", Monaco, Consolas, monospace;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    tab-size: 2;
+  }
+  .editor-textarea:focus { border-color: var(--accent); }
+  .editor-textarea[readonly] {
+    opacity: 0.7;
+    cursor: default;
+  }
+  .save-status {
+    font-size: 0.8rem;
+    margin-left: 12px;
+  }
+  .save-status.success { color: var(--green); }
+  .save-status.error { color: var(--red); }
+
+  /* Confirmation dialog */
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 20px;
+  }
+  .confirm-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 28px 24px;
+    max-width: 400px;
+    width: 100%;
+  }
+  .confirm-card h3 {
+    font-size: 1.1rem;
+    margin-bottom: 8px;
+  }
+  .confirm-card p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+  .confirm-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+  .btn-confirm-cancel {
+    padding: 10px 20px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-confirm-cancel:hover { border-color: var(--text-muted); }
+  .btn-confirm-delete {
+    padding: 10px 20px;
+    background: var(--red);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-confirm-delete:hover { background: #c0392b; }
+  .btn-confirm-delete:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* States */
   .loading, .error-msg, .empty-msg {
@@ -282,16 +476,177 @@ const { useState, useEffect, useCallback } = React;
 
 const API_BASE = window.location.origin;
 
-async function apiFetch(path, { token, method = "GET" } = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers: token ? { "X-Admin-Token": token } : {},
-  });
+async function apiFetch(path, { token, method = "GET", body = null, json: sendJson = false } = {}) {
+  const headers = {};
+  if (token) headers["X-Admin-Token"] = token;
+  if (sendJson) headers["Content-Type"] = "application/json";
+  const opts = { method, headers };
+  if (body != null) opts.body = sendJson ? JSON.stringify(body) : body;
+  const res = await fetch(`${API_BASE}${path}`, opts);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail || `Request failed (${res.status})`);
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail || `Request failed (${res.status})`);
   }
   return res.json();
+}
+
+// ── Confirmation Dialog ───────────────────────────────────
+
+function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel }) {
+  const [busy, setBusy] = useState(false);
+  const handleConfirm = async () => {
+    setBusy(true);
+    try { await onConfirm(); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className="confirm-overlay" onClick={onCancel}>
+      <div className="confirm-card" onClick={(e) => e.stopPropagation()}>
+        <h3>{title}</h3>
+        <p>{message}</p>
+        <div className="confirm-actions">
+          <button className="btn-confirm-cancel" onClick={onCancel} disabled={busy}>Cancel</button>
+          <button className="btn-confirm-delete" onClick={handleConfirm} disabled={busy}>
+            {busy ? "Deleting..." : (confirmLabel || "Delete")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── File Editor ───────────────────────────────────────────
+
+function FileEditor({ slug, file, token, onClose }) {
+  const [content, setContent] = useState(null);
+  const [originalContent, setOriginalContent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setSaveStatus(null);
+    apiFetch(`/api/admin/games/${slug}/files/${file.filename}`, { token })
+      .then((data) => {
+        setContent(data.content);
+        setOriginalContent(data.content);
+      })
+      .catch((err) => setSaveStatus({ type: "error", text: err.message }))
+      .finally(() => setLoading(false));
+  }, [slug, file.filename, token]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveStatus(null);
+    try {
+      await apiFetch(`/api/admin/games/${slug}/files/${file.filename}`, {
+        token,
+        method: "PUT",
+        body: { content },
+        json: true,
+      });
+      setOriginalContent(content);
+      setSaveStatus({ type: "success", text: "Saved" });
+    } catch (err) {
+      setSaveStatus({ type: "error", text: err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const modified = content !== originalContent;
+
+  return (
+    <div className="editor-wrap">
+      <div className="editor-header">
+        <span className="editor-filename">{file.filename}</span>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          {saveStatus && (
+            <span className={`save-status ${saveStatus.type}`}>{saveStatus.text}</span>
+          )}
+          {file.editable && (
+            <button className="btn-save" onClick={handleSave} disabled={saving || !modified}>
+              {saving ? "Saving..." : "Save"}
+            </button>
+          )}
+        </div>
+      </div>
+      {loading ? (
+        <div className="loading" style={{ padding: "24px" }}>
+          <div className="spinner" />
+          Loading file...
+        </div>
+      ) : (
+        <textarea
+          className="editor-textarea"
+          value={content || ""}
+          onChange={(e) => { setContent(e.target.value); setSaveStatus(null); }}
+          readOnly={!file.editable}
+          spellCheck={false}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Game Detail Panel ─────────────────────────────────────
+
+function GameDetail({ slug, token }) {
+  const [files, setFiles] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    setError(null);
+    setSelectedFile(null);
+    apiFetch(`/api/admin/games/${slug}/files`, { token })
+      .then((data) => setFiles(data.files || []))
+      .catch((err) => setError(err.message));
+  }, [slug, token]);
+
+  if (error) return <div className="error-msg" style={{ padding: "16px" }}>{error}</div>;
+  if (!files) return (
+    <div className="loading" style={{ padding: "24px" }}>
+      <div className="spinner" />
+      Loading files...
+    </div>
+  );
+
+  const formatSize = (bytes) => {
+    if (bytes < 1024) return `${bytes} B`;
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  };
+
+  return (
+    <div className="detail-section">
+      <h3>Package Files</h3>
+      <ul className="file-list">
+        {files.map((f) => (
+          <li
+            key={f.filename}
+            className={`file-item ${selectedFile && selectedFile.filename === f.filename ? "active" : ""}`}
+            onClick={() => setSelectedFile(selectedFile?.filename === f.filename ? null : f)}
+          >
+            <span>
+              <span className="file-name">{f.filename}</span>
+              {f.editable && <span className="file-badge">editable</span>}
+            </span>
+            <span className="file-size">{formatSize(f.size)}</span>
+          </li>
+        ))}
+      </ul>
+      {selectedFile && (
+        <FileEditor
+          key={selectedFile.filename}
+          slug={slug}
+          file={selectedFile}
+          token={token}
+          onClose={() => setSelectedFile(null)}
+        />
+      )}
+    </div>
+  );
 }
 
 // ── Login Screen ──────────────────────────────────────────
@@ -342,8 +697,10 @@ function LoginScreen({ onLogin }) {
 
 // ── Game Card ─────────────────────────────────────────────
 
-function GameCard({ game, token, onToggled }) {
+function GameCard({ game, token, onToggled, onDeleted }) {
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const toggle = async () => {
     setBusy(true);
@@ -359,6 +716,15 @@ function GameCard({ game, token, onToggled }) {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleDelete = async () => {
+    await apiFetch(`/api/admin/games/${game.slug}`, {
+      token,
+      method: "DELETE",
+    });
+    setShowConfirm(false);
+    onDeleted();
   };
 
   const genres = game.genres || [];
@@ -386,15 +752,35 @@ function GameCard({ game, token, onToggled }) {
         </div>
       )}
 
-      <button
-        className={`btn-publish ${game.published ? "btn-do-unpublish" : "btn-do-publish"}`}
-        onClick={toggle}
-        disabled={busy}
-      >
-        {busy
-          ? (game.published ? "Unpublishing..." : "Publishing...")
-          : (game.published ? "Unpublish" : "Publish")}
-      </button>
+      <div className="card-actions">
+        <button
+          className={`btn-publish ${game.published ? "btn-do-unpublish" : "btn-do-publish"}`}
+          onClick={toggle}
+          disabled={busy}
+        >
+          {busy
+            ? (game.published ? "Unpublishing..." : "Publishing...")
+            : (game.published ? "Unpublish" : "Publish")}
+        </button>
+        <button className="btn-detail" onClick={() => setExpanded(!expanded)}>
+          {expanded ? "Collapse" : "Files"}
+        </button>
+        <button className="btn-delete" onClick={() => setShowConfirm(true)}>
+          Delete
+        </button>
+      </div>
+
+      {expanded && <GameDetail slug={game.slug} token={token} />}
+
+      {showConfirm && (
+        <ConfirmDialog
+          title="Delete Game"
+          message={`Are you sure you want to permanently delete "${game.title || game.slug}"? This action cannot be undone.`}
+          confirmLabel="Delete Game"
+          onConfirm={handleDelete}
+          onCancel={() => setShowConfirm(false)}
+        />
+      )}
     </div>
   );
 }
@@ -469,6 +855,7 @@ function Dashboard({ token, onLogout }) {
                 game={game}
                 token={token}
                 onToggled={loadGames}
+                onDeleted={loadGames}
               />
             ))}
           </>

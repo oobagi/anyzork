@@ -501,3 +501,281 @@ def test_put_ownership_enforcement_and_auto_unpublish(
     game = resp.json()["game"]
     assert game["title"] == "Updated Title"
     assert game["published"] is False  # auto-unpublished
+
+
+# -- Admin file management tests ------------------------------------------
+
+
+def _upload_game(client, zork_archive_path, tmp_path, slug, admin_token):
+    """Helper: upload a game and return its slug."""
+    package_path = tmp_path / f"{slug}.zork"
+    create_share_package(
+        zork_archive_path, package_path, slug=slug,
+    )
+    with package_path.open("rb") as handle:
+        resp = client.post(
+            "/api/games",
+            files={"package": (f"{slug}.zork", handle, "application/zip")},
+        )
+    assert resp.status_code == 201, resp.text
+    return resp.json()["game"]["slug"]
+
+
+def test_admin_delete_game(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "del-game", "test-admin-token",
+        )
+
+        # Delete without token fails.
+        resp = client.delete(f"/api/admin/games/{slug}")
+        assert resp.status_code == 403
+
+        # Delete with token succeeds.
+        resp = client.delete(
+            f"/api/admin/games/{slug}",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        assert "deleted" in resp.json()["message"]
+
+        # Game is gone.
+        resp = client.get(
+            "/api/admin/games",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert all(g["slug"] != slug for g in resp.json()["games"])
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_delete_game_not_found(tmp_path: Path) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+
+        resp = client.delete(
+            "/api/admin/games/nonexistent",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 404
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_list_game_files(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "files-game", "test-admin-token",
+        )
+
+        resp = client.get(
+            f"/api/admin/games/{slug}/files",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        files = resp.json()["files"]
+        assert len(files) > 0
+        filenames = [f["filename"] for f in files]
+        # Should contain manifest.toml and .zorkscript files.
+        assert "manifest.toml" in filenames
+        # All files should have size and editable info.
+        for f in files:
+            assert "size" in f
+            assert "editable" in f
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_read_game_file(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "read-game", "test-admin-token",
+        )
+
+        resp = client.get(
+            f"/api/admin/games/{slug}/files/manifest.toml",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["filename"] == "manifest.toml"
+        assert "content" in data
+        assert "[project]" in data["content"]
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_read_game_file_not_found(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "read-nf", "test-admin-token",
+        )
+
+        resp = client.get(
+            f"/api/admin/games/{slug}/files/nonexistent.toml",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 404
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_read_rejects_invalid_filenames(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "traversal-test", "test-admin-token",
+        )
+        headers = {"X-Admin-Token": "test-admin-token"}
+
+        # Filenames with spaces should be rejected.
+        resp = client.get(
+            f"/api/admin/games/{slug}/files/bad file.toml",
+            headers=headers,
+        )
+        assert resp.status_code == 400
+
+        # Filenames starting with dots should be rejected.
+        resp = client.get(
+            f"/api/admin/games/{slug}/files/..secret",
+            headers=headers,
+        )
+        assert resp.status_code == 400
+
+        # Filenames with special chars should be rejected.
+        resp = client.get(
+            f"/api/admin/games/{slug}/files/$evil.toml",
+            headers=headers,
+        )
+        assert resp.status_code == 400
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_write_game_file(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "write-game", "test-admin-token",
+        )
+
+        new_content = '[project]\ntitle = "Updated Game"\n'
+        resp = client.put(
+            f"/api/admin/games/{slug}/files/manifest.toml",
+            json={"content": new_content},
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["message"] == "File updated."
+
+        # Verify the content was saved.
+        resp = client.get(
+            f"/api/admin/games/{slug}/files/manifest.toml",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["content"] == new_content
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_write_rejects_non_editable_extension(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "ext-test", "test-admin-token",
+        )
+
+        resp = client.put(
+            f"/api/admin/games/{slug}/files/evil.py",
+            json={"content": "import os; os.system('rm -rf /')"},
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 400
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_write_zorkscript_file(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "zs-write", "test-admin-token",
+        )
+
+        # Find the .zorkscript file.
+        files_resp = client.get(
+            f"/api/admin/games/{slug}/files",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        zs_files = [
+            f for f in files_resp.json()["files"]
+            if f["filename"].endswith(".zorkscript")
+        ]
+        assert len(zs_files) > 0
+        zs_name = zs_files[0]["filename"]
+
+        new_content = "room Start { description: 'Updated room' }"
+        resp = client.put(
+            f"/api/admin/games/{slug}/files/{zs_name}",
+            json={"content": new_content},
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+
+        # Verify.
+        resp = client.get(
+            f"/api/admin/games/{slug}/files/{zs_name}",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["content"] == new_content
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
