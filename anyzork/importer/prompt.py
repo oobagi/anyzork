@@ -546,6 +546,7 @@ quest side:vault_secret {
 #   force_dialogue(npc_id, node_id) -- force NPC to start dialogue at specific node
 #   set_var(name, value)          -- set a numerical variable to a specific value
 #   change_var(name, delta)       -- increment (+) or decrement (-) a numerical variable
+#   schedule_trigger(trigger_id, turns) -- arm a named trigger to fire after N player turns
 #
 # Hidden items: two approaches.
 # 1. SPAWN: declare item with NO location, then spawn_item(id, room_id) later.
@@ -614,7 +615,7 @@ on "hit {target}" {
 }
 
 # -- Triggers -- when event_type(arg) blocks. Same require/effect syntax.
-# ONLY these 8 event types exist (do not invent new ones):
+# ONLY these 10 event types exist (do not invent new ones):
 #   room_enter(room_id)    -- player enters a room
 #   flag_set(flag_id)      -- a flag becomes true
 #   item_taken(item_id)    -- player takes an item
@@ -623,6 +624,8 @@ on "hit {target}" {
 #   command_exec(command_id) -- a DSL command executes successfully
 #   on_item_stolen(npc_id) -- player takes item from room while NPC present (theft)
 #   on_attacked(npc_id)    -- player attacks an NPC
+#   turn_count(N)          -- fires when the player's move counter reaches exactly N
+#   scheduled(trigger_id)  -- fires when a schedule_trigger deadline arrives
 #
 # Quest declarations may use main:/side: prefixes (quest side:lost_recipe { ... })
 # but effect references use the NORMALIZED quest id only:
@@ -821,7 +824,7 @@ Constraints:
   "open" is an alias for "search" — both open containers and list their contents.
   ONLY use on blocks for custom verbs: pull, push, ring, climb, dig, accuse, combine, etc.
 - Every custom verb MUST have a global fallback on block with no room scope.
-- Trigger event types MUST be one of: room_enter, flag_set, item_taken, item_dropped, dialogue_node.
+- Trigger event types MUST be one of: room_enter, flag_set, item_taken, item_dropped, dialogue_node, command_exec, on_item_stolen, on_attacked, turn_count, scheduled.
   Do NOT invent event types like item_read, npc_talk, etc. Use flag_set triggers instead.
   Players will try verbs in rooms the author didn't anticipate.
 - Every noun mentioned in a room description MUST be a declared item. If a room says

@@ -425,7 +425,7 @@ def apply_effect(
     ``fail_quest``, ``complete_quest``, ``kill_npc``, ``remove_npc``,
     ``lock_exit``, ``hide_exit``, ``change_description``,
     ``set_disposition``, ``force_dialogue``,
-    ``set_var``, ``change_var``, ``spawn_npc``.
+    ``set_var``, ``change_var``, ``spawn_npc``, ``schedule_trigger``.
 
     Args:
         effect: The effect dict with a ``type`` field and type-specific params.
@@ -702,6 +702,24 @@ def apply_effect(
         var_name = _substitute_slots(str(effect["name"]), slots)
         delta = int(effect["delta"])
         db.change_var(var_name, delta)
+
+    # -- Scheduled triggers --------------------------------------------------
+
+    elif effect_type == "schedule_trigger":
+        trigger_ref = _substitute_slots(str(effect["trigger"]), slots)
+        turns = int(effect["turns"])
+        if turns < 1:
+            logger.warning(
+                "schedule_trigger turns=%d clamped to 1 for trigger %s",
+                turns,
+                trigger_ref,
+            )
+            turns = 1
+        move_number = player.get("moves", 0)
+        # +1 because _tick() will increment moves at the end of this turn,
+        # so "N turns from now" means N turns after the current action completes.
+        fire_on_move = move_number + 1 + turns
+        db.schedule_trigger(trigger_ref, fire_on_move)
 
     # -- Entity description -------------------------------------------------
 

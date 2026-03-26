@@ -90,6 +90,7 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "force_dialogue",
         "set_var",
         "change_var",
+        "schedule_trigger",
     }
 )
 
@@ -103,6 +104,8 @@ VALID_TRIGGER_EVENT_TYPES: frozenset[str] = frozenset(
         "command_exec",
         "on_item_stolen",
         "on_attacked",
+        "turn_count",
+        "scheduled",
     }
 )
 

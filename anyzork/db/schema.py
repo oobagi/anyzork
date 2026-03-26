@@ -394,6 +394,14 @@ CREATE TABLE IF NOT EXISTS variables (
     name  TEXT PRIMARY KEY,
     value INTEGER NOT NULL DEFAULT 0
 );
+
+-- -------------------------------------------------------
+-- scheduled_triggers: deferred trigger deadlines
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS scheduled_triggers (
+    trigger_id  TEXT PRIMARY KEY,
+    fire_on_move INTEGER NOT NULL    -- move number when this trigger should fire
+);
 """
 
 
@@ -2025,5 +2033,34 @@ class GameDB:
         """Mark a one-shot trigger as executed so it won't fire again."""
         self._mutate(
             "UPDATE triggers SET executed = 1 WHERE id = ?",
+            (trigger_id,),
+        )
+
+    # --------------------------------------------------------- scheduled triggers
+
+    def schedule_trigger(self, trigger_id: str, fire_on_move: int) -> None:
+        """Schedule a trigger to fire on a specific move number.
+
+        Uses INSERT OR REPLACE so rescheduling overwrites the old deadline.
+        """
+        self._mutate(
+            """
+            INSERT OR REPLACE INTO scheduled_triggers (trigger_id, fire_on_move)
+            VALUES (?, ?)
+            """,
+            (trigger_id, fire_on_move),
+        )
+
+    def get_due_scheduled_triggers(self, current_move: int) -> list[dict]:
+        """Return scheduled triggers whose deadline has arrived."""
+        return self._fetchall(
+            "SELECT * FROM scheduled_triggers WHERE fire_on_move <= ?",
+            (current_move,),
+        )
+
+    def remove_scheduled_trigger(self, trigger_id: str) -> None:
+        """Remove a scheduled trigger entry after it fires."""
+        self._mutate(
+            "DELETE FROM scheduled_triggers WHERE trigger_id = ?",
             (trigger_id,),
         )

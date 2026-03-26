@@ -2913,8 +2913,25 @@ class GameEngine:
         if player is None:
             return
         self.db.update_player(moves=player["moves"] + 1)
+        current_move = player["moves"] + 1
+        self._check_turn_count_triggers(current_move)
+        self._check_scheduled_triggers(current_move)
         self._check_quests()
         self.check_end_conditions()
+
+    def _check_turn_count_triggers(self, current_move: int) -> None:
+        """Emit a synthetic turn_count event so _process_event handles matching."""
+        self._emit_event("turn_count", n=str(current_move))
+
+    def _check_scheduled_triggers(self, current_move: int) -> None:
+        """Fire all scheduled triggers whose deadline has arrived."""
+        db = self.db
+        due = db.get_due_scheduled_triggers(current_move)
+        for entry in due:
+            trigger_id = entry["trigger_id"]
+            db.remove_scheduled_trigger(trigger_id)
+            # Emit a 'scheduled' event so _process_event picks up the matching trigger
+            self._emit_event("scheduled", trigger_id=trigger_id)
 
     def _notify(self, content: Any) -> None:
         """Print or defer a notification depending on dialogue state."""
