@@ -158,7 +158,8 @@ CREATE TABLE IF NOT EXISTS npcs (
     name              TEXT    NOT NULL,
     description       TEXT    NOT NULL,
     examine_description TEXT  NOT NULL,
-    room_id           TEXT    NOT NULL REFERENCES rooms(id),
+    room_id           TEXT    REFERENCES rooms(id),
+                                -- NULL = template NPC (in limbo, not yet spawned)
     is_alive          INTEGER NOT NULL DEFAULT 1,
     is_blocking       INTEGER NOT NULL DEFAULT 0,
     blocked_exit_id   TEXT    REFERENCES exits(id),
@@ -1760,6 +1761,18 @@ class GameDB:
             self.kill_npc(npc_id)
             npc = self.get_npc(npc_id)
         return npc
+
+    def spawn_npc(self, npc_id: str, room_id: str) -> None:
+        """Spawn a template NPC (or re-spawn an existing one) into a room.
+
+        Template NPCs have ``room_id = NULL`` and stay in limbo until
+        spawned.  If the NPC is already in a room, this simply moves it.
+
+        Currently delegates to ``move_npc`` since the SQL is identical.
+        Kept as a separate entry point so future divergence (e.g. resetting
+        HP on spawn) can be added without touching callers.
+        """
+        self.move_npc(npc_id, room_id)
 
     def move_npc(self, npc_id: str, room_id: str) -> None:
         """Move an NPC to a different room."""

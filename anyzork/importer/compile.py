@@ -227,7 +227,7 @@ def _insert_npcs(db: GameDB, spec: dict[str, Any]) -> None:
             name=npc["name"],
             description=npc["description"],
             examine_description=npc.get("examine_description") or npc["description"],
-            room_id=npc["room_id"],
+            room_id=npc.get("room_id"),
             is_alive=bool_to_int(npc.get("is_alive", True)),
             is_blocking=bool_to_int(npc.get("is_blocking", False)),
             blocked_exit_id=optional_str(npc.get("blocked_exit_id")),

@@ -75,6 +75,7 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "restore_quantity",
         "set_toggle_state",
         "move_npc",
+        "spawn_npc",
         "fail_quest",
         "complete_quest",
         "kill_npc",
@@ -1215,6 +1216,29 @@ def _validate_rule_effects(
                         f"{label} effect move_npc references non-existent room '{room_val}'.",
                     )
                 )
+        elif eff_type == "spawn_npc":
+            npc_val = eff.get("npc", "")
+            if not _is_slot_ref(npc_val) and npc_val not in npc_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect spawn_npc references non-existent NPC '{npc_val}'.",
+                    )
+                )
+            room_val = eff.get("room", "")
+            if (
+                not _is_slot_ref(room_val)
+                and room_val != "_current"
+                and room_val not in room_set
+            ):
+                errors.append(
+                    ValidationError(
+                        "error",
+                        category,
+                        f"{label} effect spawn_npc references non-existent room '{room_val}'.",
+                    )
+                )
 
 
 def _check_commands(db: GameDB) -> list[ValidationError]:
@@ -1347,8 +1371,8 @@ def _check_npcs(db: GameDB) -> list[ValidationError]:
     npc_set = _npc_ids(db)
 
     for npc in npcs:
-        # Room reference must be valid.
-        if npc["room_id"] not in room_set:
+        # Room reference must be valid (NULL = template NPC, which is fine).
+        if npc["room_id"] is not None and npc["room_id"] not in room_set:
             errors.append(
                 ValidationError(
                     "error",
