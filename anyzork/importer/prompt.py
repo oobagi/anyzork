@@ -376,6 +376,7 @@ npc guard {
   category    "character"
   blocking    gate_room -> courtyard north
   unblock     guard_bribed
+  block_msg   "The guard steps in front of you. 'No one passes without permission.'"
 
   talk root {
     "Another rat from the cells. Gate's locked. Go back to your hole."
@@ -803,6 +804,30 @@ interaction weapon_on_default {
   response "You swing the {item} at the {target}. It doesn't accomplish much."
 }
 
+# -- Hints -- Context-aware hints the player can request by typing "hint".
+# Hints are evaluated in priority order. The first hint whose preconditions
+# are all met is shown. Use hints to nudge the player toward the next step.
+
+hint hint_find_key {
+  text     "Have you searched the dark cellar with a light source?"
+  require  not_flag(found_brass_key)
+  require  has_flag(lantern_lit)
+  priority 20
+}
+
+hint hint_get_lantern {
+  text     "The supply closet might have something useful."
+  require  not_flag(lantern_lit)
+  priority 10
+}
+
+hint hint_bribe_guard {
+  text     "The guard looks like he could be bribed. Maybe something shiny would help."
+  require  not_flag(guard_bribed)
+  require  has_item(silver_key)
+  priority 15
+}
+
 --- END EXAMPLE ---
 
 {quality_requirements}
@@ -881,7 +906,8 @@ Constraints:
                quantity, max_quantity, quantity_unit, depleted_msg, quantity_desc,
                requires, requires_msg, weight, accepts_items, reject_msg
   npc:         name, description, examine, in, home, room_desc, drop_desc, dialogue, category,
-               blocking, unblock, hp, damage, talk
+               blocking, unblock, block_msg, hp, damage, talk
+  hint:        text, require, priority
   talk:        (text), option, effect, sets
   option:      (text) [-> label|end], require_item, require_flag, exclude_flag,
                required_flags, excluded_flags, required_items, set_flags

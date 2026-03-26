@@ -1370,6 +1370,8 @@ def _check_npcs(db: GameDB) -> list[ValidationError]:
     errors: list[ValidationError] = []
     npcs = _all_npcs(db)
     room_set = _room_ids(db)
+    exit_set = _exit_ids(db)
+    flag_set = _flag_ids(db)
     dialogue_nodes = _all_dialogue_nodes(db)
     npc_set = _npc_ids(db)
 
@@ -1395,6 +1397,36 @@ def _check_npcs(db: GameDB) -> list[ValidationError]:
                     "authored prose in their home room.",
                 )
             )
+
+        # NPC blocker checks.
+        if npc.get("is_blocking"):
+            blocked_exit = npc.get("blocked_exit_id")
+            if not blocked_exit:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "npc",
+                        f"NPC '{npc['id']}' is_blocking=1 but has no blocked_exit_id.",
+                    )
+                )
+            elif blocked_exit not in exit_set:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "npc",
+                        f"NPC '{npc['id']}' blocks non-existent exit '{blocked_exit}'.",
+                    )
+                )
+
+            unblock = npc.get("unblock_flag")
+            if unblock and unblock not in flag_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        "npc",
+                        f"NPC '{npc['id']}' unblock_flag '{unblock}' not found in flags table.",
+                    )
+                )
 
     # Dialogue nodes must reference valid NPCs.
     for d in dialogue_nodes:
@@ -1798,6 +1830,62 @@ def _check_win_condition(db: GameDB) -> list[ValidationError]:
 # ── Public API ───────────────────────────────────────────────────────────
 
 
+def _check_hints(db: GameDB) -> list[ValidationError]:
+    """Hint precondition checks."""
+    errors: list[ValidationError] = []
+    hints = db.get_all_hints()
+    flag_set = _flag_ids(db)
+    item_set = _item_ids(db)
+
+    for hint in hints:
+        preconditions_raw = hint.get("preconditions", "[]")
+        try:
+            preconditions = (
+                json.loads(preconditions_raw)
+                if isinstance(preconditions_raw, str)
+                else preconditions_raw
+            )
+        except (json.JSONDecodeError, TypeError):
+            preconditions = []
+
+        for cond in preconditions:
+            ctype = cond.get("type", "")
+            if ctype not in VALID_PRECONDITION_TYPES:
+                errors.append(
+                    ValidationError(
+                        "error",
+                        "hint",
+                        f"Hint '{hint['id']}' uses unknown precondition type '{ctype}'.",
+                    )
+                )
+
+            # Validate flag references.
+            if ctype in ("has_flag", "not_flag"):
+                flag = cond.get("flag", "")
+                if flag and flag not in flag_set:
+                    errors.append(
+                        ValidationError(
+                            "warning",
+                            "hint",
+                            f"Hint '{hint['id']}' references undeclared flag '{flag}'.",
+                        )
+                    )
+
+            # Validate item references.
+            if ctype == "has_item":
+                item = cond.get("item", "")
+                if item and item not in item_set:
+                    errors.append(
+                        ValidationError(
+                            "warning",
+                            "hint",
+                            f"Hint '{hint['id']}' references unknown item '{item}'.",
+                        )
+                    )
+
+    return errors
+
+
 def validate_game(db: GameDB) -> list[ValidationError]:
     """Run all validation checks against a populated ``.zork`` database.
 
@@ -1814,6 +1902,7 @@ def validate_game(db: GameDB) -> list[ValidationError]:
     results.extend(_check_npcs(db))
     results.extend(_check_quests(db))
     results.extend(_check_triggers(db))
+    results.extend(_check_hints(db))
     results.extend(_check_win_condition(db))
 
     return results
