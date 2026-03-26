@@ -342,6 +342,11 @@ item rusty_pipe {
 # NPCs without "in" are templates — they exist in limbo until spawned via
 # spawn_npc(npc_id, room_id). Great for enemies, reinforcements, or wave spawns.
 #
+# Factions: use "faction" to group NPCs for mass operations.
+# Effects: set_faction_hostile(faction), kill_faction(faction),
+#          remove_faction(faction), move_faction(faction, room_id).
+# Preconditions: faction_alive(faction), faction_dead(faction).
+#
 # Every NPC talk branch MUST include a dismissive exit option (e.g., "Never mind" or
 # "Goodbye") so the player can leave the conversation. Do not create dialogue paths
 # with no exit option — the player gets trapped in dialogue mode.
@@ -374,6 +379,7 @@ npc guard {
   room_desc   "A heavyset guard slouches on a stool beside the gate, half-asleep."
   dialogue    "He barely looks up."
   category    "character"
+  faction     "guards"
   blocking    gate_room -> courtyard north
   unblock     guard_bribed
   block_msg   "The guard steps in front of you. 'No one passes without permission.'"
@@ -510,6 +516,8 @@ quest side:vault_secret {
 #   has_quantity(item_id, N)           -- consumable has >= N charges
 #   npc_disposition(npc_id, "disposition") -- NPC disposition matches (hostile/friendly/neutral)
 #   var_check(name, operator, value)      -- check a numerical variable (operators: ==, !=, >, <, >=, <=)
+#   faction_alive(faction)                -- true if any NPC in the faction is alive
+#   faction_dead(faction)                 -- true if all NPCs in the faction are dead
 #
 # Available effects for on/when blocks (use ONLY these, do not invent new ones):
 #   set_flag(id)              -- set a flag to true
@@ -548,6 +556,10 @@ quest side:vault_secret {
 #   set_var(name, value)          -- set a numerical variable to a specific value
 #   change_var(name, delta)       -- increment (+) or decrement (-) a numerical variable
 #   schedule_trigger(trigger_id, turns) -- arm a named trigger to fire after N player turns
+#   set_faction_hostile(faction)  -- make all living NPCs in a faction hostile
+#   kill_faction(faction)         -- kill all living NPCs in a faction
+#   remove_faction(faction)       -- remove all NPCs in a faction from the world
+#   move_faction(faction, room_id) -- move all living NPCs in a faction to a room
 #
 # Hidden items: two approaches.
 # 1. SPAWN: declare item with NO location, then spawn_item(id, room_id) later.
@@ -906,7 +918,7 @@ Constraints:
                quantity, max_quantity, quantity_unit, depleted_msg, quantity_desc,
                requires, requires_msg, weight, accepts_items, reject_msg
   npc:         name, description, examine, in, home, room_desc, drop_desc, dialogue, category,
-               blocking, unblock, block_msg, hp, damage, talk
+               blocking, unblock, block_msg, hp, damage, talk, faction
   hint:        text, require, priority
   talk:        (text), option, effect, sets
   option:      (text) [-> label|end], require_item, require_flag, exclude_flag,

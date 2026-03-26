@@ -173,11 +173,13 @@ CREATE TABLE IF NOT EXISTS npcs (
     home_room_id      TEXT    REFERENCES rooms(id),
     room_description  TEXT,
     drop_description  TEXT,
-    disposition       TEXT    NOT NULL DEFAULT 'neutral'
+    disposition       TEXT    NOT NULL DEFAULT 'neutral',
                                 -- "hostile", "friendly", "neutral"
+    faction           TEXT    -- optional faction tag for group operations
 );
 
 CREATE INDEX IF NOT EXISTS idx_npcs_room_id ON npcs(room_id);
+CREATE INDEX IF NOT EXISTS idx_npcs_faction ON npcs(faction);
 
 -- -------------------------------------------------------
 -- dialogue_nodes: branching dialogue tree nodes
@@ -1831,6 +1833,41 @@ class GameDB:
     def remove_npc(self, npc_id: str) -> None:
         """Remove an NPC from the world entirely (no body, no loot)."""
         self._mutate("DELETE FROM npcs WHERE id = ?", (npc_id,))
+
+    # --------------------------------------------------- Faction operations
+
+    def get_npcs_by_faction(self, faction: str) -> list[dict]:
+        """Return all NPCs belonging to a faction."""
+        return self._fetchall(
+            "SELECT * FROM npcs WHERE faction = ?", (faction,)
+        )
+
+    def set_faction_hostile(self, faction: str) -> None:
+        """Set all living NPCs in a faction to hostile disposition."""
+        self._mutate(
+            "UPDATE npcs SET disposition = 'hostile' WHERE faction = ? AND is_alive = 1",
+            (faction,),
+        )
+
+    def kill_faction(self, faction: str) -> None:
+        """Kill all living NPCs in a faction (spawns body containers)."""
+        living = self._fetchall(
+            "SELECT id FROM npcs WHERE faction = ? AND is_alive = 1",
+            (faction,),
+        )
+        for npc_row in living:
+            self.kill_npc(npc_row["id"])
+
+    def remove_faction(self, faction: str) -> None:
+        """Remove all NPCs in a faction from the world entirely."""
+        self._mutate("DELETE FROM npcs WHERE faction = ?", (faction,))
+
+    def move_faction(self, faction: str, room_id: str) -> None:
+        """Move all living NPCs in a faction to a room."""
+        self._mutate(
+            "UPDATE npcs SET room_id = ? WHERE faction = ? AND is_alive = 1",
+            (room_id, faction),
+        )
 
     def set_npc_disposition(self, npc_id: str, disposition: str) -> None:
         """Set an NPC's disposition (hostile, friendly, neutral)."""

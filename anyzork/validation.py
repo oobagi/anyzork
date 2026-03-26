@@ -51,6 +51,8 @@ VALID_PRECONDITION_TYPES: frozenset[str] = frozenset(
         "toggle_state",
         "npc_disposition",
         "var_check",
+        "faction_alive",
+        "faction_dead",
     }
 )
 
@@ -91,6 +93,10 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "set_var",
         "change_var",
         "schedule_trigger",
+        "set_faction_hostile",
+        "kill_faction",
+        "remove_faction",
+        "move_faction",
     }
 )
 
