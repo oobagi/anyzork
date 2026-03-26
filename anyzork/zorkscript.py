@@ -120,6 +120,7 @@ class _Parser:
         self._quests: list[dict[str, Any]] = []
         self._triggers: list[dict[str, Any]] = []
         self._interaction_responses: list[dict[str, Any]] = []
+        self._hints: list[dict[str, Any]] = []
 
         # Deferred resolution: lock exit routes and NPC blocking routes
         self._lock_exit_routes: list[tuple[dict[str, Any], str, str, str]] = []
@@ -384,6 +385,8 @@ class _Parser:
                 self._parse_standalone_dialogue_block()
             elif keyword == "option":
                 self._parse_standalone_option_block()
+            elif keyword == "hint":
+                self._parse_hint_block()
             else:
                 raise self._error(f"unknown top-level keyword {keyword!r}")
 
@@ -595,6 +598,8 @@ class _Parser:
         "drop_desc": "drop_description",
         "home": "home_room_id",
         "disposition": "disposition",
+        "unblock": "unblock_flag",
+        "block_msg": "block_message",
     }
 
     def _parse_npc_block(self) -> None:
@@ -1340,6 +1345,37 @@ class _Parser:
             resp["effects"] = effects
         self._interaction_responses.append(resp)
 
+    # -- Hint block --
+
+    def _parse_hint_block(self) -> None:
+        """Parse: hint hint_id { text "..." require func() priority N }"""
+        self._expect("IDENT", "hint")
+        hint_id_tok = self._expect("IDENT")
+        hint_id = hint_id_tok.value
+        self._expect("LBRACE")
+
+        hint: dict[str, Any] = {"id": hint_id}
+        preconditions: list[dict[str, Any]] = []
+
+        while not self._at("RBRACE"):
+            tok = self._peek()
+            if tok.kind == "IDENT" and tok.value == "require":
+                self._advance()
+                name, args = self._parse_func_call()
+                preconditions.append(self._compile_precondition(name, args))
+                continue
+            if tok.kind == "IDENT" and tok.value == "priority":
+                self._advance()
+                hint["priority"] = int(self._expect("NUMBER").value)
+                continue
+            key_tok = self._expect("IDENT")
+            hint[key_tok.value] = self._parse_value()
+
+        self._expect("RBRACE")
+
+        hint["preconditions"] = preconditions
+        self._hints.append(hint)
+
     # -- Exit route resolution --
 
     def _resolve_exit_routes(self) -> None:
@@ -1398,6 +1434,7 @@ class _Parser:
             "triggers": self._triggers,
             "interactions": [],
             "interaction_responses": self._interaction_responses,
+            "hints": self._hints,
         }
 
 

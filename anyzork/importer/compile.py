@@ -72,6 +72,7 @@ def compile_import_spec(
         _insert_quests(db, spec)
         _insert_interaction_responses(db, spec)
         _insert_triggers(db, spec)
+        _insert_hints(db, spec)
         _initialize_player(db, spec)
         warnings = _validate_imported_game(db)
         return output_path, warnings
@@ -232,6 +233,7 @@ def _insert_npcs(db: GameDB, spec: dict[str, Any]) -> None:
             is_blocking=bool_to_int(npc.get("is_blocking", False)),
             blocked_exit_id=optional_str(npc.get("blocked_exit_id")),
             unblock_flag=optional_str(npc.get("unblock_flag")),
+            block_message=optional_str(npc.get("block_message")),
             default_dialogue=npc.get("default_dialogue", ""),
             hp=npc.get("hp"),
             damage=npc.get("damage"),
@@ -389,6 +391,17 @@ def _insert_triggers(db: GameDB, spec: dict[str, Any]) -> None:
             executed=bool_to_int(trigger.get("executed", False)),
             is_enabled=bool_to_int(trigger.get("is_enabled", True)),
             disarm_flag=optional_str(trigger.get("disarm_flag")),
+        )
+
+
+def _insert_hints(db: GameDB, spec: dict[str, Any]) -> None:
+    for hint in spec.get("hints", []):
+        db.insert_hint(
+            id=hint["id"],
+            text=hint["text"],
+            preconditions=json_value(hint.get("preconditions", [])),
+            priority=int(hint.get("priority", 0)),
+            used=bool_to_int(hint.get("used", False)),
         )
 
 

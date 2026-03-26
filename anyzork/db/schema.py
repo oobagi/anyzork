@@ -164,6 +164,7 @@ CREATE TABLE IF NOT EXISTS npcs (
     is_blocking       INTEGER NOT NULL DEFAULT 0,
     blocked_exit_id   TEXT    REFERENCES exits(id),
     unblock_flag      TEXT,
+    block_message     TEXT,           -- custom message when NPC blocks exit
     default_dialogue  TEXT    NOT NULL,
     hp                INTEGER,
     damage            INTEGER,
@@ -402,6 +403,18 @@ CREATE TABLE IF NOT EXISTS scheduled_triggers (
     trigger_id  TEXT PRIMARY KEY,
     fire_on_move INTEGER NOT NULL    -- move number when this trigger should fire
 );
+
+-- -------------------------------------------------------
+-- hints: context-aware hints the player can request
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS hints (
+    id              TEXT PRIMARY KEY,
+    text            TEXT    NOT NULL,       -- hint text shown to the player
+    preconditions   TEXT    NOT NULL DEFAULT '[]',  -- JSON array, same as commands
+    priority        INTEGER NOT NULL DEFAULT 0,     -- higher = preferred
+    used            INTEGER NOT NULL DEFAULT 0      -- 1 = already shown
+);
+CREATE INDEX IF NOT EXISTS idx_hints_priority ON hints(priority);
 """
 
 
@@ -1099,6 +1112,33 @@ class GameDB:
     def get_npc(self, npc_id: str) -> dict | None:
         """Return a single NPC by id."""
         return self._fetchone("SELECT * FROM npcs WHERE id = ?", (npc_id,))
+
+    def get_blocking_npc_for_exit(self, exit_id: str) -> dict | None:
+        """Return a living NPC that blocks the given exit, or ``None``.
+
+        An NPC blocks an exit when ``is_blocking = 1``, ``is_alive = 1``,
+        ``blocked_exit_id`` matches, and the NPC is in the exit's origin
+        room.  If the NPC has an ``unblock_flag`` and that flag is set to
+        ``'true'``, the block is considered lifted and ``None`` is returned.
+        """
+        npc = self._fetchone(
+            """
+            SELECT n.* FROM npcs n
+            JOIN exits e ON e.id = n.blocked_exit_id
+            WHERE n.blocked_exit_id = ?
+              AND n.is_blocking = 1
+              AND n.is_alive = 1
+              AND n.room_id = e.from_room_id
+            """,
+            (exit_id,),
+        )
+        if npc is None:
+            return None
+        # Check unblock_flag — if the flag is set, the NPC no longer blocks.
+        unblock = npc.get("unblock_flag")
+        if unblock and self.has_flag(unblock):
+            return None
+        return npc
 
     def find_npc_by_name(self, name: str, room_id: str) -> dict | None:
         """Find an NPC by display name within a specific room.
@@ -2015,6 +2055,29 @@ class GameDB:
         self._mutate(
             f"INSERT INTO triggers ({cols}) VALUES ({placeholders})",
             tuple(fields.values()),
+        )
+
+    # -------------------------------------------------------------- hints
+
+    def insert_hint(self, **fields: Any) -> None:
+        """Insert a single hint row."""
+        cols = ", ".join(fields.keys())
+        placeholders = ", ".join("?" for _ in fields)
+        self._mutate(
+            f"INSERT INTO hints ({cols}) VALUES ({placeholders})",
+            tuple(fields.values()),
+        )
+
+    def get_all_hints(self) -> list[dict]:
+        """Return all hints ordered by priority descending."""
+        return self._fetchall(
+            "SELECT * FROM hints ORDER BY priority DESC"
+        )
+
+    def mark_hint_used(self, hint_id: str) -> None:
+        """Mark a hint as having been shown to the player."""
+        self._mutate(
+            "UPDATE hints SET used = 1 WHERE id = ?", (hint_id,)
         )
 
     def get_triggers_for_event(self, event_type: str) -> list[dict]:

@@ -392,6 +392,10 @@ class GameEngine:
             self._show_quests()
             return self._can_continue()
 
+        if verb == "hint" and len(tokens) == 1:
+            self._show_hint()
+            return self._can_continue()
+
         direction = self._parse_direction(tokens)
         if direction is not None:
             self.handle_movement(direction)
@@ -986,6 +990,17 @@ class GameEngine:
             self.console.print(raw_msg, style=STYLE_LOCKED)
             return
 
+        # NPC blocker?
+        blocker = self.db.get_blocking_npc_for_exit(exit_row["id"])
+        if blocker is not None:
+            raw_msg = (
+                blocker.get("block_message")
+                or f"{blocker['name']} blocks your way."
+            )
+            raw_msg = self._narrate_single("go", direction, raw_msg)
+            self.console.print(raw_msg, style=STYLE_LOCKED)
+            return
+
         # Move the player.
         dest_room_id = exit_row["to_room_id"]
         self.db.update_player(current_room_id=dest_room_id)
@@ -1079,6 +1094,43 @@ class GameEngine:
             self.console.print(table)
 
     # ------------------------------------------------------------------
+    # Hints
+    # ------------------------------------------------------------------
+
+    def _show_hint(self) -> None:
+        """Evaluate all hints and display the highest-priority applicable one."""
+        from anyzork.engine.commands import check_precondition
+
+        hints = self.db.get_all_hints()
+        if not hints:
+            self.console.print("No hints are available.", style=STYLE_SYSTEM)
+            return
+
+        for hint in hints:
+            if hint.get("used"):
+                continue
+            # Parse preconditions
+            preconditions_raw = hint.get("preconditions", "[]")
+            try:
+                preconditions = (
+                    json.loads(preconditions_raw)
+                    if isinstance(preconditions_raw, str)
+                    else preconditions_raw
+                )
+            except (json.JSONDecodeError, TypeError):
+                preconditions = []
+
+            # Check all preconditions are met
+            if all(check_precondition(cond, self.db) for cond in preconditions):
+                self.console.print(f"[{STYLE_SYSTEM}]Hint:[/] {hint['text']}")
+                self.db.mark_hint_used(hint["id"])
+                return
+
+        self.console.print(
+            "No hints available for your current situation.", style=STYLE_SYSTEM
+        )
+
+    # ------------------------------------------------------------------
     # Help
     # ------------------------------------------------------------------
 
@@ -1092,6 +1144,7 @@ class GameEngine:
             f"  [{c}]inventory[/] (i)      — show what you're carrying\n"
             f"  [{c}]score[/]              — show your score and stats\n"
             f"  [{c}]quests[/] (j)          — view your quest log\n"
+            f"  [{c}]hint[/]               — get a context-aware hint\n"
             f"  [{c}]save[/]               — show the active save path\n"
             f"  [{c}]help[/] (h)           — this message\n"
             f"  [{c}]quit[/] / [{c}]exit[/] / [{c}]q[/]    — leave the game\n"
