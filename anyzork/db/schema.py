@@ -170,7 +170,9 @@ CREATE TABLE IF NOT EXISTS npcs (
                                 -- "character", "merchant", "hostile"
     home_room_id      TEXT    REFERENCES rooms(id),
     room_description  TEXT,
-    drop_description  TEXT
+    drop_description  TEXT,
+    disposition       TEXT    NOT NULL DEFAULT 'neutral'
+                                -- "hostile", "friendly", "neutral"
 );
 
 CREATE INDEX IF NOT EXISTS idx_npcs_room_id ON npcs(room_id);
@@ -368,6 +370,7 @@ CREATE TABLE IF NOT EXISTS triggers (
     id              TEXT PRIMARY KEY,
     event_type      TEXT    NOT NULL,       -- room_enter | flag_set | dialogue_node
                                             -- | item_taken | item_dropped | command_exec
+                                            -- | on_item_stolen | on_attacked
     event_data      TEXT    NOT NULL DEFAULT '{}',
                                             -- JSON: partial match against
                                             -- emitted event data
@@ -1726,6 +1729,28 @@ class GameDB:
     def remove_npc(self, npc_id: str) -> None:
         """Remove an NPC from the world entirely (no body, no loot)."""
         self._mutate("DELETE FROM npcs WHERE id = ?", (npc_id,))
+
+    def set_npc_disposition(self, npc_id: str, disposition: str) -> None:
+        """Set an NPC's disposition (hostile, friendly, neutral)."""
+        valid_dispositions = ("hostile", "friendly", "neutral")
+        if disposition not in valid_dispositions:
+            raise ValueError(
+                f"Invalid disposition {disposition!r}; "
+                f"must be one of {valid_dispositions}"
+            )
+        self._mutate(
+            "UPDATE npcs SET disposition = ? WHERE id = ?",
+            (disposition, npc_id),
+        )
+
+    def get_npc_disposition(self, npc_id: str) -> str:
+        """Return the disposition of an NPC (hostile, friendly, neutral)."""
+        row = self._fetchone(
+            "SELECT disposition FROM npcs WHERE id = ?", (npc_id,)
+        )
+        if row is None:
+            return "neutral"
+        return row.get("disposition", "neutral") or "neutral"
 
     def change_description(self, entity_id: str, new_text: str) -> None:
         """Change the description of an item or room at runtime.

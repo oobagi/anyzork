@@ -587,6 +587,12 @@ class GameEngine:
                 self._tick()
                 return self._can_continue()
 
+        if verb == "attack" and len(tokens) >= 2:
+            target_name = " ".join(tokens[1:])
+            self._handle_attack(target_name, player["current_room_id"])
+            self._tick()
+            return self._can_continue()
+
         if verb == "talk" and len(tokens) >= 3 and tokens[1] == "to":
             npc_name = " ".join(tokens[2:])
             self._start_dialogue(npc_name, player["current_room_id"])
@@ -1392,11 +1398,23 @@ class GameEngine:
             if not item["is_takeable"]:
                 self.console.print("You can't take that.", style=STYLE_SYSTEM)
                 return
+            # Snapshot NPCs present BEFORE the take (for theft detection).
+            npcs_present = db.get_npcs_in(current_room_id)
             db.move_item(item["id"], "inventory", "")
             msg = item.get("take_message") or "Taken."
             msg = self._narrate_single("take", item["name"], msg)
             self.console.print(msg)
             self._emit_event("item_taken", item_id=item["id"])
+            # Emit theft events for each living NPC witnessing the take.
+            for npc in npcs_present:
+                if not npc.get("is_alive", True):
+                    continue
+                self._emit_event(
+                    "on_item_stolen",
+                    npc_id=npc["id"],
+                    item_id=item["id"],
+                    room_id=current_room_id,
+                )
             return
 
         # Not found directly in room — search inside open containers.
@@ -1412,6 +1430,17 @@ class GameEngine:
                 msg = self._narrate_single("take", found["name"], msg)
                 self.console.print(msg)
                 self._emit_event("item_taken", item_id=found["id"])
+                # Emit theft events for each living NPC witnessing the take.
+                npcs_present = db.get_npcs_in(current_room_id)
+                for npc in npcs_present:
+                    if not npc.get("is_alive", True):
+                        continue
+                    self._emit_event(
+                        "on_item_stolen",
+                        npc_id=npc["id"],
+                        item_id=found["id"],
+                        room_id=current_room_id,
+                    )
                 return
 
         # Maybe they already have it?
@@ -2248,11 +2277,80 @@ class GameEngine:
                     db.set_flag(flag, "true")
                     if not was_set:
                         self._emit_event("flag_set", flag=flag)
+
+            # Emit on_attacked if any weapon-class tag was used on an NPC.
+            if target_npc is not None and any(
+                t in ("weapon", "firearm", "melee", "blade", "blunt")
+                for t in tags
+            ):
+                self._emit_event(
+                    "on_attacked",
+                    npc_id=target_npc["id"],
+                    item_id=inv_item["id"],
+                    room_id=current_room_id,
+                )
         except Exception:
             logger.exception("Interaction effects failed, rolled back")
             return True
 
         return True
+
+    def _handle_attack(self, target_name: str, current_room_id: str) -> None:
+        """Handle bare ``attack <target>`` commands.
+
+        Emits an ``on_attacked`` event so triggers can react. If the player
+        has no weapon, a generic message is shown. With a weapon, the
+        interaction matrix is attempted first; if no matrix match exists,
+        the attack event is still emitted for trigger-based reactions.
+        """
+        db = self.db
+
+        # Find the target NPC.
+        npc = db.find_npc_by_name(target_name, current_room_id)
+        if npc is None:
+            self.console.print("There's nothing to attack here.", style=STYLE_SYSTEM)
+            return
+
+        # Check if the player is wielding a weapon (first weapon in inventory).
+        inventory = db.get_inventory()
+        weapon = None
+        for item in inventory:
+            raw_tags = item.get("item_tags")
+            if raw_tags:
+                with suppress(json.JSONDecodeError, TypeError):
+                    tags = json.loads(raw_tags) if isinstance(raw_tags, str) else raw_tags
+                    if any(t in ("weapon", "firearm", "melee", "blade", "blunt") for t in tags):
+                        weapon = item
+                        break
+
+        if weapon is None:
+            self.console.print(
+                "You have no weapon to attack with.", style=STYLE_SYSTEM
+            )
+            # Still emit the event for bare-handed triggers.
+            self._emit_event(
+                "on_attacked",
+                npc_id=npc["id"],
+                item_id="",
+                room_id=current_room_id,
+            )
+            return
+
+        # Try the interaction matrix first.
+        handled = self._handle_interaction(
+            weapon["name"], target_name, current_room_id
+        )
+        if not handled:
+            self.console.print(
+                f"You attack {npc['name']} with the {weapon['name']}.",
+            )
+            # Emit on_attacked event for trigger-based reactions.
+            self._emit_event(
+                "on_attacked",
+                npc_id=npc["id"],
+                item_id=weapon["id"],
+                room_id=current_room_id,
+            )
 
     def _start_dialogue(self, npc_name: str, current_room_id: str) -> None:
         """Initialize dialogue state for an NPC conversation, if available."""
@@ -2266,6 +2364,15 @@ class GameEngine:
         if not npc.get("is_alive", True):
             self.console.print(
                 f"{npc['name']} is dead.", style=STYLE_SYSTEM
+            )
+            return
+
+        # Disposition gating — hostile NPCs refuse conversation.
+        disposition = npc.get("disposition", "neutral") or "neutral"
+        if disposition == "hostile":
+            self.console.print(
+                f"{npc['name']} refuses to speak with you.",
+                style=STYLE_SYSTEM,
             )
             return
 
@@ -2393,6 +2500,42 @@ class GameEngine:
         if self._dialogue_state is None:
             return
         self._dialogue_state.current_node_id = next_node["id"]
+
+    def _handle_force_dialogue(self, npc_id: str, node_id: str) -> None:
+        """Force-start a dialogue at a specific node for an NPC.
+
+        Called by the ``force_dialogue`` effect via the event system.
+        Renders the dialogue node immediately (non-interactive) so the
+        player sees the NPC's reaction text.
+        """
+        db = self.db
+        npc = db.get_npc(npc_id)
+        if npc is None or not npc.get("is_alive", True):
+            return
+
+        node = db.get_dialogue_node(node_id)
+        if node is None:
+            return
+
+        # Apply flags/effects on the forced node.
+        self._apply_node_flags(node)
+        db.set_flag(f"_visited_dlg_{node_id}", "true")
+
+        # Render the dialogue panel.
+        visible_options = self._get_visible_options(node_id)
+        self._render_dialogue_panel(npc, node, visible_options)
+
+        # If there are options and we are in interactive mode, enter the
+        # dialogue loop so the player can respond.
+        if visible_options:
+            self._dialogue_state = _DialogueState(
+                npc_id=npc["id"],
+                npc_name=npc["name"],
+                current_node_id=node_id,
+            )
+            self._in_dialogue = True
+            if self._interactive_dialogue:
+                self._run_dialogue_loop()
 
     def _end_dialogue(self) -> None:
         """Clear dialogue state and flush deferred notifications."""
@@ -2660,6 +2803,15 @@ class GameEngine:
         from anyzork.engine.commands import apply_effect, check_precondition
 
         db = self.db
+
+        # Handle force_dialogue as a special engine-level event.
+        # This initiates a dialogue tree at a specific node for an NPC.
+        if event_type == "force_dialogue":
+            self._handle_force_dialogue(
+                event_data.get("npc_id", ""),
+                event_data.get("node_id", ""),
+            )
+            return
 
         # 1. Fetch candidate triggers (enabled, non-executed one-shots).
         triggers = db.get_triggers_for_event(event_type)

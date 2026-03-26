@@ -261,6 +261,7 @@ class _Parser:
         "container_empty":        ["container"],
         "has_quantity":           ["item", "min"],
         "toggle_state":           ["item", "state"],
+        "npc_disposition":        ["npc", "disposition"],
     }
 
     _EFFECT_ARGS: ClassVar[dict[str, list[str]]] = {
@@ -298,6 +299,9 @@ class _Parser:
         "hide_exit":               ["exit"],
         # Entity description
         "change_description":      ["entity", "text"],
+        # NPC disposition and forced dialogue
+        "set_disposition":         ["npc", "disposition"],
+        "force_dialogue":          ["npc", "node"],
         # Target-aware effects (interaction response context only)
         "kill_target":             [],
         "damage_target":           ["amount"],
@@ -582,6 +586,7 @@ class _Parser:
         "room_desc": "room_description",
         "drop_desc": "drop_description",
         "home": "home_room_id",
+        "disposition": "disposition",
     }
 
     def _parse_npc_block(self) -> None:
@@ -1030,6 +1035,8 @@ class _Parser:
         "item_dropped": "item_id",
         "dialogue_node": "node_id",
         "command_exec": "command_id",
+        "on_item_stolen": "npc_id",
+        "on_attacked": "npc_id",
     }
 
     def _parse_when_block(self) -> None:
