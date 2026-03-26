@@ -356,6 +356,7 @@ npc old_wizard {
   room_desc   "An old wizard sits hunched over a heavy tome, muttering to himself."
   dialogue    "He peers at you over his spectacles."
   category    "character"
+  faction     "mages"
 }
 ```
 
@@ -411,6 +412,53 @@ when flag_set(defense_started) {
 | `room_description` | string  | no       | | Shorthand: `room_desc`. Shown when NPC is in home room. |
 | `drop_description` | string  | no       | | Shorthand: `drop_desc`. Shown when NPC is away from home. |
 | `disposition`      | string  | no       | `"neutral"` | `"hostile"`, `"friendly"`, `"neutral"`. Hostile NPCs refuse dialogue. Changed at runtime via `set_disposition` effect. |
+| `faction`          | string  | no       | | Optional faction tag for group operations. Use `set_faction_hostile`, `kill_faction`, `remove_faction`, `move_faction` effects. |
+
+#### Factions
+
+NPCs can be grouped into factions using the `faction` field. Faction
+operations apply to all NPCs sharing the same faction string, enabling
+mass hostility changes, kills, removals, and relocations with a single
+effect.
+
+```zorkscript
+npc goblin_sentry {
+  name "Goblin Sentry"
+  description "A goblin in crude armor."
+  examine "It watches you with beady eyes."
+  in dungeon_entrance
+  dialogue "It snarls at you."
+  category "character"
+  faction "goblin"
+  hp 20
+  damage 5
+}
+
+npc goblin_archer {
+  name "Goblin Archer"
+  description "A goblin with a short bow."
+  examine "It has an arrow nocked and ready."
+  in dungeon_entrance
+  dialogue "It growls menacingly."
+  category "character"
+  faction "goblin"
+  hp 15
+  damage 8
+}
+
+-- Make all goblins hostile at once
+on "anger goblins" {
+  effect set_faction_hostile("goblin")
+  success "The goblins turn hostile!"
+}
+
+-- Check if the goblin faction is wiped out
+on "check goblins" {
+  require faction_dead("goblin")
+  effect set_flag(goblins_defeated)
+  success "All goblins have been slain."
+}
+```
 
 #### Blocking NPCs
 
@@ -793,6 +841,8 @@ require var_check(cave_floods, <, 3)
 | `toggle_state(I, S)`      | item id, state string       | `{"type": "toggle_state", "item": I, "state": S}` |
 | `npc_disposition(N, D)`   | npc id, disposition string  | `{"type": "npc_disposition", "npc": N, "disposition": D}` |
 | `var_check(N, OP, V)`    | variable name, operator, integer | `{"type": "var_check", "name": N, "operator": OP, "value": V}` |
+| `faction_alive(F)`       | faction string                   | `{"type": "faction_alive", "faction": F}` |
+| `faction_dead(F)`        | faction string                   | `{"type": "faction_dead", "faction": F}` |
 
 Operators for `var_check`: `==`, `!=`, `>`, `<`, `>=`, `<=`. Variables
 that have not been set default to `0`.
@@ -882,6 +932,10 @@ effect schedule_trigger(bomb_explodes, 3)
 | `set_var(N, V)`            | variable name, integer     | `{"type": "set_var", "name": N, "value": V}` |
 | `change_var(N, D)`         | variable name, integer delta (+ or -) | `{"type": "change_var", "name": N, "delta": D}` |
 | `schedule_trigger(ID, N)` | trigger id, integer turns  | `{"type": "schedule_trigger", "trigger": ID, "turns": N}` |
+| `set_faction_hostile(F)` | faction string             | `{"type": "set_faction_hostile", "faction": F}` |
+| `kill_faction(F)`        | faction string             | `{"type": "kill_faction", "faction": F}` |
+| `remove_faction(F)`      | faction string             | `{"type": "remove_faction", "faction": F}` |
+| `move_faction(F, R)`     | faction string, room id or `_current` | `{"type": "move_faction", "faction": F, "room": R}` |
 
 ### Slot references
 
@@ -1918,7 +1972,8 @@ ZorkScript wraps.
 in_room, has_item, has_flag, not_flag, item_in_room, item_accessible,
 npc_in_room, lock_unlocked, puzzle_solved, health_above, container_open,
 item_in_container, not_item_in_container, container_has_contents,
-container_empty, has_quantity, toggle_state, npc_disposition, var_check
+container_empty, has_quantity, toggle_state, npc_disposition, var_check,
+faction_alive, faction_dead
 ```
 
 ### Effect types (34)
@@ -1930,7 +1985,8 @@ print, open_container, move_item_to_container, take_item_from_container,
 consume_quantity, restore_quantity, set_toggle_state, make_visible,
 make_hidden, make_takeable, move_npc, spawn_npc, fail_quest, complete_quest,
 kill_npc, remove_npc, lock_exit, hide_exit, change_description,
-set_disposition, force_dialogue, set_var, change_var, schedule_trigger
+set_disposition, force_dialogue, set_var, change_var, schedule_trigger,
+set_faction_hostile, kill_faction, remove_faction, move_faction
 ```
 
 ### Target-aware effect types (4, interaction responses only)

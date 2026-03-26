@@ -265,6 +265,8 @@ class _Parser:
         "toggle_state":           ["item", "state"],
         "npc_disposition":        ["npc", "disposition"],
         "var_check":              ["name", "operator", "value"],
+        "faction_alive":          ["faction"],
+        "faction_dead":           ["faction"],
     }
 
     _EFFECT_ARGS: ClassVar[dict[str, list[str]]] = {
@@ -316,6 +318,11 @@ class _Parser:
         "open_target":             [],
         # Scheduled triggers
         "schedule_trigger":        ["trigger", "turns"],
+        # Faction operations
+        "set_faction_hostile":     ["faction"],
+        "kill_faction":            ["faction"],
+        "remove_faction":          ["faction"],
+        "move_faction":            ["faction", "room"],
     }
 
     def _compile_precondition(self, name: str, args: list[Any]) -> dict[str, Any]:
@@ -600,6 +607,7 @@ class _Parser:
         "disposition": "disposition",
         "unblock": "unblock_flag",
         "block_msg": "block_message",
+        "faction": "faction",
     }
 
     def _parse_npc_block(self) -> None:

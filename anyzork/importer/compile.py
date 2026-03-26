@@ -242,6 +242,7 @@ def _insert_npcs(db: GameDB, spec: dict[str, Any]) -> None:
             room_description=optional_str(npc.get("room_description")),
             drop_description=optional_str(npc.get("drop_description")),
             disposition=npc.get("disposition", "neutral"),
+            faction=optional_str(npc.get("faction")),
         )
 
 

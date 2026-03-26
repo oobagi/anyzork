@@ -230,7 +230,8 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
     ``puzzle_solved``, ``health_above``, ``container_open``,
     ``item_in_container``, ``not_item_in_container``,
     ``container_has_contents``, ``container_empty``, ``has_quantity``,
-    ``toggle_state``, ``npc_disposition``, ``var_check``.
+    ``toggle_state``, ``npc_disposition``, ``var_check``,
+    ``faction_alive``, ``faction_dead``.
 
     Slot references (``{slot_name}``) in string fields are substituted before
     evaluation.
@@ -379,6 +380,16 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
         actual = db.get_npc_disposition(npc_id)
         return actual == desired
 
+    if cond_type == "faction_alive":
+        faction = _substitute_slots(condition["faction"], slots)
+        members = db.get_npcs_by_faction(faction)
+        return any(bool(m["is_alive"]) for m in members)
+
+    if cond_type == "faction_dead":
+        faction = _substitute_slots(condition["faction"], slots)
+        members = db.get_npcs_by_faction(faction)
+        return len(members) > 0 and all(not bool(m["is_alive"]) for m in members)
+
     if cond_type == "var_check":
         var_name = _substitute_slots(str(condition["name"]), slots)
         operator = condition["operator"]
@@ -425,7 +436,9 @@ def apply_effect(
     ``fail_quest``, ``complete_quest``, ``kill_npc``, ``remove_npc``,
     ``lock_exit``, ``hide_exit``, ``change_description``,
     ``set_disposition``, ``force_dialogue``,
-    ``set_var``, ``change_var``, ``spawn_npc``, ``schedule_trigger``.
+    ``set_var``, ``change_var``, ``spawn_npc``, ``schedule_trigger``,
+    ``set_faction_hostile``, ``kill_faction``, ``remove_faction``,
+    ``move_faction``.
 
     Args:
         effect: The effect dict with a ``type`` field and type-specific params.
@@ -720,6 +733,27 @@ def apply_effect(
         # so "N turns from now" means N turns after the current action completes.
         fire_on_move = move_number + 1 + turns
         db.schedule_trigger(trigger_ref, fire_on_move)
+
+    # -- Faction effects ----------------------------------------------------
+
+    elif effect_type == "set_faction_hostile":
+        faction = _substitute_slots(effect["faction"], slots)
+        db.set_faction_hostile(faction)
+
+    elif effect_type == "kill_faction":
+        faction = _substitute_slots(effect["faction"], slots)
+        db.kill_faction(faction)
+
+    elif effect_type == "remove_faction":
+        faction = _substitute_slots(effect["faction"], slots)
+        db.remove_faction(faction)
+
+    elif effect_type == "move_faction":
+        faction = _substitute_slots(effect["faction"], slots)
+        room_ref = _substitute_slots(effect["room"], slots)
+        if room_ref == "_current":
+            room_ref = current_room
+        db.move_faction(faction, room_ref)
 
     # -- Entity description -------------------------------------------------
 
