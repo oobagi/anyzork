@@ -290,6 +290,7 @@ class _Parser:
         "make_hidden":             ["item"],
         "make_takeable":           ["item"],
         "move_npc":                ["npc", "room"],
+        "spawn_npc":               ["npc", "room"],
         # Explicit NPC effects
         "kill_npc":                ["npc"],
         "remove_npc":              ["npc"],

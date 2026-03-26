@@ -425,7 +425,7 @@ def apply_effect(
     ``fail_quest``, ``complete_quest``, ``kill_npc``, ``remove_npc``,
     ``lock_exit``, ``hide_exit``, ``change_description``,
     ``set_disposition``, ``force_dialogue``,
-    ``set_var``, ``change_var``.
+    ``set_var``, ``change_var``, ``spawn_npc``.
 
     Args:
         effect: The effect dict with a ``type`` field and type-specific params.
@@ -608,7 +608,17 @@ def apply_effect(
         npc_ref = _substitute_slots(effect.get("npc", ""), slots)
         room_ref = _substitute_slots(effect.get("room", ""), slots)
         npc_id = _resolve_name_to_id(npc_ref, db)
+        if room_ref == "_current":
+            room_ref = current_room
         db.move_npc(npc_id, room_ref)
+
+    elif effect_type == "spawn_npc":
+        npc_ref = _substitute_slots(effect.get("npc", ""), slots)
+        room_ref = _substitute_slots(effect.get("room", ""), slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        if room_ref == "_current":
+            room_ref = current_room
+        db.spawn_npc(npc_id, room_ref)
 
     # -- Quest effects -------------------------------------------------------
 

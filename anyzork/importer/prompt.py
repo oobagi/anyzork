@@ -339,6 +339,8 @@ item rusty_pipe {
 # home + room_desc is REQUIRED: room_desc is shown when the NPC is in its home room.
 # drop_desc (optional) is shown if the NPC is moved elsewhere (e.g., via move_npc).
 # NPCs without room_desc or home get a generic "Nearby, {name} lingers." fallback.
+# NPCs without "in" are templates — they exist in limbo until spawned via
+# spawn_npc(npc_id, room_id). Great for enemies, reinforcements, or wave spawns.
 #
 # Every NPC talk branch MUST include a dismissive exit option (e.g., "Never mind" or
 # "Goodbye") so the player can leave the conversation. Do not create dialogue paths
@@ -533,6 +535,7 @@ quest side:vault_secret {
 #   complete_quest(quest_id)  -- force-complete a quest
 #   kill_npc(npc_id)          -- kill an NPC by ID (leaves body/loot)
 #   remove_npc(npc_id)        -- remove NPC from world entirely (vanished)
+#   spawn_npc(npc_id, room_id) -- spawn a template NPC into a room (or move an existing one)
 #   lock_exit(exit_id)        -- re-lock a previously unlocked exit
 #   hide_exit(exit_id)        -- re-hide a previously revealed exit
 #   change_description(entity_id, "new text") -- change item/room description at runtime
@@ -550,6 +553,11 @@ quest side:vault_secret {
 #    Use this when the item is physically present but not yet noticed (e.g.,
 #    a key hidden under debris that becomes visible after searching).
 # Both work. Choose whichever fits the narrative.
+#
+# Template NPCs: NPCs with NO "in" field are templates — they exist in limbo
+# until spawned at runtime via spawn_npc(npc_id, room_id).
+# Use this for enemies that appear during events, reinforcements, etc.
+# For wave scenarios, define numbered templates (shadow_1, shadow_2, etc.).
 #
 # Tiered command pattern (highest priority fires first):
 # 1. SPECIFIC: room-scoped on blocks with exact preconditions (one-shot story moments)

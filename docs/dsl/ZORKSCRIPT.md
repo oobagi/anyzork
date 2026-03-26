@@ -370,12 +370,35 @@ falls back to the generic "Nearby, {name} lingers." message.
 **Required**: When `home` is set, `room_desc` is mandatory (compile-time error).
 NPCs without `home` receive the "Nearby..." fallback in all rooms.
 
+**Template NPCs**: NPCs defined without an `in` field are *templates* -- they
+exist in limbo (no room) until spawned at runtime via `spawn_npc(npc_id, room_id)`.
+Use this for enemies that appear during events, reinforcements, or wave spawns.
+For multiple instances, define numbered templates (`shadow_1`, `shadow_2`, etc.).
+
+```zorkscript
+-- Template NPC: no "in" field means it starts in limbo
+npc shadow_creature {
+  name "Shadow Creature"
+  description "A writhing mass of darkness."
+  examine "Its form shifts and writhes."
+  dialogue "It hisses at you."
+  category "enemy"
+  hp 30
+}
+
+-- Spawn it during gameplay
+when flag_set(defense_started) {
+  effect spawn_npc(shadow_creature, inn_balcony)
+  message "A shadow creature materializes on the balcony!"
+}
+```
+
 | Field              | Type    | Required | Default | Notes |
 |--------------------|---------|----------|---------|-------|
 | `name`             | string  | yes      | | |
 | `description`      | string  | yes      | | |
 | `examine_description` | string | yes   | | Shorthand: `examine` or `examine_text` |
-| `room_id`          | id      | yes      | | Shorthand: `in` |
+| `room_id`          | id      | no       | (template) | Shorthand: `in`. Omit to create a template NPC (spawned at runtime via `spawn_npc`). |
 | `default_dialogue` | string  | yes      | | Shorthand: `dialogue` |
 | `is_alive`         | boolean | no       | true | |
 | `is_blocking`      | boolean | no       | false | Set automatically by `blocking` directive |
@@ -810,6 +833,7 @@ effect make_visible(hidden_gem)
 effect make_hidden(decoy_item)
 effect make_takeable(mounted_sword)
 effect move_npc(old_wizard, tower_study)
+effect spawn_npc(shadow_creature, inn_balcony)
 effect set_disposition(guard, "hostile")
 effect force_dialogue(old_wizard, wizard_angry)
 effect set_var(jaheira_approval, 0)
@@ -850,7 +874,8 @@ effect change_var(cave_floods, -1)
 | `make_visible(I)`            | item id                    | `{"type": "make_visible", "item": I}` |
 | `make_hidden(I)`             | item id                    | `{"type": "make_hidden", "item": I}` |
 | `make_takeable(I)`           | item id                    | `{"type": "make_takeable", "item": I}` |
-| `move_npc(NPC, R)`           | npc id, room id            | `{"type": "move_npc", "npc": NPC, "room": R}` |
+| `move_npc(NPC, R)`           | npc id, room id or `_current` | `{"type": "move_npc", "npc": NPC, "room": R}` |
+| `spawn_npc(NPC, R)`         | npc id, room id or `_current` | `{"type": "spawn_npc", "npc": NPC, "room": R}` |
 | `set_disposition(NPC, D)`   | npc id, disposition string | `{"type": "set_disposition", "npc": NPC, "disposition": D}` |
 | `force_dialogue(NPC, NODE)` | npc id, dialogue node id   | `{"type": "force_dialogue", "npc": NPC, "node": NODE}` |
 | `set_var(N, V)`            | variable name, integer     | `{"type": "set_var", "name": N, "value": V}` |
@@ -1845,14 +1870,14 @@ item_in_container, not_item_in_container, container_has_contents,
 container_empty, has_quantity, toggle_state, npc_disposition, var_check
 ```
 
-### Effect types (33)
+### Effect types (34)
 
 ```
 move_item, remove_item, set_flag, unlock, move_player, spawn_item,
 change_health, add_score, reveal_exit, solve_puzzle, discover_quest,
 print, open_container, move_item_to_container, take_item_from_container,
 consume_quantity, restore_quantity, set_toggle_state, make_visible,
-make_hidden, make_takeable, move_npc, fail_quest, complete_quest,
+make_hidden, make_takeable, move_npc, spawn_npc, fail_quest, complete_quest,
 kill_npc, remove_npc, lock_exit, hide_exit, change_description,
 set_disposition, force_dialogue, set_var, change_var
 ```
