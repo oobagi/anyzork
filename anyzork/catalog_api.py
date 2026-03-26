@@ -143,7 +143,7 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
     @app.get("/api/games/{slug}")
     def get_game(slug: str) -> dict[str, object]:
         game = store.get_game(slug)
-        if game is None or not game.published:
+        if game is None or game.status != "approved":
             raise HTTPException(
                 status_code=404, detail="Game not found.",
             )
@@ -160,12 +160,13 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
             "slug": game.slug,
             "title": game.title,
             "published": game.published,
+            "status": game.status,
         }
 
     @app.get("/api/games/{slug}/package")
     def download_game(slug: str) -> FileResponse:
         game = store.get_game(slug)
-        if game is None or not game.published:
+        if game is None or game.status != "approved":
             raise HTTPException(
                 status_code=404, detail="Game not found.",
             )
@@ -447,12 +448,15 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
     @app.get("/api/admin/games")
     def admin_list_games(
         x_admin_token: Annotated[str | None, Header()] = None,
+        status: str | None = None,
     ) -> dict[str, object]:
         _require_admin_token(x_admin_token)
         return {
             "games": [
                 game.to_api_dict()
-                for game in store.list_games(published_only=False)
+                for game in store.list_games(
+                    published_only=False, status=status,
+                )
             ],
         }
 
@@ -482,6 +486,54 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
                 status_code=404, detail="Game not found.",
             )
         store.set_published(slug, published=False)
+        return {"game": store.get_game(slug).to_api_dict()}
+
+    @app.post("/api/admin/games/{slug}/approve")
+    def admin_approve_game(
+        slug: str,
+        x_admin_token: Annotated[str | None, Header()] = None,
+        body: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        game = store.get_game(slug)
+        if game is None:
+            raise HTTPException(
+                status_code=404, detail="Game not found.",
+            )
+        notes = (body or {}).get("review_notes", "")
+        store.set_status(slug, status="approved", review_notes=notes)
+        return {"game": store.get_game(slug).to_api_dict()}
+
+    @app.post("/api/admin/games/{slug}/reject")
+    def admin_reject_game(
+        slug: str,
+        x_admin_token: Annotated[str | None, Header()] = None,
+        body: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        game = store.get_game(slug)
+        if game is None:
+            raise HTTPException(
+                status_code=404, detail="Game not found.",
+            )
+        notes = (body or {}).get("review_notes", "")
+        store.set_status(slug, status="rejected", review_notes=notes)
+        return {"game": store.get_game(slug).to_api_dict()}
+
+    @app.post("/api/admin/games/{slug}/feature")
+    def admin_feature_game(
+        slug: str,
+        x_admin_token: Annotated[str | None, Header()] = None,
+        body: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        game = store.get_game(slug)
+        if game is None:
+            raise HTTPException(
+                status_code=404, detail="Game not found.",
+            )
+        featured = bool((body or {}).get("featured", True))
+        store.set_featured(slug, featured=featured)
         return {"game": store.get_game(slug).to_api_dict()}
 
     @app.delete("/api/admin/games/{slug}")

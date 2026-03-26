@@ -25,6 +25,9 @@ from anyzork.sharing import (
 logger = logging.getLogger(__name__)
 
 
+VALID_STATUSES = {"pending", "approved", "rejected", "unpublished"}
+
+
 @dataclass(slots=True)
 class UploadedGame:
     """Normalized public catalog entry plus local package path."""
@@ -48,6 +51,9 @@ class UploadedGame:
     updated_at: str
     published: bool
     email_hash: str = ""
+    status: str = "pending"
+    review_notes: str = ""
+    featured: bool = False
 
     def to_api_dict(self) -> dict[str, object]:
         """Return the API representation."""
@@ -68,6 +74,9 @@ class UploadedGame:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "published": self.published,
+            "status": self.status,
+            "review_notes": self.review_notes,
+            "featured": self.featured,
         }
 
 
@@ -158,20 +167,36 @@ class CatalogStore:
             updated_at=now,
             published=published,
             email_hash=email_hash or (existing.email_hash if existing else ""),
+            status="approved" if published else "pending",
         )
         self._write_game(row)
         return row
 
-    def list_games(self, *, published_only: bool = True) -> list[UploadedGame]:
-        """Return uploaded games ordered by newest first."""
+    def list_games(
+        self,
+        *,
+        published_only: bool = True,
+        status: str | None = None,
+    ) -> list[UploadedGame]:
+        """Return uploaded games ordered by newest first.
+
+        When *status* is given, filter by that moderation status instead
+        of the published flag.
+        """
         sql = "SELECT * FROM games"
-        params: tuple[object, ...] = ()
-        if published_only:
-            sql += " WHERE published = 1"
+        params: list[object] = []
+        conditions: list[str] = []
+        if status is not None:
+            conditions.append("status = ?")
+            params.append(status)
+        elif published_only:
+            conditions.append("status = 'approved'")
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
         sql += " ORDER BY updated_at DESC, slug ASC"
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute(sql, params).fetchall()
+            rows = conn.execute(sql, tuple(params)).fetchall()
         return [self._row_to_game(row) for row in rows]
 
     def get_game(self, slug: str) -> UploadedGame | None:
@@ -196,7 +221,7 @@ class CatalogStore:
                     "description": game.description,
                     "tagline": game.tagline,
                     "genres": game.genres,
-                    "featured": False,
+                    "featured": game.featured,
                     "cover_image_url": game.cover_image_url,
                     "homepage_url": game.homepage_url,
                     "package_url": game.package_url,
@@ -499,7 +524,11 @@ class CatalogStore:
     def update_game_metadata(
         self, slug: str, **fields: object,
     ) -> None:
-        """Update allowed metadata fields, set updated_at, unpublish."""
+        """Update allowed metadata fields, set updated_at, unpublish.
+
+        Resets moderation status to ``pending`` so the game must be
+        re-approved after edits.
+        """
         allowed = {
             "title", "author", "description", "tagline",
             "genres_json", "homepage_url", "cover_image_url",
@@ -510,6 +539,7 @@ class CatalogStore:
         now = datetime.now(UTC).isoformat()
         updates["updated_at"] = now
         updates["published"] = 0
+        updates["status"] = "pending"
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = [*updates.values(), slug]
         with sqlite3.connect(self.db_path) as conn:
@@ -520,11 +550,59 @@ class CatalogStore:
             conn.commit()
 
     def set_published(self, slug: str, *, published: bool) -> None:
-        """Set the published flag for a game."""
+        """Set the published flag for a game.
+
+        Also syncs the moderation status: publishing sets status to
+        ``approved``, unpublishing sets it to ``unpublished``.
+        """
+        status = "approved" if published else "unpublished"
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "UPDATE games SET published = ?, updated_at = ? WHERE slug = ?",
-                (1 if published else 0, datetime.now(UTC).isoformat(), slug),
+                "UPDATE games SET published = ?, status = ?, updated_at = ? "
+                "WHERE slug = ?",
+                (
+                    1 if published else 0,
+                    status,
+                    datetime.now(UTC).isoformat(),
+                    slug,
+                ),
+            )
+            conn.commit()
+
+    def set_status(
+        self, slug: str, *, status: str, review_notes: str = "",
+    ) -> None:
+        """Set the moderation status for a game.
+
+        Automatically syncs the ``published`` boolean: only ``approved``
+        games are considered published.
+        """
+        if status not in VALID_STATUSES:
+            raise ValueError(
+                f"Invalid status {status!r}. "
+                f"Must be one of: {', '.join(sorted(VALID_STATUSES))}"
+            )
+        published = 1 if status == "approved" else 0
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE games SET status = ?, review_notes = ?, "
+                "published = ?, updated_at = ? WHERE slug = ?",
+                (
+                    status,
+                    review_notes,
+                    published,
+                    datetime.now(UTC).isoformat(),
+                    slug,
+                ),
+            )
+            conn.commit()
+
+    def set_featured(self, slug: str, *, featured: bool) -> None:
+        """Toggle the featured flag for a game."""
+        with sqlite3.connect(self.db_path) as conn:
+            conn.execute(
+                "UPDATE games SET featured = ?, updated_at = ? WHERE slug = ?",
+                (1 if featured else 0, datetime.now(UTC).isoformat(), slug),
             )
             conn.commit()
 
@@ -554,7 +632,7 @@ class CatalogStore:
                 )
                 """
             )
-            # Migrate: add email_hash column if missing.
+            # Migrate: add columns if missing.
             columns = {
                 row[1]
                 for row in conn.execute("PRAGMA table_info(games)").fetchall()
@@ -562,6 +640,22 @@ class CatalogStore:
             if "email_hash" not in columns:
                 conn.execute(
                     "ALTER TABLE games ADD COLUMN email_hash TEXT NOT NULL DEFAULT ''"
+                )
+            if "status" not in columns:
+                conn.execute(
+                    "ALTER TABLE games ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"
+                )
+                # Backfill: published games become 'approved'.
+                conn.execute(
+                    "UPDATE games SET status = 'approved' WHERE published = 1"
+                )
+            if "review_notes" not in columns:
+                conn.execute(
+                    "ALTER TABLE games ADD COLUMN review_notes TEXT NOT NULL DEFAULT ''"
+                )
+            if "featured" not in columns:
+                conn.execute(
+                    "ALTER TABLE games ADD COLUMN featured INTEGER NOT NULL DEFAULT 0"
                 )
             conn.execute(
                 """
@@ -596,11 +690,13 @@ class CatalogStore:
                     download_url, checksum_sha256,
                     runtime_compat_version, prompt_system_version,
                     room_count, homepage_url, cover_image_url,
-                    created_at, updated_at, published, email_hash
+                    created_at, updated_at, published, email_hash,
+                    status, review_notes, featured
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?
                 )
                 ON CONFLICT(slug) DO UPDATE SET
                     title = excluded.title,
@@ -619,6 +715,7 @@ class CatalogStore:
                     cover_image_url = excluded.cover_image_url,
                     updated_at = excluded.updated_at,
                     published = games.published,
+                    status = games.status,
                     email_hash = CASE WHEN excluded.email_hash != ''
                         THEN excluded.email_hash ELSE games.email_hash END
                 """,
@@ -642,6 +739,9 @@ class CatalogStore:
                     game.updated_at,
                     1 if game.published else 0,
                     game.email_hash,
+                    game.status,
+                    game.review_notes,
+                    1 if game.featured else 0,
                 ),
             )
             conn.commit()
@@ -667,6 +767,9 @@ class CatalogStore:
             updated_at=str(row["updated_at"]),
             published=bool(row["published"]),
             email_hash=str(row["email_hash"]),
+            status=str(row["status"]),
+            review_notes=str(row["review_notes"]),
+            featured=bool(row["featured"]),
         )
 
 
