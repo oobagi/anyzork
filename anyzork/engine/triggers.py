@@ -50,7 +50,7 @@ class TriggerMixin:
 
     def _process_event(self, event_type: str, event_data: dict[str, str]) -> None:
         """Find and execute all triggers matching this event."""
-        from anyzork.engine.commands import apply_effect, check_precondition
+        from anyzork.engine.commands import evaluate_rule
 
         db = self.db
 
@@ -90,44 +90,23 @@ class TriggerMixin:
             if disarm_flag and db.has_flag(disarm_flag):
                 continue
 
-            # Check preconditions.
-            try:
-                preconditions = (
-                    json.loads(trigger["preconditions"])
-                    if trigger["preconditions"]
-                    else []
-                )
-            except (json.JSONDecodeError, TypeError):
-                preconditions = []
-
-            all_pass = all(
-                check_precondition(cond, db) for cond in preconditions
+            # Evaluate preconditions and apply effects via unified pipeline.
+            result = evaluate_rule(
+                db=db,
+                preconditions=trigger["preconditions"],
+                effects=trigger["effects"],
+                command_id=f"trigger:{trigger['id']}",
+                emit_event=self._emit_event,
             )
-            if not all_pass:
+            if not result.passed:
                 continue
 
-            # Fire the trigger — display message, apply effects.
+            # Fire the trigger — display message, then effect messages.
             if trigger.get("message"):
                 self.console.print(trigger["message"])
 
-            try:
-                effects = json.loads(trigger["effects"]) if trigger["effects"] else []
-            except (json.JSONDecodeError, TypeError):
-                effects = []
-
-            for effect in effects:
-                try:
-                    msgs = apply_effect(
-                        effect, db,
-                        command_id=f"trigger:{trigger['id']}",
-                        emit_event=self._emit_event,
-                    )
-                    for msg in msgs:
-                        self.console.print(msg)
-                except Exception:
-                    logger.exception(
-                        "Trigger effect failed: %s in %s", effect, trigger["id"]
-                    )
+            for msg in result.messages:
+                self.console.print(msg)
 
             # Mark one-shot as executed.
             if trigger["one_shot"]:

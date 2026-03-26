@@ -343,28 +343,19 @@ class DialogueMixin:
 
     def _apply_node_effects(self, node: dict) -> None:
         """Execute any effects defined in a dialogue node's effects field."""
-        from anyzork.engine.commands import apply_effect
+        from anyzork.engine.commands import evaluate_rule
 
         effects_raw = node.get("effects")
         if not effects_raw:
             return
-        try:
-            effects = json.loads(effects_raw)
-        except (json.JSONDecodeError, TypeError):
-            return
-        for effect in effects:
-            try:
-                msgs = apply_effect(
-                    effect, self.db,
-                    command_id=f"dialogue:{node['id']}",
-                    emit_event=self._emit_event,
-                )
-                for msg in msgs:
-                    self.console.print(msg)
-            except Exception:
-                logger.exception(
-                    "Dialogue effect failed: %s in %s", effect, node["id"]
-                )
+        result = evaluate_rule(
+            db=self.db,
+            effects=effects_raw,
+            command_id=f"dialogue:{node['id']}",
+            emit_event=self._emit_event,
+        )
+        for msg in result.messages:
+            self.console.print(msg)
 
     def _apply_option_flags(self, option: dict) -> None:
         """Set any flags defined in a dialogue option's set_flags field."""
