@@ -112,6 +112,7 @@ Major field groups:
 - Toggle/state system: `is_toggleable`, `toggle_state`, `toggle_states`, `toggle_messages`, `toggle_on_message`, `toggle_off_message`
 - Dependencies: `requires_item_id`, `requires_message`
 - Quantities: `quantity`, `max_quantity`, `quantity_unit`, `depleted_message`, `quantity_description`
+- Combat: `damage` (weapon damage value)
 - Interaction taxonomy: `category`, `item_tags`
 
 Constraint of note:
@@ -129,7 +130,7 @@ Key fields:
 - `is_alive`
 - blocking/gating support: `is_blocking`, `blocked_exit_id`, `unblock_flag`
 - baseline dialogue: `default_dialogue`
-- optional combat stats: `hp`, `damage`
+- optional combat stats: `hp`, `damage`, `defense`, `weakness`, `drop_item`
 - `category`
 - Placement and prose: `home_room_id`, `room_description`, `drop_description`
 

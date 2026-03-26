@@ -312,6 +312,9 @@ class _Parser:
         # General-purpose variables
         "set_var":                 ["name", "value"],
         "change_var":              ["name", "delta"],
+        # Player combat effects
+        "heal_player":             ["amount"],
+        "damage_player":           ["amount"],
         # Target-aware effects (interaction response context only)
         "kill_target":             [],
         "damage_target":           ["amount"],
@@ -609,6 +612,9 @@ class _Parser:
         "unblock": "unblock_flag",
         "block_msg": "block_message",
         "faction": "faction",
+        "defense": "defense",
+        "weakness": "weakness",
+        "drop": "drop",
     }
 
     def _parse_npc_block(self) -> None:

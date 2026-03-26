@@ -328,8 +328,9 @@ item rusty_pipe {
   examine     "Solid and weighty. Could do some damage."
   in          supply_closet
   takeable    true
-  tags        ["weapon"]
+  tags        ["weapon", "blunt"]
   category    "weapon"
+  damage      15
   take_msg    "You heft the pipe. It feels reassuringly solid."
   room_desc   "A rusty iron pipe leans against the wall."
 }
@@ -341,6 +342,12 @@ item rusty_pipe {
 # NPCs without room_desc or home get a generic "Nearby, {name} lingers." fallback.
 # NPCs without "in" are templates — they exist in limbo until spawned via
 # spawn_npc(npc_id, room_id). Great for enemies, reinforcements, or wave spawns.
+#
+# Combat: NPCs with hp, damage, defense, weakness, and drop fields are combat-ready.
+#   "attack <npc>" triggers deterministic combat: weapon damage - NPC defense (min 1).
+#   If weapon tags match NPC weakness, damage is doubled. NPC retaliates automatically.
+#   On death, NPC drops the item specified by "drop" into its body container.
+#   Items with a "damage" field serve as weapons (must also have weapon-related tags).
 #
 # Factions: use "faction" to group NPCs for mass operations.
 # Effects: set_faction_hostile(faction), kill_faction(faction),
@@ -553,6 +560,8 @@ quest side:vault_secret {
 #   move_item(id, from, to)   -- move item between locations
 #   move_player(room_id)      -- teleport player
 #   change_health(N)          -- heal (+) or damage (-) player
+#   heal_player(N)            -- restore N HP to the player (capped at max_hp)
+#   damage_player(N)          -- deal N damage to the player
 #   add_score(N)              -- award points
 #   reveal_exit(exit_id)      -- unhide a hidden exit (ID = {from_room}_{direction})
 #   solve_puzzle(id)          -- mark puzzle solved
@@ -940,10 +949,11 @@ Constraints:
                room_desc, drop_desc, take_msg, drop_msg, read_text,
                container, is_open, has_lid, locked, key, code, lock_msg, open_msg, search_msg,
                toggle, toggle_state, on_msg, off_msg,
+               damage,
                quantity, max_quantity, quantity_unit, depleted_msg, quantity_desc,
                requires, requires_msg, weight, accepts_items, reject_msg
   npc:         name, description, examine, in, home, room_desc, drop_desc, dialogue, category,
-               blocking, unblock, block_msg, hp, damage, talk, faction
+               blocking, unblock, block_msg, hp, damage, defense, weakness, drop, talk, faction
   hint:        text, require, priority
   talk:        (text), option, effect, sets
   option:      (text) [-> label|end], require_item, require_flag, exclude_flag,

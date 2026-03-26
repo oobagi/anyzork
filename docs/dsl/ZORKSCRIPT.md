@@ -249,6 +249,7 @@ the Notes column.
 | `home_room_id`        | id      | no       | | Shorthand: `home`. When set, `room_desc` is **required** (compile-time error). |
 | `category`            | string  | no       | | |
 | `item_tags`           | list    | no       | `["weapon", "light_source", ...]` | Shorthand: `tags` |
+| `damage`              | integer | no       | | Weapon damage for combat. Items with `damage` and weapon tags are used in `attack`. |
 | `requires_item_id`    | id      | no       | | Shorthand: `requires`. Item dependency (e.g. flashlight requires batteries). |
 | `requires_message`    | string  | no       | | Shorthand: `requires_msg` |
 
@@ -405,14 +406,68 @@ when flag_set(defense_started) {
 | `is_blocking`      | boolean | no       | false | Set automatically by `blocking` directive |
 | `blocked_exit_id`  | id      | no       | | Set automatically by `blocking` directive |
 | `unblock_flag`     | id      | no       | Field name: `unblock` |
-| `hp`               | integer | no       | | |
-| `damage`           | integer | no       | | |
+| `hp`               | integer | no       | | NPC hit points for combat. |
+| `damage`           | integer | no       | | Damage dealt to player each combat round. |
+| `defense`          | integer | no       | | Damage reduction (incoming damage - defense, min 1). |
+| `weakness`         | string  | no       | | Tag that makes NPC take double damage (e.g., `"ice"`). |
+| `drop`             | id      | no       | | Item dropped into body container on death. |
 | `category`         | string  | no       | | |
 | `home_room_id`     | id      | no       | | Shorthand: `home`. When set, `room_desc` is **required**. |
 | `room_description` | string  | no       | | Shorthand: `room_desc`. Shown when NPC is in home room. |
 | `drop_description` | string  | no       | | Shorthand: `drop_desc`. Shown when NPC is away from home. |
 | `disposition`      | string  | no       | `"neutral"` | `"hostile"`, `"friendly"`, `"neutral"`. Hostile NPCs refuse dialogue. Changed at runtime via `set_disposition` effect. |
 | `faction`          | string  | no       | | Optional faction tag for group operations. Use `set_faction_hostile`, `kill_faction`, `remove_faction`, `move_faction` effects. |
+
+#### Combat
+
+NPCs with `hp`, `damage`, `defense`, `weakness`, and `drop` fields
+participate in deterministic turn-based combat.
+
+When the player types `attack <npc>`:
+1. Player deals weapon `damage` minus NPC `defense` (minimum 1).
+2. If the weapon's tags include the NPC's `weakness`, damage is doubled.
+
+> **Order of operations:** Defense is subtracted first (minimum 1 damage), then weakness doubling is applied.
+3. If NPC HP reaches 0, the NPC dies and drops its `drop` item into a
+   searchable body container.
+4. If the NPC survives, it retaliates for its `damage` value.
+5. If player HP reaches 0, the game ends in defeat.
+
+Items with a `damage` field and weapon-related tags (`weapon`, `melee`,
+`blade`, `blunt`, `firearm`) are automatically selected as weapons.
+
+```zorkscript
+npc dragon {
+  name        "Ancient Dragon"
+  description "A massive dragon with scales like shields."
+  examine     "Its eyes glow with malice."
+  in          dragon_lair
+  dialogue    "It roars at you!"
+  category    "enemy"
+  hp          100
+  damage      25
+  defense     10
+  weakness    "ice"
+  drop        gold_hoard
+}
+
+item frost_blade {
+  name        "Frost Blade"
+  description "A sword sheathed in ice."
+  examine     "Frost spirals along the blade."
+  in          armory
+  tags        ["weapon", "blade", "ice"]
+  category    "weapon"
+  damage      20
+  take_msg    "The cold bites your hand as you grip the hilt."
+  room_desc   "A frost-covered sword rests in a weapon rack."
+}
+```
+
+The `heal_player(N)` and `damage_player(N)` effects can be used in
+commands, triggers, and interactions to modify player HP directly.
+
+The `status` command displays the player's current HP.
 
 #### Factions
 
@@ -963,6 +1018,8 @@ effect schedule_trigger(bomb_explodes, 3)
 | `move_player(R)`              | room id                    | `{"type": "move_player", "room": R}` |
 | `spawn_item(I, LOC)`          | item id, location          | `{"type": "spawn_item", "item": I, "location": LOC}` |
 | `change_health(N)`            | integer (+ or -)           | `{"type": "change_health", "amount": N}` |
+| `heal_player(N)`              | positive integer           | `{"type": "heal_player", "amount": N}` |
+| `damage_player(N)`            | positive integer           | `{"type": "damage_player", "amount": N}` |
 | `add_score(N)`                | integer                    | `{"type": "add_score", "points": N}` |
 | `reveal_exit(E)`              | exit id                    | `{"type": "reveal_exit", "exit": E}` |
 | `solve_puzzle(P)`             | puzzle id                  | `{"type": "solve_puzzle", "puzzle": P}` |
@@ -2044,7 +2101,8 @@ print, open_container, move_item_to_container, take_item_from_container,
 consume_quantity, restore_quantity, set_toggle_state, make_visible,
 make_hidden, make_takeable, move_npc, spawn_npc, fail_quest, complete_quest,
 kill_npc, remove_npc, lock_exit, hide_exit, change_description,
-set_disposition, force_dialogue, set_var, change_var, schedule_trigger,
+set_disposition, force_dialogue, set_var, change_var,
+heal_player, damage_player, schedule_trigger,
 set_faction_hostile, kill_faction, remove_faction, move_faction
 ```
 

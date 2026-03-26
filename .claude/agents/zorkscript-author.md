@@ -305,6 +305,27 @@ npc guard {
 }
 ```
 
+**Combat NPC** (deterministic turn-based combat):
+```zorkscript
+npc dragon {
+  name        "Ancient Dragon"
+  description "A massive dragon with scales like shields."
+  examine     "Its eyes glow with malice."
+  in          dragon_lair
+  home        dragon_lair
+  room_desc   "An ancient dragon blocks the way."
+  dialogue    "It roars at you!"
+  category    "enemy"
+  hp          100
+  damage      25
+  defense     10
+  weakness    "ice"
+  drop        gold_hoard
+}
+```
+
+Combat fields: `hp` (hit points), `damage` (retaliation damage), `defense` (damage reduction), `weakness` (tag that doubles incoming damage), `drop` (item moved to body container on death). Items with `damage` and weapon tags serve as weapons for `attack <npc>`.
+
 Talk block syntax:
 - First string in the block is the NPC's dialogue content
 - `option "text" -> label` links to another talk block on the same NPC
@@ -574,6 +595,8 @@ Target-aware effects (only valid in interactions): `kill_target()`, `damage_targ
 | `make_visible` | `effect make_visible(item_id)` | Make hidden item visible |
 | `make_hidden` | `effect make_hidden(item_id)` | Hide a visible item |
 | `make_takeable` | `effect make_takeable(item_id)` | Make scenery item takeable |
+| `heal_player` | `effect heal_player(N)` | Restore N HP (capped at max_hp) |
+| `damage_player` | `effect damage_player(N)` | Deal N damage to player |
 
 **Target-aware effects (interactions only):**
 - `kill_target()` -- kill the target NPC
