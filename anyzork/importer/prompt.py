@@ -506,6 +506,7 @@ quest side:vault_secret {
 #   container_empty(item_id)           -- container is empty
 #   has_quantity(item_id, N)           -- consumable has >= N charges
 #   npc_disposition(npc_id, "disposition") -- NPC disposition matches (hostile/friendly/neutral)
+#   var_check(name, operator, value)      -- check a numerical variable (operators: ==, !=, >, <, >=, <=)
 #
 # Available effects for on/when blocks (use ONLY these, do not invent new ones):
 #   set_flag(id)              -- set a flag to true
@@ -540,6 +541,8 @@ quest side:vault_secret {
 #   make_takeable(item_id)    -- make a non-takeable item takeable at runtime
 #   set_disposition(npc_id, "hostile"|"friendly"|"neutral") -- change NPC disposition
 #   force_dialogue(npc_id, node_id) -- force NPC to start dialogue at specific node
+#   set_var(name, value)          -- set a numerical variable to a specific value
+#   change_var(name, delta)       -- increment (+) or decrement (-) a numerical variable
 #
 # Hidden items: two approaches.
 # 1. SPAWN: declare item with NO location, then spawn_item(id, room_id) later.

@@ -740,6 +740,11 @@ require toggle_state(oil_lamp, "on")
 # NPC disposition checks
 require npc_disposition(guard, "hostile")
 require npc_disposition(old_wizard, "friendly")
+
+# Variable checks
+require var_check(jaheira_approval, >=, 50)
+require var_check(turn_count, ==, 0)
+require var_check(cave_floods, <, 3)
 ```
 
 #### Precondition reference
@@ -764,6 +769,10 @@ require npc_disposition(old_wizard, "friendly")
 | `has_quantity(I, N)`       | item id, min quantity       | `{"type": "has_quantity", "item": I, "min": N}` |
 | `toggle_state(I, S)`      | item id, state string       | `{"type": "toggle_state", "item": I, "state": S}` |
 | `npc_disposition(N, D)`   | npc id, disposition string  | `{"type": "npc_disposition", "npc": N, "disposition": D}` |
+| `var_check(N, OP, V)`    | variable name, operator, integer | `{"type": "var_check", "name": N, "operator": OP, "value": V}` |
+
+Operators for `var_check`: `==`, `!=`, `>`, `<`, `>=`, `<=`. Variables
+that have not been set default to `0`.
 
 ### Effect syntax
 
@@ -803,6 +812,9 @@ effect make_takeable(mounted_sword)
 effect move_npc(old_wizard, tower_study)
 effect set_disposition(guard, "hostile")
 effect force_dialogue(old_wizard, wizard_angry)
+effect set_var(jaheira_approval, 0)
+effect change_var(jaheira_approval, 10)
+effect change_var(cave_floods, -1)
 ```
 
 #### Effect reference
@@ -841,6 +853,8 @@ effect force_dialogue(old_wizard, wizard_angry)
 | `move_npc(NPC, R)`           | npc id, room id            | `{"type": "move_npc", "npc": NPC, "room": R}` |
 | `set_disposition(NPC, D)`   | npc id, disposition string | `{"type": "set_disposition", "npc": NPC, "disposition": D}` |
 | `force_dialogue(NPC, NODE)` | npc id, dialogue node id   | `{"type": "force_dialogue", "npc": NPC, "node": NODE}` |
+| `set_var(N, V)`            | variable name, integer     | `{"type": "set_var", "name": N, "value": V}` |
+| `change_var(N, D)`         | variable name, integer delta (+ or -) | `{"type": "change_var", "name": N, "delta": D}` |
 
 ### Slot references
 
@@ -1094,6 +1108,94 @@ trigger thief_caught {
 
   message "The merchant slams a fist on the counter."
   once
+}
+```
+
+
+### Variables
+
+Variables are general-purpose integer counters stored in the `variables`
+table. Unlike flags (which are boolean), variables hold any integer value
+and support arithmetic. Use them for NPC approval ratings, skill checks,
+environmental counters, and any numeric state that flags cannot represent.
+
+Variables are created on first use -- there is no declaration block. A
+variable that has never been set reads as `0`.
+
+#### Setting and changing variables
+
+```zorkscript
+# Set a variable to an exact value
+effect set_var(jaheira_approval, 0)
+
+# Increment or decrement a variable
+effect change_var(jaheira_approval, 10)
+effect change_var(cave_floods, -1)
+```
+
+`set_var(name, value)` creates the variable if it does not exist, or
+overwrites it if it does. `change_var(name, delta)` adds `delta` to the
+current value (creating the variable at `delta` if it does not exist).
+
+#### Checking variables
+
+```zorkscript
+require var_check(jaheira_approval, >=, 50)
+require var_check(turn_count, ==, 0)
+require var_check(cave_floods, <, 3)
+```
+
+`var_check(name, operator, value)` compares the variable against an
+integer threshold. Supported operators: `==`, `!=`, `>`, `<`, `>=`, `<=`.
+
+#### Example: NPC approval gating
+
+A player must accumulate approval before an NPC will help them:
+
+```zorkscript
+on "compliment jaheira" {
+  effect change_var(jaheira_approval, 10)
+  effect print("Jaheira nods approvingly.")
+  success "You compliment Jaheira."
+}
+
+on "ask jaheira for help" {
+  require var_check(jaheira_approval, >=, 50)
+  effect set_flag(jaheira_joined)
+  success "Jaheira agrees to help you."
+  fail "Jaheira is not interested in helping you."
+}
+```
+
+#### Example: environmental counter
+
+Track how many times a cave floods before it becomes impassable:
+
+```zorkscript
+when room_enter(flooded_cave) {
+  effect change_var(cave_floods, 1)
+  effect print("Water rushes through the cave.")
+}
+
+on "cross the cave" in [flooded_cave] {
+  require var_check(cave_floods, <, 3)
+  effect move_player(far_shore)
+  success "You wade through the rising water."
+  fail "The water is too deep to cross."
+}
+```
+
+#### Example: skill check threshold
+
+Gate a command on a numeric skill level:
+
+```zorkscript
+on "pick lock" in [treasury_door] {
+  require var_check(lockpick_skill, >=, 5)
+  effect unlock(treasury_lock)
+  effect add_score(15)
+  success "The lock yields to your practiced hands."
+  fail "Your fingers fumble. You lack the skill."
 }
 ```
 
@@ -1734,16 +1836,16 @@ surface is now deliberately narrow:
 For quick reference, the full set of precondition and effect types that
 ZorkScript wraps.
 
-### Precondition types (17)
+### Precondition types (19)
 
 ```
 in_room, has_item, has_flag, not_flag, item_in_room, item_accessible,
 npc_in_room, lock_unlocked, puzzle_solved, health_above, container_open,
 item_in_container, not_item_in_container, container_has_contents,
-container_empty, has_quantity, toggle_state
+container_empty, has_quantity, toggle_state, npc_disposition, var_check
 ```
 
-### Effect types (29)
+### Effect types (33)
 
 ```
 move_item, remove_item, set_flag, unlock, move_player, spawn_item,
@@ -1751,7 +1853,8 @@ change_health, add_score, reveal_exit, solve_puzzle, discover_quest,
 print, open_container, move_item_to_container, take_item_from_container,
 consume_quantity, restore_quantity, set_toggle_state, make_visible,
 make_hidden, make_takeable, move_npc, fail_quest, complete_quest,
-kill_npc, remove_npc, lock_exit, hide_exit, change_description
+kill_npc, remove_npc, lock_exit, hide_exit, change_description,
+set_disposition, force_dialogue, set_var, change_var
 ```
 
 ### Target-aware effect types (4, interaction responses only)

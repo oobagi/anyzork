@@ -230,7 +230,7 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
     ``puzzle_solved``, ``health_above``, ``container_open``,
     ``item_in_container``, ``not_item_in_container``,
     ``container_has_contents``, ``container_empty``, ``has_quantity``,
-    ``toggle_state``, ``npc_disposition``.
+    ``toggle_state``, ``npc_disposition``, ``var_check``.
 
     Slot references (``{slot_name}``) in string fields are substituted before
     evaluation.
@@ -379,6 +379,26 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
         actual = db.get_npc_disposition(npc_id)
         return actual == desired
 
+    if cond_type == "var_check":
+        var_name = _substitute_slots(str(condition["name"]), slots)
+        operator = condition["operator"]
+        threshold = int(condition["value"])
+        actual = db.get_var(var_name)
+        if operator == "==":
+            return actual == threshold
+        if operator == "!=":
+            return actual != threshold
+        if operator == ">":
+            return actual > threshold
+        if operator == "<":
+            return actual < threshold
+        if operator == ">=":
+            return actual >= threshold
+        if operator == "<=":
+            return actual <= threshold
+        logger.warning("Unknown var_check operator: %s", operator)
+        return False
+
     logger.warning("Unknown precondition type: %s", cond_type)
     return False
 
@@ -404,7 +424,8 @@ def apply_effect(
     ``consume_quantity``, ``restore_quantity``, ``set_toggle_state``,
     ``fail_quest``, ``complete_quest``, ``kill_npc``, ``remove_npc``,
     ``lock_exit``, ``hide_exit``, ``change_description``,
-    ``set_disposition``, ``force_dialogue``.
+    ``set_disposition``, ``force_dialogue``,
+    ``set_var``, ``change_var``.
 
     Args:
         effect: The effect dict with a ``type`` field and type-specific params.
@@ -659,6 +680,18 @@ def apply_effect(
         node_id = _resolve_name_to_id(node_ref, db)
         if emit_event is not None:
             emit_event("force_dialogue", npc_id=npc_id, node_id=node_id)
+
+    # -- General-purpose variables -------------------------------------------
+
+    elif effect_type == "set_var":
+        var_name = _substitute_slots(str(effect["name"]), slots)
+        value = int(effect["value"])
+        db.set_var(var_name, value)
+
+    elif effect_type == "change_var":
+        var_name = _substitute_slots(str(effect["name"]), slots)
+        delta = int(effect["delta"])
+        db.change_var(var_name, delta)
 
     # -- Entity description -------------------------------------------------
 
