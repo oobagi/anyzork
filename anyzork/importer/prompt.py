@@ -407,6 +407,31 @@ npc guard {
   }
 }
 
+# -- NPC Behaviors -- Autonomous actions NPCs perform each turn.
+# on_turn blocks inside an NPC define behaviors that execute every turn.
+# Use require for preconditions, effect for actions, message for text,
+# and "once" for one-shot behaviors. Messages only show if the NPC
+# is in the same room as the player.
+#
+# npc wandering_merchant {
+#   name "Wandering Merchant"
+#   ...
+#   on_turn {
+#     effect move_npc(wandering_merchant, town_gate)
+#     message "The merchant packs up and heads toward the gate."
+#   }
+# }
+#
+# npc guard {
+#   ...
+#   on_turn {
+#     require has_flag(alarm_raised)
+#     effect move_npc(guard, alarm_room)
+#     message "The guard rushes toward the alarm!"
+#     once
+#   }
+# }
+
 # -- Flags -- Single-line declarations, all start false.
 
 flag door_raised "The portcullis has been raised"

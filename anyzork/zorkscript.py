@@ -121,6 +121,7 @@ class _Parser:
         self._triggers: list[dict[str, Any]] = []
         self._interaction_responses: list[dict[str, Any]] = []
         self._hints: list[dict[str, Any]] = []
+        self._npc_behaviors: list[dict[str, Any]] = []
 
         # Deferred resolution: lock exit routes and NPC blocking routes
         self._lock_exit_routes: list[tuple[dict[str, Any], str, str, str]] = []
@@ -626,6 +627,10 @@ class _Parser:
                 talk_blocks.append((label, node, options))
                 continue
 
+            if tok.kind == "IDENT" and tok.value == "on_turn":
+                self._parse_on_turn_block(npc_id)
+                continue
+
             if tok.kind == "IDENT" and tok.value == "blocking":
                 self._advance()
                 # Parse: from_room -> to_room direction
@@ -752,6 +757,49 @@ class _Parser:
             self._expect("RBRACE")
 
         return opt
+
+    # -- on_turn block (inside NPC) --
+
+    def _parse_on_turn_block(self, npc_id: str) -> None:
+        """Parse: on_turn { require ...; effect ...; message ...; once }"""
+        self._expect("IDENT", "on_turn")
+        self._expect("LBRACE")
+
+        preconditions: list[dict[str, Any]] = []
+        effects: list[dict[str, Any]] = []
+        behavior: dict[str, Any] = {
+            "npc_id": npc_id,
+            "one_shot": False,
+        }
+
+        while not self._at("RBRACE"):
+            tok = self._peek()
+            if tok.kind == "IDENT" and tok.value == "require":
+                self._advance()
+                name, args = self._parse_func_call()
+                preconditions.append(self._compile_precondition(name, args))
+                continue
+            if tok.kind == "IDENT" and tok.value == "effect":
+                self._advance()
+                name, args = self._parse_func_call()
+                effects.append(self._compile_effect(name, args))
+                continue
+            if tok.kind == "IDENT" and tok.value == "once":
+                self._advance()
+                behavior["one_shot"] = True
+                continue
+            if tok.kind == "IDENT" and tok.value == "message":
+                self._advance()
+                behavior["message"] = self._parse_string()
+                continue
+            # Unknown key — skip
+            key_tok = self._advance()
+            behavior[key_tok.value] = self._parse_value()
+
+        self._expect("RBRACE")
+        behavior["preconditions"] = preconditions
+        behavior["effects"] = effects
+        self._npc_behaviors.append(behavior)
 
     # -- Lock block --
 
@@ -1443,6 +1491,7 @@ class _Parser:
             "interactions": [],
             "interaction_responses": self._interaction_responses,
             "hints": self._hints,
+            "npc_behaviors": self._npc_behaviors,
         }
 
 

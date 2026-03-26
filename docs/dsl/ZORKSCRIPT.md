@@ -460,6 +460,65 @@ on "check goblins" {
 }
 ```
 
+#### NPC Behaviors (`on_turn` blocks)
+
+NPCs can have autonomous behaviors that execute each turn. These are
+defined using `on_turn` sub-blocks inside an NPC block.
+
+```zorkscript
+npc wandering_merchant {
+  name "Wandering Merchant"
+  description "A merchant with a heavy pack."
+  examine "He looks like he's about to leave."
+  in market_square
+  dialogue "Buying or selling?"
+  category "character"
+
+  on_turn {
+    effect move_npc(wandering_merchant, town_gate)
+    message "The merchant packs up and heads toward the gate."
+  }
+}
+
+npc guard {
+  name "Guard"
+  description "An armored guard."
+  examine "Alert and watchful."
+  in gate_room
+  dialogue "All clear."
+  category "character"
+
+  on_turn {
+    require has_flag(alarm_raised)
+    effect move_npc(guard, alarm_room)
+    message "The guard rushes toward the alarm!"
+    once
+  }
+}
+```
+
+Each `on_turn` block compiles to a row in the `npc_behaviors` table.
+
+- `require` — preconditions (same syntax as commands/triggers)
+- `effect` — effects to apply (same syntax as commands/triggers)
+- `message` — text displayed when the behavior fires
+- `once` — behavior fires only once, then is marked executed
+
+**Visibility**: Messages are only displayed when the NPC is in the same
+room as the player. Effects always apply regardless of player location.
+
+**Processing order**: Behaviors run after turn-count and scheduled
+triggers, before quest checks and end-condition evaluation.
+
+| Field            | Type    | Required | Default | Notes |
+|------------------|---------|----------|---------|-------|
+| `npc_id`         | id      | yes      | | Auto-set from the enclosing NPC block |
+| `preconditions`  | array   | no       | `[]` | JSON array of precondition objects |
+| `effects`        | array   | no       | `[]` | JSON array of effect objects |
+| `message`        | string  | no       | | Shown when behavior fires (player must be in same room) |
+| `one_shot`       | boolean | no       | false | Set by `once` keyword |
+| `executed`       | boolean | no       | false | Tracks whether a one-shot has fired |
+
 #### Blocking NPCs
 
 An NPC can block an exit using the `blocking` directive. The parser

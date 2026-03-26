@@ -417,6 +417,20 @@ CREATE TABLE IF NOT EXISTS hints (
     used            INTEGER NOT NULL DEFAULT 0      -- 1 = already shown
 );
 CREATE INDEX IF NOT EXISTS idx_hints_priority ON hints(priority);
+
+-- -------------------------------------------------------
+-- npc_behaviors: autonomous NPC actions executed each turn
+-- -------------------------------------------------------
+CREATE TABLE IF NOT EXISTS npc_behaviors (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    npc_id          TEXT    NOT NULL REFERENCES npcs(id),
+    preconditions   TEXT    NOT NULL DEFAULT '[]',  -- JSON array, same as commands
+    effects         TEXT    NOT NULL DEFAULT '[]',  -- JSON array, same as commands
+    message         TEXT,                           -- text shown when behavior fires
+    one_shot        INTEGER NOT NULL DEFAULT 0,     -- 1 = fire only once
+    executed        INTEGER NOT NULL DEFAULT 0      -- 1 = already fired (for one-shot)
+);
+CREATE INDEX IF NOT EXISTS idx_npc_behaviors_npc ON npc_behaviors(npc_id);
 """
 
 
@@ -2163,4 +2177,45 @@ class GameDB:
         self._mutate(
             "DELETE FROM scheduled_triggers WHERE trigger_id = ?",
             (trigger_id,),
+        )
+
+    # --------------------------------------------------------- npc behaviors
+
+    def insert_npc_behavior(self, **fields: Any) -> None:
+        """Insert a single NPC behavior row."""
+        cols = ", ".join(fields.keys())
+        placeholders = ", ".join("?" for _ in fields)
+        self._mutate(
+            f"INSERT INTO npc_behaviors ({cols}) VALUES ({placeholders})",
+            tuple(fields.values()),
+        )
+
+    def get_npcs_with_active_behaviors(self) -> list[dict]:
+        """Return id and room_id for all living NPCs that have active behaviors."""
+        return self._fetchall(
+            "SELECT DISTINCT n.id, n.room_id FROM npcs n "
+            "INNER JOIN npc_behaviors b ON b.npc_id = n.id "
+            "WHERE n.is_alive = 1 AND (b.one_shot = 0 OR b.executed = 0)"
+        )
+
+    def get_npc_behaviors(self, npc_id: str) -> list[dict]:
+        """Return all active behaviors for an NPC.
+
+        One-shot behaviors that have already fired are excluded.
+        """
+        return self._fetchall(
+            "SELECT * FROM npc_behaviors WHERE npc_id = ? "
+            "AND (one_shot = 0 OR executed = 0)",
+            (npc_id,),
+        )
+
+    def get_all_npc_behaviors(self) -> list[dict]:
+        """Return all NPC behavior rows (including executed one-shots)."""
+        return self._fetchall("SELECT * FROM npc_behaviors")
+
+    def mark_npc_behavior_executed(self, behavior_id: int) -> None:
+        """Mark a one-shot NPC behavior as executed so it won't fire again."""
+        self._mutate(
+            "UPDATE npc_behaviors SET executed = 1 WHERE id = ?",
+            (behavior_id,),
         )
