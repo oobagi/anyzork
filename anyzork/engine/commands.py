@@ -230,7 +230,7 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
     ``puzzle_solved``, ``health_above``, ``container_open``,
     ``item_in_container``, ``not_item_in_container``,
     ``container_has_contents``, ``container_empty``, ``has_quantity``,
-    ``toggle_state``.
+    ``toggle_state``, ``npc_disposition``.
 
     Slot references (``{slot_name}``) in string fields are substituted before
     evaluation.
@@ -372,6 +372,13 @@ def check_precondition(condition: dict, db: GameDB, slots: dict[str, str] | None
         current_state = item.get("toggle_state") or "off"
         return current_state == desired_state
 
+    if cond_type == "npc_disposition":
+        npc_ref = _substitute_slots(condition["npc"], slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        desired = _substitute_slots(condition["disposition"], slots)
+        actual = db.get_npc_disposition(npc_id)
+        return actual == desired
+
     logger.warning("Unknown precondition type: %s", cond_type)
     return False
 
@@ -396,7 +403,8 @@ def apply_effect(
     ``move_item_to_container``, ``take_item_from_container``, ``print``,
     ``consume_quantity``, ``restore_quantity``, ``set_toggle_state``,
     ``fail_quest``, ``complete_quest``, ``kill_npc``, ``remove_npc``,
-    ``lock_exit``, ``hide_exit``, ``change_description``.
+    ``lock_exit``, ``hide_exit``, ``change_description``,
+    ``set_disposition``, ``force_dialogue``.
 
     Args:
         effect: The effect dict with a ``type`` field and type-specific params.
@@ -635,6 +643,22 @@ def apply_effect(
     elif effect_type == "hide_exit":
         exit_ref = _substitute_slots(effect["exit"], slots)
         db.hide_exit(exit_ref)
+
+    # -- NPC disposition and forced dialogue -----------------------------------
+
+    elif effect_type == "set_disposition":
+        npc_ref = _substitute_slots(effect["npc"], slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        disposition = _substitute_slots(effect["disposition"], slots)
+        db.set_npc_disposition(npc_id, disposition)
+
+    elif effect_type == "force_dialogue":
+        npc_ref = _substitute_slots(effect["npc"], slots)
+        npc_id = _resolve_name_to_id(npc_ref, db)
+        node_ref = _substitute_slots(effect["node"], slots)
+        node_id = _resolve_name_to_id(node_ref, db)
+        if emit_event is not None:
+            emit_event("force_dialogue", npc_id=npc_id, node_id=node_id)
 
     # -- Entity description -------------------------------------------------
 

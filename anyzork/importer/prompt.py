@@ -505,6 +505,7 @@ quest side:vault_secret {
 #   container_has_contents(item_id)    -- container is not empty
 #   container_empty(item_id)           -- container is empty
 #   has_quantity(item_id, N)           -- consumable has >= N charges
+#   npc_disposition(npc_id, "disposition") -- NPC disposition matches (hostile/friendly/neutral)
 #
 # Available effects for on/when blocks (use ONLY these, do not invent new ones):
 #   set_flag(id)              -- set a flag to true
@@ -537,6 +538,8 @@ quest side:vault_secret {
 #   make_visible(item_id)     -- reveal a hidden item (visible false -> true)
 #   make_hidden(item_id)      -- hide a visible item at runtime
 #   make_takeable(item_id)    -- make a non-takeable item takeable at runtime
+#   set_disposition(npc_id, "hostile"|"friendly"|"neutral") -- change NPC disposition
+#   force_dialogue(npc_id, node_id) -- force NPC to start dialogue at specific node
 #
 # Hidden items: two approaches.
 # 1. SPAWN: declare item with NO location, then spawn_item(id, room_id) later.
@@ -600,13 +603,15 @@ on "hit {target}" {
 }
 
 # -- Triggers -- when event_type(arg) blocks. Same require/effect syntax.
-# ONLY these 6 event types exist (do not invent new ones):
+# ONLY these 8 event types exist (do not invent new ones):
 #   room_enter(room_id)    -- player enters a room
 #   flag_set(flag_id)      -- a flag becomes true
 #   item_taken(item_id)    -- player takes an item
 #   item_dropped(item_id)  -- player drops an item
 #   dialogue_node(node_id) -- a dialogue node is visited
 #   command_exec(command_id) -- a DSL command executes successfully
+#   on_item_stolen(npc_id) -- player takes item from room while NPC present (theft)
+#   on_attacked(npc_id)    -- player attacks an NPC
 #
 # Quest declarations may use main:/side: prefixes (quest side:lost_recipe { ... })
 # but effect references use the NORMALIZED quest id only:

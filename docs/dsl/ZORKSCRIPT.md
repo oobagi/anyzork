@@ -387,6 +387,7 @@ NPCs without `home` receive the "Nearby..." fallback in all rooms.
 | `home_room_id`     | id      | no       | | Shorthand: `home`. When set, `room_desc` is **required**. |
 | `room_description` | string  | no       | | Shorthand: `room_desc`. Shown when NPC is in home room. |
 | `drop_description` | string  | no       | | Shorthand: `drop_desc`. Shown when NPC is away from home. |
+| `disposition`      | string  | no       | `"neutral"` | `"hostile"`, `"friendly"`, `"neutral"`. Hostile NPCs refuse dialogue. Changed at runtime via `set_disposition` effect. |
 
 #### Blocking NPCs
 
@@ -735,6 +736,10 @@ require container_empty(wooden_chest)
 # Item state checks
 require has_quantity(revolver, 1)           # min quantity
 require toggle_state(oil_lamp, "on")
+
+# NPC disposition checks
+require npc_disposition(guard, "hostile")
+require npc_disposition(old_wizard, "friendly")
 ```
 
 #### Precondition reference
@@ -758,6 +763,7 @@ require toggle_state(oil_lamp, "on")
 | `container_empty(C)`      | container item id           | `{"type": "container_empty", "container": C}` |
 | `has_quantity(I, N)`       | item id, min quantity       | `{"type": "has_quantity", "item": I, "min": N}` |
 | `toggle_state(I, S)`      | item id, state string       | `{"type": "toggle_state", "item": I, "state": S}` |
+| `npc_disposition(N, D)`   | npc id, disposition string  | `{"type": "npc_disposition", "npc": N, "disposition": D}` |
 
 ### Effect syntax
 
@@ -795,6 +801,8 @@ effect make_visible(hidden_gem)
 effect make_hidden(decoy_item)
 effect make_takeable(mounted_sword)
 effect move_npc(old_wizard, tower_study)
+effect set_disposition(guard, "hostile")
+effect force_dialogue(old_wizard, wizard_angry)
 ```
 
 #### Effect reference
@@ -831,6 +839,8 @@ effect move_npc(old_wizard, tower_study)
 | `make_hidden(I)`             | item id                    | `{"type": "make_hidden", "item": I}` |
 | `make_takeable(I)`           | item id                    | `{"type": "make_takeable", "item": I}` |
 | `move_npc(NPC, R)`           | npc id, room id            | `{"type": "move_npc", "npc": NPC, "room": R}` |
+| `set_disposition(NPC, D)`   | npc id, disposition string | `{"type": "set_disposition", "npc": NPC, "disposition": D}` |
+| `force_dialogue(NPC, NODE)` | npc id, dialogue node id   | `{"type": "force_dialogue", "npc": NPC, "node": NODE}` |
 
 ### Slot references
 
@@ -916,14 +926,16 @@ when room_enter(courtyard) {
 
 ### Event types
 
-| Event Type      | `when` fields       | Fired when... |
-|-----------------|---------------------|---------------|
-| `room_enter`    | `room_id`           | Player enters a room |
-| `flag_set`      | `flag`              | A flag is set to true |
-| `dialogue_node` | `node_id`           | A dialogue node is visited |
-| `item_taken`    | `item_id`           | Player takes an item |
-| `item_dropped`  | `item_id`           | Player drops an item |
-| `command_exec`  | `command_id`        | A DSL command executes successfully |
+| Event Type       | `when` fields       | Fired when... |
+|------------------|---------------------|---------------|
+| `room_enter`     | `room_id`           | Player enters a room |
+| `flag_set`       | `flag`              | A flag is set to true |
+| `dialogue_node`  | `node_id`           | A dialogue node is visited |
+| `item_taken`     | `item_id`           | Player takes an item |
+| `item_dropped`   | `item_id`           | Player drops an item |
+| `command_exec`   | `command_id`        | A DSL command executes successfully |
+| `on_item_stolen` | `npc_id`            | Player takes an item from a room while an NPC is present (theft) |
+| `on_attacked`    | `npc_id`            | Player attacks an NPC (via weapon interaction or `attack` verb) |
 
 ### `when` clause compilation (named `trigger` form)
 
@@ -992,6 +1004,95 @@ trap cursed_lever {
 
   effect change_health(-10)
   message "The lever sends a shock through your body!"
+  once
+}
+```
+
+
+### Reactive NPC triggers
+
+NPCs react deterministically to player behavior using `on_item_stolen` and
+`on_attacked` events combined with the `set_disposition` and `force_dialogue`
+effects.
+
+#### Theft detection
+
+When a player takes an item from a room, every living NPC in that room
+fires an `on_item_stolen` event. Use triggers to change NPC disposition
+and force a reaction dialogue:
+
+```zorkscript
+when on_item_stolen(shopkeeper) {
+  effect set_disposition(shopkeeper, "hostile")
+  effect force_dialogue(shopkeeper, shopkeeper_angry)
+  message "The shopkeeper catches you red-handed!"
+  once
+}
+```
+
+#### Attack reaction
+
+`on_attacked` fires from **two independent paths**:
+
+1. **The `attack` verb** -- `attack <npc>` always emits the event, whether the
+   player is bare-handed or wielding a weapon.
+2. **Weapon-on-NPC interactions** -- `use <weapon> on <npc>` (or any interaction
+   matrix match where a weapon-tagged item targets an NPC) also emits the event.
+
+Both paths include `npc_id`, `item_id`, and `room_id` in the event data
+(`item_id` is empty for bare-handed attacks).
+
+> **`once` flag note:** Because the event can fire from either path, a trigger
+> marked `once` will fire on whichever happens first and then suppress on the
+> other. If your game supports both `attack guard` and `use sword on guard`,
+> design your triggers accordingly (e.g., use a flag guard instead of `once` if
+> you need to react to both paths independently).
+
+```zorkscript
+when on_attacked(guard) {
+  effect set_disposition(guard, "hostile")
+  effect set_flag(guard_hostile)
+  message "The guard draws his sword!"
+}
+```
+
+#### NPC disposition
+
+Every NPC has a `disposition` field: `"neutral"` (default), `"friendly"`,
+or `"hostile"`. When hostile, the engine blocks dialogue initiation
+(the player sees "X refuses to speak with you.").
+
+Use the `set_disposition(npc, disposition)` effect to change disposition
+at runtime, and the `npc_disposition(npc, disposition)` precondition to
+gate commands and triggers on current disposition.
+
+```zorkscript
+npc guard {
+  name        "The Guard"
+  description "A stern soldier."
+  examine     "He watches you intently."
+  in          gate_room
+  dialogue    "State your business."
+  disposition "neutral"
+  category    "character"
+}
+```
+
+#### Forced dialogue
+
+The `force_dialogue(npc, node)` effect jumps the player into a specific
+dialogue node, rendering it immediately. If the node has options, the
+dialogue loop continues from there.
+
+```zorkscript
+trigger thief_caught {
+  on       on_item_stolen
+  when     npc_id = merchant
+
+  effect set_disposition(merchant, "hostile")
+  effect force_dialogue(merchant, merchant_accuses)
+
+  message "The merchant slams a fist on the counter."
   once
 }
 ```

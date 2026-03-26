@@ -49,6 +49,7 @@ VALID_PRECONDITION_TYPES: frozenset[str] = frozenset(
         "container_empty",
         "has_quantity",
         "toggle_state",
+        "npc_disposition",
     }
 )
 
@@ -83,6 +84,8 @@ VALID_EFFECT_TYPES: frozenset[str] = frozenset(
         "make_visible",
         "make_hidden",
         "make_takeable",
+        "set_disposition",
+        "force_dialogue",
     }
 )
 
@@ -94,6 +97,8 @@ VALID_TRIGGER_EVENT_TYPES: frozenset[str] = frozenset(
         "item_taken",
         "item_dropped",
         "command_exec",
+        "on_item_stolen",
+        "on_attacked",
     }
 )
 
@@ -1585,6 +1590,16 @@ def _check_triggers(db: GameDB) -> list[ValidationError]:
                 )
         elif event_type == "command_exec":
             pass  # command_id is free-form; no cross-reference check needed
+        elif event_type in {"on_item_stolen", "on_attacked"}:
+            npc_val = event_data.get("npc_id")
+            if npc_val and npc_val not in npc_set:
+                errors.append(
+                    ValidationError(
+                        "warning",
+                        "trigger",
+                        f"{trig_label} event_data references unknown NPC '{npc_val}'.",
+                    )
+                )
 
         disarm_flag_val = trigger.get("disarm_flag")
         if disarm_flag_val and disarm_flag_val not in flag_set:
