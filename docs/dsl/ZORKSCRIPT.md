@@ -839,6 +839,7 @@ effect force_dialogue(old_wizard, wizard_angry)
 effect set_var(jaheira_approval, 0)
 effect change_var(jaheira_approval, 10)
 effect change_var(cave_floods, -1)
+effect schedule_trigger(bomb_explodes, 3)
 ```
 
 #### Effect reference
@@ -880,6 +881,7 @@ effect change_var(cave_floods, -1)
 | `force_dialogue(NPC, NODE)` | npc id, dialogue node id   | `{"type": "force_dialogue", "npc": NPC, "node": NODE}` |
 | `set_var(N, V)`            | variable name, integer     | `{"type": "set_var", "name": N, "value": V}` |
 | `change_var(N, D)`         | variable name, integer delta (+ or -) | `{"type": "change_var", "name": N, "delta": D}` |
+| `schedule_trigger(ID, N)` | trigger id, integer turns  | `{"type": "schedule_trigger", "trigger": ID, "turns": N}` |
 
 ### Slot references
 
@@ -975,6 +977,8 @@ when room_enter(courtyard) {
 | `command_exec`   | `command_id`        | A DSL command executes successfully |
 | `on_item_stolen` | `npc_id`            | Player takes an item from a room while an NPC is present (theft) |
 | `on_attacked`    | `npc_id`            | Player attacks an NPC (via weapon interaction or `attack` verb) |
+| `turn_count`     | `n`                 | Player's move counter reaches exactly N |
+| `scheduled`      | `trigger_id`        | A `schedule_trigger` deadline arrives |
 
 ### `when` clause compilation (named `trigger` form)
 
@@ -1223,6 +1227,53 @@ on "pick lock" in [treasury_door] {
   fail "Your fingers fumble. You lack the skill."
 }
 ```
+
+### Turn-based triggers
+
+Two event types support time-delayed game logic based on the player's
+move counter.
+
+#### `turn_count(N)` -- absolute move trigger
+
+Fires when the player's move counter reaches exactly `N`. Useful for
+timed events that happen at a fixed point in the game.
+
+```zorkscript
+when turn_count(5) {
+  require has_flag(bomb_armed)
+  effect kill_npc(everyone_nearby)
+  message "The bomb detonates."
+  once
+}
+```
+
+#### `schedule_trigger(trigger_id, turns)` -- deferred trigger
+
+Arms a named trigger to fire after `turns` player moves from the
+current move. The trigger is identified by its `trigger_id`, which must
+match a `when scheduled(trigger_id)` block.
+
+```zorkscript
+on "light fuse" in [armory] {
+  require has_item(lighter)
+  effect schedule_trigger(bomb_explodes, 3)
+  success "The fuse is lit."
+  once
+}
+
+when scheduled(bomb_explodes) {
+  effect change_description(armory, "Rubble and smoke.")
+  effect kill_npc(armory_guard)
+  message "BOOM."
+  once
+}
+```
+
+When `schedule_trigger(bomb_explodes, 3)` executes, the engine records
+that the `bomb_explodes` trigger should fire 3 moves later. On the
+target move, the engine emits a `scheduled` event with
+`trigger_id = bomb_explodes`, which matches the `when scheduled(bomb_explodes)`
+block and fires its effects.
 
 
 ## 7. Dialogue Trees
@@ -1879,7 +1930,7 @@ print, open_container, move_item_to_container, take_item_from_container,
 consume_quantity, restore_quantity, set_toggle_state, make_visible,
 make_hidden, make_takeable, move_npc, spawn_npc, fail_quest, complete_quest,
 kill_npc, remove_npc, lock_exit, hide_exit, change_description,
-set_disposition, force_dialogue, set_var, change_var
+set_disposition, force_dialogue, set_var, change_var, schedule_trigger
 ```
 
 ### Target-aware effect types (4, interaction responses only)

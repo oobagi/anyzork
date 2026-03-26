@@ -313,6 +313,8 @@ class _Parser:
         "damage_target":           ["amount"],
         "destroy_target":          [],
         "open_target":             [],
+        # Scheduled triggers
+        "schedule_trigger":        ["trigger", "turns"],
     }
 
     def _compile_precondition(self, name: str, args: list[Any]) -> dict[str, Any]:
@@ -1043,6 +1045,8 @@ class _Parser:
         "command_exec": "command_id",
         "on_item_stolen": "npc_id",
         "on_attacked": "npc_id",
+        "turn_count": "n",
+        "scheduled": "trigger_id",
     }
 
     def _parse_when_block(self) -> None:
