@@ -1814,6 +1814,17 @@ def _check_win_condition(db: GameDB) -> list[ValidationError]:
             flags = []
         settable_flags.update(flag for flag in flags if flag)
 
+    for behavior in db.get_all_npc_behaviors():
+        try:
+            effects = json.loads(behavior.get("effects", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for eff in effects:
+            if eff.get("type") == "set_flag":
+                flag_name = eff.get("flag")
+                if flag_name:
+                    settable_flags.add(flag_name)
+
     for quest in _all_quests(db):
         completion_flag = quest.get("completion_flag")
         if completion_flag:
@@ -1892,6 +1903,87 @@ def _check_hints(db: GameDB) -> list[ValidationError]:
     return errors
 
 
+def _check_npc_behaviors(db: GameDB) -> list[ValidationError]:
+    """NPC behavior precondition and effect checks."""
+    errors: list[ValidationError] = []
+    behaviors = db.get_all_npc_behaviors()
+    npc_set = _npc_ids(db)
+    room_set = _room_ids(db)
+    item_set = _item_ids(db)
+    lock_set = _lock_ids(db)
+    exit_set = _exit_ids(db)
+    puzzle_set = _puzzle_ids(db)
+    quest_set = _quest_ids(db)
+    flag_set = _flag_ids(db)
+
+    for behavior in behaviors:
+        beh_label = f"NPC behavior #{behavior['id']} (npc '{behavior['npc_id']}')"
+
+        if behavior["npc_id"] not in npc_set:
+            errors.append(
+                ValidationError(
+                    "error",
+                    "npc_behavior",
+                    f"{beh_label} references non-existent NPC '{behavior['npc_id']}'.",
+                )
+            )
+            continue
+
+        try:
+            preconds = json.loads(behavior.get("preconditions", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "npc_behavior",
+                    f"{beh_label} has invalid preconditions JSON.",
+                )
+            )
+            preconds = []
+
+        _validate_rule_preconditions(
+            label=beh_label,
+            category="npc_behavior",
+            preconds=preconds,
+            room_set=room_set,
+            item_set=item_set,
+            npc_set=npc_set,
+            lock_set=lock_set,
+            puzzle_set=puzzle_set,
+            flag_set=flag_set,
+            errors=errors,
+        )
+
+        try:
+            effects = json.loads(behavior.get("effects", "[]"))
+        except (json.JSONDecodeError, TypeError):
+            errors.append(
+                ValidationError(
+                    "error",
+                    "npc_behavior",
+                    f"{beh_label} has invalid effects JSON.",
+                )
+            )
+            effects = []
+
+        _validate_rule_effects(
+            label=beh_label,
+            category="npc_behavior",
+            effects=effects,
+            room_set=room_set,
+            item_set=item_set,
+            lock_set=lock_set,
+            exit_set=exit_set,
+            puzzle_set=puzzle_set,
+            quest_set=quest_set,
+            npc_set=npc_set,
+            flag_set=flag_set,
+            errors=errors,
+        )
+
+    return errors
+
+
 def validate_game(db: GameDB) -> list[ValidationError]:
     """Run all validation checks against a populated ``.zork`` database.
 
@@ -1908,6 +2000,7 @@ def validate_game(db: GameDB) -> list[ValidationError]:
     results.extend(_check_npcs(db))
     results.extend(_check_quests(db))
     results.extend(_check_triggers(db))
+    results.extend(_check_npc_behaviors(db))
     results.extend(_check_hints(db))
     results.extend(_check_win_condition(db))
 

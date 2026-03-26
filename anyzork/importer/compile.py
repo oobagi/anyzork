@@ -72,6 +72,7 @@ def compile_import_spec(
         _insert_quests(db, spec)
         _insert_interaction_responses(db, spec)
         _insert_triggers(db, spec)
+        _insert_npc_behaviors(db, spec)
         _insert_hints(db, spec)
         _initialize_player(db, spec)
         warnings = _validate_imported_game(db)
@@ -392,6 +393,18 @@ def _insert_triggers(db: GameDB, spec: dict[str, Any]) -> None:
             executed=bool_to_int(trigger.get("executed", False)),
             is_enabled=bool_to_int(trigger.get("is_enabled", True)),
             disarm_flag=optional_str(trigger.get("disarm_flag")),
+        )
+
+
+def _insert_npc_behaviors(db: GameDB, spec: dict[str, Any]) -> None:
+    for behavior in spec.get("npc_behaviors", []):
+        db.insert_npc_behavior(
+            npc_id=behavior["npc_id"],
+            preconditions=json_value(behavior.get("preconditions", [])),
+            effects=json_value(behavior.get("effects", [])),
+            message=optional_str(behavior.get("message")),
+            one_shot=bool_to_int(behavior.get("one_shot", False)),
+            executed=bool_to_int(behavior.get("executed", False)),
         )
 
 
