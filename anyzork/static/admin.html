@@ -183,14 +183,138 @@
     white-space: nowrap;
     flex-shrink: 0;
   }
+  .badge-approved {
+    background: var(--green-bg);
+    color: var(--green);
+  }
   .badge-published {
     background: var(--green-bg);
     color: var(--green);
+  }
+  .badge-pending {
+    background: var(--yellow-bg);
+    color: var(--yellow);
   }
   .badge-draft {
     background: var(--yellow-bg);
     color: var(--yellow);
   }
+  .badge-rejected {
+    background: var(--red-bg);
+    color: var(--red);
+  }
+  .badge-unpublished {
+    background: rgba(139, 143, 163, 0.12);
+    color: var(--text-muted);
+  }
+  .badge-featured {
+    background: rgba(108, 99, 255, 0.12);
+    color: var(--accent);
+    margin-left: 6px;
+  }
+
+  .filter-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    align-items: center;
+  }
+  .filter-bar label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+  .filter-select {
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.85rem;
+    outline: none;
+    cursor: pointer;
+  }
+  .filter-select:focus { border-color: var(--accent); }
+
+  .review-notes {
+    margin-top: 10px;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+  .review-notes strong {
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .notes-input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.85rem;
+    outline: none;
+    resize: vertical;
+    min-height: 60px;
+    margin-top: 8px;
+    font-family: inherit;
+  }
+  .notes-input:focus { border-color: var(--accent); }
+  .notes-input::placeholder { color: var(--text-muted); }
+
+  .btn-approve {
+    padding: 12px 20px;
+    background: var(--green-bg);
+    color: var(--green);
+    border: 1px solid rgba(46, 204, 113, 0.25);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-approve:hover:not(:disabled) {
+    background: rgba(46, 204, 113, 0.2);
+  }
+  .btn-approve:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-reject {
+    padding: 12px 20px;
+    background: var(--red-bg);
+    color: var(--red);
+    border: 1px solid rgba(231, 76, 60, 0.25);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-reject:hover:not(:disabled) {
+    background: rgba(231, 76, 60, 0.2);
+  }
+  .btn-reject:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-feature {
+    padding: 12px 20px;
+    background: rgba(108, 99, 255, 0.12);
+    color: var(--accent);
+    border: 1px solid rgba(108, 99, 255, 0.25);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-feature:hover:not(:disabled) {
+    background: rgba(108, 99, 255, 0.2);
+  }
+  .btn-feature:disabled { opacity: 0.5; cursor: not-allowed; }
 
   .card-meta {
     display: flex;
@@ -701,15 +825,17 @@ function GameCard({ game, token, onToggled, onDeleted }) {
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
+  const [reviewNotes, setReviewNotes] = useState(game.review_notes || "");
 
-  const toggle = async () => {
+  const status = game.status || (game.published ? "approved" : "pending");
+  const badgeClass = `badge badge-${status}`;
+
+  const doAction = async (action, body = null) => {
     setBusy(true);
     try {
-      const action = game.published ? "unpublish" : "publish";
-      await apiFetch(`/api/admin/games/${game.slug}/${action}`, {
-        token,
-        method: "POST",
-      });
+      const opts = { token, method: "POST" };
+      if (body) { opts.body = body; opts.json = true; }
+      await apiFetch(`/api/admin/games/${game.slug}/${action}`, opts);
       onToggled();
     } catch (err) {
       alert(err.message || "Action failed.");
@@ -717,6 +843,11 @@ function GameCard({ game, token, onToggled, onDeleted }) {
       setBusy(false);
     }
   };
+
+  const handleApprove = () => doAction("approve", { review_notes: reviewNotes });
+  const handleReject = () => doAction("reject", { review_notes: reviewNotes });
+  const handleFeature = () => doAction("feature", { featured: !game.featured });
+  const handleUnpublish = () => doAction("unpublish");
 
   const handleDelete = async () => {
     await apiFetch(`/api/admin/games/${game.slug}`, {
@@ -733,9 +864,10 @@ function GameCard({ game, token, onToggled, onDeleted }) {
     <div className="card">
       <div className="card-top">
         <div className="card-title">{game.title || game.slug}</div>
-        <span className={`badge ${game.published ? "badge-published" : "badge-draft"}`}>
-          {game.published ? "Published" : "Draft"}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span className={badgeClass}>{status}</span>
+          {game.featured && <span className="badge badge-featured">Featured</span>}
+        </div>
       </div>
 
       <div className="card-meta">
@@ -752,16 +884,40 @@ function GameCard({ game, token, onToggled, onDeleted }) {
         </div>
       )}
 
-      <div className="card-actions">
-        <button
-          className={`btn-publish ${game.published ? "btn-do-unpublish" : "btn-do-publish"}`}
-          onClick={toggle}
-          disabled={busy}
-        >
-          {busy
-            ? (game.published ? "Unpublishing..." : "Publishing...")
-            : (game.published ? "Unpublish" : "Publish")}
-        </button>
+      {game.review_notes && (
+        <div className="review-notes">
+          <strong>Review notes:</strong> {game.review_notes}
+        </div>
+      )}
+
+      <textarea
+        className="notes-input"
+        placeholder="Add review notes (optional)..."
+        value={reviewNotes}
+        onChange={(e) => setReviewNotes(e.target.value)}
+      />
+
+      <div className="card-actions" style={{ marginTop: "10px" }}>
+        {status !== "approved" && (
+          <button className="btn-approve" onClick={handleApprove} disabled={busy}>
+            {busy ? "..." : "Approve"}
+          </button>
+        )}
+        {status !== "rejected" && (
+          <button className="btn-reject" onClick={handleReject} disabled={busy}>
+            {busy ? "..." : "Reject"}
+          </button>
+        )}
+        {status === "approved" && (
+          <>
+            <button className="btn-feature" onClick={handleFeature} disabled={busy}>
+              {game.featured ? "Unfeature" : "Feature"}
+            </button>
+            <button className="btn-do-unpublish btn-publish" onClick={handleUnpublish} disabled={busy}>
+              Unpublish
+            </button>
+          </>
+        )}
         <button className="btn-detail" onClick={() => setExpanded(!expanded)}>
           {expanded ? "Collapse" : "Files"}
         </button>
@@ -790,11 +946,13 @@ function GameCard({ game, token, onToggled, onDeleted }) {
 function Dashboard({ token, onLogout }) {
   const [games, setGames] = useState(null);
   const [error, setError] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("");
 
   const loadGames = useCallback(async () => {
     setError(null);
     try {
-      const data = await apiFetch("/api/admin/games", { token });
+      const query = statusFilter ? `?status=${statusFilter}` : "";
+      const data = await apiFetch(`/api/admin/games${query}`, { token });
       setGames(data.games || []);
     } catch (err) {
       if (err.message && err.message.includes("403")) {
@@ -804,12 +962,11 @@ function Dashboard({ token, onLogout }) {
       }
       setError(err.message || "Failed to load games.");
     }
-  }, [token, onLogout]);
+  }, [token, onLogout, statusFilter]);
 
   useEffect(() => { loadGames(); }, [loadGames]);
 
-  const published = games ? games.filter((g) => g.published).length : 0;
-  const drafts = games ? games.length - published : 0;
+  const countByStatus = (s) => games ? games.filter((g) => g.status === s).length : 0;
 
   return (
     <>
@@ -833,20 +990,41 @@ function Dashboard({ token, onLogout }) {
             <div className="stats-bar">
               <div className="stat">
                 <div className="stat-num">{games.length}</div>
-                <div className="stat-label">Total</div>
+                <div className="stat-label">{statusFilter || "Total"}</div>
               </div>
               <div className="stat">
-                <div className="stat-num">{published}</div>
-                <div className="stat-label">Published</div>
+                <div className="stat-num">{countByStatus("pending")}</div>
+                <div className="stat-label">Pending</div>
               </div>
               <div className="stat">
-                <div className="stat-num">{drafts}</div>
-                <div className="stat-label">Drafts</div>
+                <div className="stat-num">{countByStatus("approved")}</div>
+                <div className="stat-label">Approved</div>
+              </div>
+              <div className="stat">
+                <div className="stat-num">{countByStatus("rejected")}</div>
+                <div className="stat-label">Rejected</div>
               </div>
             </div>
 
+            <div className="filter-bar">
+              <label>Filter by status:</label>
+              <select
+                className="filter-select"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="">All</option>
+                <option value="pending">Pending</option>
+                <option value="approved">Approved</option>
+                <option value="rejected">Rejected</option>
+                <option value="unpublished">Unpublished</option>
+              </select>
+            </div>
+
             {games.length === 0 && (
-              <div className="empty-msg">No games uploaded yet.</div>
+              <div className="empty-msg">
+                {statusFilter ? `No ${statusFilter} games.` : "No games uploaded yet."}
+              </div>
             )}
 
             {games.map((game) => (

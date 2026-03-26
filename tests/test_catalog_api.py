@@ -779,3 +779,324 @@ def test_admin_write_zorkscript_file(
         assert resp.json()["content"] == new_content
     finally:
         os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+# -- Moderation workflow tests ------------------------------------------------
+
+
+def test_new_uploads_start_as_pending(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    """Newly uploaded games should have status='pending'."""
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "pending-game", "test-admin-token",
+        )
+
+        # Check via admin list.
+        resp = client.get(
+            "/api/admin/games",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        games = resp.json()["games"]
+        game = next(g for g in games if g["slug"] == slug)
+        assert game["status"] == "pending"
+        assert game["published"] is False
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_approve_game(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "approve-me", "test-admin-token",
+        )
+
+        # Approve with review notes.
+        resp = client.post(
+            f"/api/admin/games/{slug}/approve",
+            json={"review_notes": "Looks great!"},
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        game = resp.json()["game"]
+        assert game["status"] == "approved"
+        assert game["published"] is True
+        assert game["review_notes"] == "Looks great!"
+
+        # Game should now appear in public catalog.
+        catalog_resp = client.get("/catalog.json")
+        slugs = [g["slug"] for g in catalog_resp.json()["games"]]
+        assert slug in slugs
+
+        # Game should be accessible via public API.
+        detail_resp = client.get(f"/api/games/{slug}")
+        assert detail_resp.status_code == 200
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_reject_game(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "reject-me", "test-admin-token",
+        )
+
+        resp = client.post(
+            f"/api/admin/games/{slug}/reject",
+            json={"review_notes": "Incomplete game."},
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        game = resp.json()["game"]
+        assert game["status"] == "rejected"
+        assert game["published"] is False
+        assert game["review_notes"] == "Incomplete game."
+
+        # Rejected game should NOT appear in public catalog.
+        catalog_resp = client.get("/catalog.json")
+        slugs = [g["slug"] for g in catalog_resp.json()["games"]]
+        assert slug not in slugs
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_feature_game(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "feature-me", "test-admin-token",
+        )
+
+        # Approve first.
+        client.post(
+            f"/api/admin/games/{slug}/approve",
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+
+        # Feature the game.
+        resp = client.post(
+            f"/api/admin/games/{slug}/feature",
+            json={"featured": True},
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["game"]["featured"] is True
+
+        # Should appear as featured in catalog.
+        catalog_resp = client.get("/catalog.json")
+        game = next(
+            g for g in catalog_resp.json()["games"] if g["slug"] == slug
+        )
+        assert game["featured"] is True
+
+        # Unfeature.
+        resp = client.post(
+            f"/api/admin/games/{slug}/feature",
+            json={"featured": False},
+            headers={"X-Admin-Token": "test-admin-token"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["game"]["featured"] is False
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_admin_list_games_filter_by_status(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        headers = {"X-Admin-Token": "test-admin-token"}
+
+        slug_a = _upload_game(
+            client, zork_archive_path, tmp_path, "game-a", "test-admin-token",
+        )
+        slug_b = _upload_game(
+            client, zork_archive_path, tmp_path, "game-b", "test-admin-token",
+        )
+
+        # Approve game-a.
+        client.post(f"/api/admin/games/{slug_a}/approve", headers=headers)
+        # Reject game-b.
+        client.post(f"/api/admin/games/{slug_b}/reject", headers=headers)
+
+        # Filter by approved.
+        resp = client.get("/api/admin/games?status=approved", headers=headers)
+        slugs = [g["slug"] for g in resp.json()["games"]]
+        assert slug_a in slugs
+        assert slug_b not in slugs
+
+        # Filter by rejected.
+        resp = client.get("/api/admin/games?status=rejected", headers=headers)
+        slugs = [g["slug"] for g in resp.json()["games"]]
+        assert slug_b in slugs
+        assert slug_a not in slugs
+
+        # No filter returns all.
+        resp = client.get("/api/admin/games", headers=headers)
+        slugs = [g["slug"] for g in resp.json()["games"]]
+        assert slug_a in slugs
+        assert slug_b in slugs
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_approve_reject_require_admin_token(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "auth-test", "test-admin-token",
+        )
+
+        # Without token.
+        resp = client.post(f"/api/admin/games/{slug}/approve")
+        assert resp.status_code == 403
+
+        resp = client.post(f"/api/admin/games/{slug}/reject")
+        assert resp.status_code == 403
+
+        resp = client.post(f"/api/admin/games/{slug}/feature")
+        assert resp.status_code == 403
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_approve_reject_not_found(tmp_path: Path) -> None:
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        headers = {"X-Admin-Token": "test-admin-token"}
+
+        resp = client.post("/api/admin/games/nonexistent/approve", headers=headers)
+        assert resp.status_code == 404
+
+        resp = client.post("/api/admin/games/nonexistent/reject", headers=headers)
+        assert resp.status_code == 404
+
+        resp = client.post("/api/admin/games/nonexistent/feature", headers=headers)
+        assert resp.status_code == 404
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_unpublish_sets_unpublished_status(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    """Unpublishing an approved game sets status to 'unpublished'."""
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        headers = {"X-Admin-Token": "test-admin-token"}
+        slug = _upload_game(
+            client, zork_archive_path, tmp_path, "unpub-test", "test-admin-token",
+        )
+
+        # Approve then unpublish.
+        client.post(f"/api/admin/games/{slug}/approve", headers=headers)
+        resp = client.post(f"/api/admin/games/{slug}/unpublish", headers=headers)
+        assert resp.status_code == 200
+        game = resp.json()["game"]
+        assert game["status"] == "unpublished"
+        assert game["published"] is False
+
+        # Should not appear in public catalog.
+        catalog_resp = client.get("/catalog.json")
+        slugs = [g["slug"] for g in catalog_resp.json()["games"]]
+        assert slug not in slugs
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_metadata_update_resets_to_pending(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    """Editing metadata resets status from approved to pending."""
+    import os
+    os.environ["ANYZORK_ADMIN_TOKEN"] = "test-admin-token"
+    try:
+        store = CatalogStore(tmp_path / "catalog")
+        app = create_catalog_app(root_dir=tmp_path / "catalog")
+        client = testclient.TestClient(app)
+        headers = {"X-Admin-Token": "test-admin-token"}
+
+        token, _email_hash = _create_test_session(store)
+
+        # Upload with auth.
+        package_path = tmp_path / "fixture_game.zork"
+        from anyzork.sharing import create_share_package
+        create_share_package(
+            zork_archive_path, package_path, slug="meta-reset",
+        )
+        with package_path.open("rb") as handle:
+            client.post(
+                "/api/games",
+                files={"package": ("fixture_game.zork", handle, "application/zip")},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        # Approve via admin.
+        client.post("/api/admin/games/meta_reset/approve", headers=headers)
+
+        # Owner updates metadata.
+        resp = client.put(
+            "/api/games/meta_reset",
+            data={"title": "New Title"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert resp.status_code == 200
+        game = resp.json()["game"]
+        assert game["status"] == "pending"
+        assert game["published"] is False
+    finally:
+        os.environ.pop("ANYZORK_ADMIN_TOKEN", None)
+
+
+def test_game_status_endpoint_includes_moderation_status(
+    tmp_path: Path, zork_archive_path: Path,
+) -> None:
+    app = create_catalog_app(root_dir=tmp_path / "catalog")
+    client = testclient.TestClient(app)
+    _upload_game(
+        client, zork_archive_path, tmp_path, "status-check", "",
+    )
+
+    resp = client.get("/api/games/status_check/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "pending"
+    assert data["published"] is False
