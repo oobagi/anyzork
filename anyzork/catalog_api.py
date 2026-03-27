@@ -18,6 +18,7 @@ from uuid import uuid4
 from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from anyzork.catalog_store import CatalogStore
@@ -747,5 +748,8 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
                 status_code=404, detail="Game not found.",
             )
         return {"filename": filename, "message": "File updated."}
+
+    # Mount static files last to avoid shadowing API routes
+    app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 
     return app
