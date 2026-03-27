@@ -2,6 +2,12 @@
 
 All notable changes to AnyZork are documented here, grouped by roadmap phase.
 
+## Phase 14 — Public Landing Page
+
+- Static asset serving: favicon, OG meta tags, StaticFiles mount (#125)
+- Wire landing page into FastAPI: GET / serves HTML, GET /api for descriptor (#124)
+- Landing page with catalog browser, hero, how-it-works, install (#123)
+
 ## Phase 13 — Admin Dashboard: Polish
 
 - Keyboard shortcuts: Cmd/Ctrl+K, Escape, R (#122)
