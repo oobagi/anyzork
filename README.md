@@ -60,10 +60,11 @@ anyzork play haunted-lighthouse       # start playing
 Make your own:
 
 ```bash
-anyzork generate "haunted lighthouse on a cliff" -o prompt.txt
-# paste prompt.txt into any LLM, save the response as lighthouse.zorkscript
-anyzork import lighthouse.zorkscript -o lighthouse.zork
-anyzork play lighthouse.zork
+anyzork generate "haunted lighthouse on a cliff"
+# prompt is copied to your clipboard — paste it into any LLM
+# paste the LLM's full response back into the terminal
+# AnyZork auto-compiles and adds it to your library
+anyzork play haunted-lighthouse-on-a-cliff
 ```
 
 ## Features
@@ -95,16 +96,9 @@ anyzork play lighthouse.zork
 
 ## How It Works
 
-```
- You describe a world        Any LLM writes           AnyZork compiles it       You play it
- ───────────────────   ──>   ZorkScript code   ──>    into a .zork file    ──>  deterministically
- "haunted lighthouse         (rooms, items,           (zip archive)             No AI at runtime.
-  on a cliff"                 NPCs, puzzles)                                    Pure engine.
-```
-
-1. **Generate** — `anyzork generate` builds a structured prompt from your idea (freeform or wizard-guided).
-2. **Author** — You paste that prompt into any LLM. It returns [ZorkScript](docs/dsl/ZORKSCRIPT.md) — a human-readable DSL for rooms, items, NPCs, puzzles, dialogue trees, and commands.
-3. **Compile** — `anyzork import` compiles ZorkScript into a `.zork` file (a game archive). Lint and validation catch errors before you play.
+1. **Generate** — `anyzork generate` builds a structured prompt from your idea and copies it to your clipboard.
+2. **Author** — Paste the prompt into any LLM. It returns [ZorkScript](docs/dsl/ZORKSCRIPT.md) — a human-readable DSL for rooms, items, NPCs, puzzles, dialogue trees, and commands.
+3. **Compile** — Paste the LLM's response back into the terminal. AnyZork compiles ZorkScript into a `.zork` archive automatically. Lint and validation catch errors before you play.
 4. **Play** — The deterministic engine evaluates commands, preconditions, and effects with no LLM involved. Game state is always consistent and reproducible.
 
 The optional [Narrator Mode](docs/guides/NARRATOR.md) adds an LLM prose layer on top — it rewrites descriptions for atmosphere but never touches game state.
