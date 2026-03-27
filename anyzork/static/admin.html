@@ -148,6 +148,18 @@
     text-transform: uppercase;
     letter-spacing: 0.04em;
   }
+  .stat-clickable {
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .stat-clickable:hover {
+    border-color: #3a3e4a;
+    background: var(--surface-hover);
+  }
+  .stat-active {
+    border-color: var(--accent);
+    background: var(--surface-hover);
+  }
 
   /* Game cards */
   .card {
@@ -1196,15 +1208,30 @@ function GameCard({ game, token, onToggled, onDeleted }) {
 
 function Dashboard({ token, onLogout }) {
   const [games, setGames] = useState(null);
+  const [allGames, setAllGames] = useState(null);
   const [error, setError] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
+
+  const loadAllGames = useCallback(async () => {
+    try {
+      const data = await apiFetch("/api/admin/games", { token });
+      setAllGames(data.games || []);
+    } catch (err) {
+      // Silently fail — filtered view still works
+    }
+  }, [token]);
 
   const loadGames = useCallback(async () => {
     setError(null);
     try {
-      const query = statusFilter ? `?status=${statusFilter}` : "";
-      const data = await apiFetch(`/api/admin/games${query}`, { token });
-      setGames(data.games || []);
+      if (statusFilter === "featured") {
+        const data = await apiFetch("/api/admin/games", { token });
+        setGames((data.games || []).filter((g) => g.featured));
+      } else {
+        const query = statusFilter ? `?status=${statusFilter}` : "";
+        const data = await apiFetch(`/api/admin/games${query}`, { token });
+        setGames(data.games || []);
+      }
     } catch (err) {
       if (err.message && err.message.includes("403")) {
         localStorage.removeItem("anyzork_admin_token");
@@ -1215,9 +1242,16 @@ function Dashboard({ token, onLogout }) {
     }
   }, [token, onLogout, statusFilter]);
 
+  useEffect(() => { loadAllGames(); }, [loadAllGames]);
   useEffect(() => { loadGames(); }, [loadGames]);
 
-  const countByStatus = (s) => games ? games.filter((g) => g.status === s).length : 0;
+  const refreshAll = useCallback(() => {
+    loadGames();
+    loadAllGames();
+  }, [loadGames, loadAllGames]);
+
+  const countByStatus = (s) => allGames ? allGames.filter((g) => g.status === s).length : 0;
+  const countFeatured = () => allGames ? allGames.filter((g) => g.featured).length : 0;
 
   return (
     <>
@@ -1239,42 +1273,53 @@ function Dashboard({ token, onLogout }) {
         {games && (
           <>
             <div className="stats-bar">
-              <div className="stat">
-                <div className="stat-num">{games.length}</div>
-                <div className="stat-label">{statusFilter || "Total"}</div>
+              <div
+                className={`stat stat-clickable${statusFilter === "" ? " stat-active" : ""}`}
+                onClick={() => setStatusFilter("")}
+              >
+                <div className="stat-num">{allGames ? allGames.length : games.length}</div>
+                <div className="stat-label">Total</div>
               </div>
-              <div className="stat">
+              <div
+                className={`stat stat-clickable${statusFilter === "pending" ? " stat-active" : ""}`}
+                onClick={() => setStatusFilter("pending")}
+              >
                 <div className="stat-num">{countByStatus("pending")}</div>
                 <div className="stat-label">Pending</div>
               </div>
-              <div className="stat">
+              <div
+                className={`stat stat-clickable${statusFilter === "approved" ? " stat-active" : ""}`}
+                onClick={() => setStatusFilter("approved")}
+              >
                 <div className="stat-num">{countByStatus("approved")}</div>
                 <div className="stat-label">Approved</div>
               </div>
-              <div className="stat">
+              <div
+                className={`stat stat-clickable${statusFilter === "rejected" ? " stat-active" : ""}`}
+                onClick={() => setStatusFilter("rejected")}
+              >
                 <div className="stat-num">{countByStatus("rejected")}</div>
                 <div className="stat-label">Rejected</div>
               </div>
-            </div>
-
-            <div className="filter-bar">
-              <label>Filter by status:</label>
-              <select
-                className="filter-select"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+              <div
+                className={`stat stat-clickable${statusFilter === "unpublished" ? " stat-active" : ""}`}
+                onClick={() => setStatusFilter("unpublished")}
               >
-                <option value="">All</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="unpublished">Unpublished</option>
-              </select>
+                <div className="stat-num">{countByStatus("unpublished")}</div>
+                <div className="stat-label">Unpublished</div>
+              </div>
+              <div
+                className={`stat stat-clickable${statusFilter === "featured" ? " stat-active" : ""}`}
+                onClick={() => setStatusFilter("featured")}
+              >
+                <div className="stat-num" style={{ color: "var(--accent)" }}>{countFeatured()}</div>
+                <div className="stat-label">Featured</div>
+              </div>
             </div>
 
             {games.length === 0 && (
               <div className="empty-msg">
-                {statusFilter ? `No ${statusFilter} games.` : "No games uploaded yet."}
+                {statusFilter ? `No ${statusFilter} games.` : "No games yet."}
               </div>
             )}
 
@@ -1283,8 +1328,8 @@ function Dashboard({ token, onLogout }) {
                 key={game.slug}
                 game={game}
                 token={token}
-                onToggled={loadGames}
-                onDeleted={loadGames}
+                onToggled={refreshAll}
+                onDeleted={refreshAll}
               />
             ))}
           </>
