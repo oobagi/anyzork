@@ -2,6 +2,14 @@
 
 All notable changes to AnyZork are documented here, grouped by roadmap phase.
 
+## Phase 10 — Admin Dashboard: Display & Navigation
+
+- Review queue view with pending count badge and FIFO sort (#114)
+- Sort controls: 6 options applied client-side after search/filter (#113)
+- Client-side text search with debounce across all game fields (#112)
+- Improved stats bar: all status counts, clickable filter shortcuts (#111)
+- Rich game detail panel with full metadata grid (#110)
+
 ## Phase 9 — Architecture Cleanup
 
 - Unify interaction responses and command effects into single rules pipeline (#17)

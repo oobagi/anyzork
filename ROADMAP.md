@@ -76,11 +76,11 @@ Larger refactors that are safe to defer until the feature surface stabilizes.
 
 Upgrade the admin dashboard to show all game metadata and make it easy to find and review games.
 
-- [ ] [#110 Rich game detail panel with all metadata](https://github.com/oobagi/anyzork/issues/110)
-- [ ] [#111 Improved stats bar with all status counts](https://github.com/oobagi/anyzork/issues/111)
-- [ ] [#112 Client-side text search](https://github.com/oobagi/anyzork/issues/112)
-- [ ] [#113 Sort controls](https://github.com/oobagi/anyzork/issues/113)
-- [ ] [#114 Review queue view](https://github.com/oobagi/anyzork/issues/114)
+- [x] [#110 Rich game detail panel with all metadata](https://github.com/oobagi/anyzork/issues/110)
+- [x] [#111 Improved stats bar with all status counts](https://github.com/oobagi/anyzork/issues/111)
+- [x] [#112 Client-side text search](https://github.com/oobagi/anyzork/issues/112)
+- [x] [#113 Sort controls](https://github.com/oobagi/anyzork/issues/113)
+- [x] [#114 Review queue view](https://github.com/oobagi/anyzork/issues/114)
 
 ## 11. Admin Dashboard — Bulk Operations
 
