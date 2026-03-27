@@ -660,6 +660,19 @@
   }
   .btn-confirm-delete:hover { background: #c0392b; }
   .btn-confirm-delete:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-confirm-primary {
+    padding: 10px 20px;
+    background: var(--accent);
+    border: none;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-confirm-primary:hover { background: var(--accent-hover); }
+  .btn-confirm-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* Metadata panel */
   .metadata-grid {
@@ -958,13 +971,23 @@ async function apiFetch(path, { token, method = "GET", body = null, json: sendJs
 
 // ── Confirmation Dialog ───────────────────────────────────
 
-function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel }) {
+function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel, variant = "danger" }) {
   const [busy, setBusy] = useState(false);
   const handleConfirm = async () => {
     setBusy(true);
     try { await onConfirm(); }
     finally { setBusy(false); }
   };
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === "Escape") { onCancel(); }
+      else if (e.key === "Enter" && !busy) { handleConfirm(); }
+    };
+    document.addEventListener("keydown", handleKey);
+    return () => document.removeEventListener("keydown", handleKey);
+  }, [busy, onCancel]);
+  const btnClass = variant === "primary" ? "btn-confirm-primary" : "btn-confirm-delete";
+  const busyLabel = variant === "primary" ? "Processing..." : "Deleting...";
   return (
     <div className="confirm-overlay" onClick={onCancel}>
       <div className="confirm-card" onClick={(e) => e.stopPropagation()}>
@@ -972,8 +995,8 @@ function ConfirmDialog({ title, message, confirmLabel, onConfirm, onCancel }) {
         <p>{message}</p>
         <div className="confirm-actions">
           <button className="btn-confirm-cancel" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button className="btn-confirm-delete" onClick={handleConfirm} disabled={busy}>
-            {busy ? "Deleting..." : (confirmLabel || "Delete")}
+          <button className={btnClass} onClick={handleConfirm} disabled={busy}>
+            {busy ? busyLabel : (confirmLabel || "Confirm")}
           </button>
         </div>
       </div>
@@ -1643,6 +1666,7 @@ function Dashboard({ token, onLogout, addToast }) {
   const [selected, setSelected] = useState(new Set());
   const [bulkNotes, setBulkNotes] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkConfirm, setBulkConfirm] = useState(null);
   const debounceRef = useRef(null);
 
   const loadAllGames = useCallback(async () => {
@@ -1757,15 +1781,9 @@ function Dashboard({ token, onLogout, addToast }) {
     });
   }, [sortedGames]);
 
-  const handleBulkAction = useCallback(async (action) => {
+  const executeBulkAction = useCallback(async (action) => {
     if (selected.size === 0) return;
     const slugs = Array.from(selected);
-    if (action === "delete") {
-      const confirmed = window.confirm(
-        `Are you sure you want to permanently delete ${slugs.length} game(s)? This cannot be undone.`
-      );
-      if (!confirmed) return;
-    }
     setBulkBusy(true);
     try {
       let endpoint = `/api/admin/games/bulk/${action}`;
@@ -1801,6 +1819,22 @@ function Dashboard({ token, onLogout, addToast }) {
       setBulkBusy(false);
     }
   }, [selected, bulkNotes, token, refreshAll, addToast]);
+
+  const handleBulkAction = useCallback((action) => {
+    if (selected.size === 0) return;
+    const count = selected.size;
+    if (action === "delete") {
+      setBulkConfirm({
+        title: "Delete Games",
+        message: `Are you sure you want to permanently delete ${count} game(s)? This cannot be undone.`,
+        confirmLabel: "Delete Games",
+        variant: "danger",
+        action,
+      });
+      return;
+    }
+    executeBulkAction(action);
+  }, [selected, executeBulkAction]);
 
   const countByStatus = (s) => allGames ? allGames.filter((g) => g.status === s).length : 0;
   const countFeatured = () => allGames ? allGames.filter((g) => g.featured).length : 0;
@@ -2027,6 +2061,20 @@ function Dashboard({ token, onLogout, addToast }) {
             </button>
           </div>
         </div>
+      )}
+
+      {bulkConfirm && (
+        <ConfirmDialog
+          title={bulkConfirm.title}
+          message={bulkConfirm.message}
+          confirmLabel={bulkConfirm.confirmLabel}
+          variant={bulkConfirm.variant}
+          onConfirm={async () => {
+            setBulkConfirm(null);
+            await executeBulkAction(bulkConfirm.action);
+          }}
+          onCancel={() => setBulkConfirm(null)}
+        />
       )}
     </>
   );
