@@ -653,6 +653,38 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
         store.delete_game(slug)
         return {"message": f"Game '{slug}' deleted."}
 
+    @app.patch("/api/admin/games/{slug}")
+    async def admin_update_game_metadata(
+        slug: str,
+        request: Request,
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        game = store.get_game(slug)
+        if game is None:
+            raise HTTPException(
+                status_code=404, detail="Game not found.",
+            )
+        data = await request.json()
+        meta_updates: dict[str, object] = {}
+        for field in (
+            "title", "author", "description", "tagline",
+            "homepage_url", "cover_image_url",
+        ):
+            if field in data:
+                value = data[field]
+                meta_updates[field] = value.strip() if isinstance(value, str) else value
+        if "genres" in data:
+            genres = data["genres"]
+            if isinstance(genres, list):
+                meta_updates["genres_json"] = json.dumps(
+                    [g.strip() for g in genres if isinstance(g, str) and g.strip()]
+                )
+        if meta_updates:
+            store.update_game_metadata(slug, admin=True, **meta_updates)
+        updated = store.get_game(slug)
+        return {"game": updated.to_api_dict()}
+
     @app.get("/api/admin/games/{slug}/files")
     def admin_list_game_files(
         slug: str,

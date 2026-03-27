@@ -522,12 +522,13 @@ class CatalogStore:
         return True
 
     def update_game_metadata(
-        self, slug: str, **fields: object,
+        self, slug: str, *, admin: bool = False, **fields: object,
     ) -> None:
         """Update allowed metadata fields, set updated_at, unpublish.
 
         Resets moderation status to ``pending`` so the game must be
-        re-approved after edits.
+        re-approved after edits.  When *admin* is True the current
+        status is preserved (no reset to pending).
         """
         allowed = {
             "title", "author", "description", "tagline",
@@ -538,8 +539,9 @@ class CatalogStore:
             return
         now = datetime.now(UTC).isoformat()
         updates["updated_at"] = now
-        updates["published"] = 0
-        updates["status"] = "pending"
+        if not admin:
+            updates["published"] = 0
+            updates["status"] = "pending"
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = [*updates.values(), slug]
         with sqlite3.connect(self.db_path) as conn:
