@@ -248,9 +248,28 @@
   }
   .filter-select:focus { border-color: var(--accent); }
 
+  .sort-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sort-wrap label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .search-sort-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+
   .search-wrap {
     position: relative;
-    margin-bottom: 20px;
+    flex: 1;
   }
   .search-input {
     width: 100%;
@@ -1247,6 +1266,7 @@ function Dashboard({ token, onLogout }) {
   const [statusFilter, setStatusFilter] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sortBy, setSortBy] = useState("updated_desc");
   const debounceRef = useRef(null);
 
   const loadAllGames = useCallback(async () => {
@@ -1305,6 +1325,29 @@ function Dashboard({ token, onLogout }) {
       return fields.some((f) => f && f.toLowerCase().includes(term));
     });
   }, [games, debouncedSearch]);
+
+  const sortedGames = useMemo(() => {
+    if (!filteredGames) return null;
+    const sorted = [...filteredGames];
+    switch (sortBy) {
+      case "updated_desc":
+        sorted.sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+        break;
+      case "created_desc":
+        sorted.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
+        break;
+      case "title_asc":
+        sorted.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+        break;
+      case "author_asc":
+        sorted.sort((a, b) => (a.author || "").localeCompare(b.author || ""));
+        break;
+      case "rooms_desc":
+        sorted.sort((a, b) => (b.room_count || 0) - (a.room_count || 0));
+        break;
+    }
+    return sorted;
+  }, [filteredGames, sortBy]);
 
   const refreshAll = useCallback(() => {
     loadGames();
@@ -1378,26 +1421,44 @@ function Dashboard({ token, onLogout }) {
               </div>
             </div>
 
-            <div className="search-wrap">
-              <input
-                className="search-input"
-                type="text"
-                placeholder="Search games by title, slug, author, description..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                aria-label="Search games"
-              />
-              {searchTerm && (
-                <button
-                  className="search-clear"
-                  onClick={() => setSearchTerm("")}
-                  aria-label="Clear search"
-                  type="button"
-                >&times;</button>
-              )}
+            <div className="search-sort-bar">
+              <div className="search-wrap">
+                <input
+                  className="search-input"
+                  type="text"
+                  placeholder="Search games by title, slug, author, description..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  aria-label="Search games"
+                />
+                {searchTerm && (
+                  <button
+                    className="search-clear"
+                    onClick={() => setSearchTerm("")}
+                    aria-label="Clear search"
+                    type="button"
+                  >&times;</button>
+                )}
+              </div>
+              <div className="sort-wrap">
+                <label htmlFor="sort-select">Sort:</label>
+                <select
+                  id="sort-select"
+                  className="filter-select"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  aria-label="Sort games"
+                >
+                  <option value="updated_desc">Updated (newest)</option>
+                  <option value="created_desc">Created (newest)</option>
+                  <option value="title_asc">Title (A-Z)</option>
+                  <option value="author_asc">Author (A-Z)</option>
+                  <option value="rooms_desc">Rooms (most)</option>
+                </select>
+              </div>
             </div>
 
-            {filteredGames.length === 0 && (
+            {sortedGames.length === 0 && (
               <div className="empty-msg">
                 {debouncedSearch.trim()
                   ? `No games matching "${debouncedSearch.trim()}"`
@@ -1407,7 +1468,7 @@ function Dashboard({ token, onLogout }) {
               </div>
             )}
 
-            {filteredGames.map((game) => (
+            {sortedGames.map((game) => (
               <GameCard
                 key={game.slug}
                 game={game}
