@@ -1,14 +1,26 @@
 services:
   catalog:
-    build:
-      context: .
-      dockerfile: Dockerfile.catalog
+    image: ghcr.io/oobagi/anyzork-catalog:latest
     ports:
       - "8000:8000"
     environment:
       - ANYZORK_ADMIN_TOKEN=${ANYZORK_ADMIN_TOKEN}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - ANYZORK_EMAIL_FROM=${ANYZORK_EMAIL_FROM:-}
     volumes:
       - catalog-data:/root/.anyzork/public_catalog
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=300
+      - WATCHTOWER_LABEL_ENABLE=true
     restart: unless-stopped
 
 volumes:
