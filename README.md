@@ -2,7 +2,17 @@
       <img src="https://anyzork.com/static/anyzork-header.png" alt="AnyZork" width="520">
   <p><strong>A Zork-style text adventure generator. Describe a world to any LLM, get back a complete game, and play it on a fully deterministic engine — no AI needed at runtime.</strong></p>
   <p>
+    <a href="https://pypi.org/project/anyzork/"><img src="https://img.shields.io/pypi/v/anyzork?label=pypi" alt="PyPI" /></a>
+    <a href="https://github.com/oobagi/anyzork/blob/main/LICENSE"><img src="https://img.shields.io/github/license/oobagi/anyzork" alt="License" /></a>
+    <a href="https://github.com/oobagi/anyzork/stargazers"><img src="https://img.shields.io/github/stars/oobagi/anyzork" alt="Stars" /></a>
+    <a href="https://github.com/oobagi/anyzork/issues"><img src="https://img.shields.io/github/issues/oobagi/anyzork" alt="Issues" /></a>
+  </p>
+  <p>
     <a href="#quickstart"><strong>Quickstart</strong></a>
+    ·
+    <a href="#features"><strong>Features</strong></a>
+    ·
+    <a href="#how-it-works"><strong>How It Works</strong></a>
     ·
     <a href="#docs"><strong>Docs</strong></a>
     ·
