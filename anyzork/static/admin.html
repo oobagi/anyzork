@@ -1702,6 +1702,7 @@ function Dashboard({ token, onLogout, addToast }) {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkConfirm, setBulkConfirm] = useState(null);
   const debounceRef = useRef(null);
+  const searchRef = useRef(null);
 
   const loadAllGames = useCallback(async () => {
     try {
@@ -1888,6 +1889,40 @@ function Dashboard({ token, onLogout, addToast }) {
     });
   }, []);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const tag = e.target.tagName;
+      const isTyping = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+
+      // Cmd+K or Ctrl+K: focus search
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+
+      // Don't fire shortcuts when typing in form fields
+      if (isTyping) return;
+
+      // Escape: clear search, close panels, deselect all
+      if (e.key === "Escape") {
+        if (searchTerm) { setSearchTerm(""); }
+        if (selected.size > 0) { setSelected(new Set()); }
+        return;
+      }
+
+      // R: toggle Review Queue
+      if (e.key === "r" || e.key === "R") {
+        toggleReviewMode();
+        return;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [searchTerm, selected, toggleReviewMode]);
+
   return (
     <>
       <header className="header">
@@ -1973,6 +2008,7 @@ function Dashboard({ token, onLogout, addToast }) {
               </div>
               <div className="search-wrap">
                 <input
+                  ref={searchRef}
                   className="search-input"
                   type="text"
                   placeholder="Search games by title, slug, author, description..."
