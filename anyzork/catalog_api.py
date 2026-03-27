@@ -460,6 +460,83 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
             ],
         }
 
+    @app.post("/api/admin/games/bulk/approve")
+    async def admin_bulk_approve(
+        request: Request,
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        data = await request.json()
+        slugs = data.get("slugs", [])
+        review_notes = data.get("review_notes", "")
+        results = []
+        for slug in slugs:
+            try:
+                game = store.get_game(slug)
+                if not game:
+                    results.append(
+                        {"slug": slug, "status": "error", "detail": "Not found"},
+                    )
+                    continue
+                store.set_status(slug, status="approved", review_notes=review_notes)
+                results.append({"slug": slug, "status": "ok"})
+            except Exception as e:
+                results.append(
+                    {"slug": slug, "status": "error", "detail": str(e)},
+                )
+        return {"results": results}
+
+    @app.post("/api/admin/games/bulk/reject")
+    async def admin_bulk_reject(
+        request: Request,
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        data = await request.json()
+        slugs = data.get("slugs", [])
+        review_notes = data.get("review_notes", "")
+        results = []
+        for slug in slugs:
+            try:
+                game = store.get_game(slug)
+                if not game:
+                    results.append(
+                        {"slug": slug, "status": "error", "detail": "Not found"},
+                    )
+                    continue
+                store.set_status(slug, status="rejected", review_notes=review_notes)
+                results.append({"slug": slug, "status": "ok"})
+            except Exception as e:
+                results.append(
+                    {"slug": slug, "status": "error", "detail": str(e)},
+                )
+        return {"results": results}
+
+    @app.post("/api/admin/games/bulk/delete")
+    async def admin_bulk_delete(
+        request: Request,
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        data = await request.json()
+        slugs = data.get("slugs", [])
+        results = []
+        for slug in slugs:
+            try:
+                game = store.get_game(slug)
+                if not game:
+                    results.append(
+                        {"slug": slug, "status": "error", "detail": "Not found"},
+                    )
+                    continue
+                store.delete_game(slug)
+                results.append({"slug": slug, "status": "ok"})
+            except Exception as e:
+                results.append(
+                    {"slug": slug, "status": "error", "detail": str(e)},
+                )
+        return {"results": results}
+
     @app.post("/api/admin/games/{slug}/publish")
     def admin_publish_game(
         slug: str,

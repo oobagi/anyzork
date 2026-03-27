@@ -770,6 +770,114 @@
     margin: 0 auto 12px;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Bulk action bar */
+  .bulk-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--surface);
+    border-top: 2px solid var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    z-index: 50;
+    gap: 12px;
+    box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.4);
+  }
+  .bulk-bar-left {
+    font-size: 0.9rem;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--accent);
+  }
+  .bulk-bar-center {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    justify-content: center;
+  }
+  .bulk-bar-center .bulk-notes {
+    padding: 8px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: 0.85rem;
+    outline: none;
+    font-family: inherit;
+    width: 240px;
+    resize: none;
+  }
+  .bulk-bar-center .bulk-notes:focus { border-color: var(--accent); }
+  .bulk-bar-center .bulk-notes::placeholder { color: var(--text-muted); }
+  .bulk-bar-right {
+    display: flex;
+    align-items: center;
+  }
+  .btn-bulk-clear {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+  }
+  .btn-bulk-clear:hover { border-color: var(--text); color: var(--text); }
+
+  /* Card checkbox */
+  .card-checkbox {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-radius: 5px;
+    background: var(--bg);
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+    transition: all 0.15s;
+  }
+  .card-checkbox:hover { border-color: var(--accent); }
+  .card-checkbox:checked {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .card-checkbox:checked::after {
+    content: "";
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 6px;
+    height: 11px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+  .card.card-selected {
+    border-color: var(--accent);
+    background: rgba(108, 99, 255, 0.04);
+  }
+
+  /* Select All wrap */
+  .select-all-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .select-all-wrap label {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    cursor: pointer;
+  }
 </style>
 </head>
 <body>
@@ -1158,7 +1266,7 @@ function LoginScreen({ onLogin }) {
 
 // ── Game Card ─────────────────────────────────────────────
 
-function GameCard({ game, token, onToggled, onDeleted }) {
+function GameCard({ game, token, onToggled, onDeleted, selected, onSelect }) {
   const [busy, setBusy] = useState(false);
   const [expandedSection, setExpandedSection] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -1198,9 +1306,18 @@ function GameCard({ game, token, onToggled, onDeleted }) {
   const genres = game.genres || [];
 
   return (
-    <div className="card">
+    <div className={`card${selected ? " card-selected" : ""}`}>
       <div className="card-top">
-        <div className="card-title">{game.title || game.slug}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <input
+            type="checkbox"
+            className="card-checkbox"
+            checked={selected}
+            onChange={() => onSelect(game.slug)}
+            aria-label={`Select ${game.title || game.slug}`}
+          />
+          <div className="card-title">{game.title || game.slug}</div>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           <span className={badgeClass}>{status}</span>
           {game.featured && <span className="badge badge-featured">Featured</span>}
@@ -1301,6 +1418,9 @@ function Dashboard({ token, onLogout }) {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState("updated_desc");
   const [reviewMode, setReviewMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [bulkNotes, setBulkNotes] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const debounceRef = useRef(null);
 
   const loadAllGames = useCallback(async () => {
@@ -1390,6 +1510,66 @@ function Dashboard({ token, onLogout }) {
     loadGames();
     loadAllGames();
   }, [loadGames, loadAllGames]);
+
+  // Clear selection when filter or search changes
+  useEffect(() => {
+    setSelected(new Set());
+  }, [statusFilter, debouncedSearch]);
+
+  const handleSelect = useCallback((slug) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(slug)) next.delete(slug);
+      else next.add(slug);
+      return next;
+    });
+  }, []);
+
+  const handleSelectAll = useCallback(() => {
+    if (!sortedGames) return;
+    setSelected((prev) => {
+      const allSlugs = sortedGames.map((g) => g.slug);
+      const allSelected = allSlugs.every((s) => prev.has(s));
+      if (allSelected) return new Set();
+      return new Set(allSlugs);
+    });
+  }, [sortedGames]);
+
+  const handleBulkAction = useCallback(async (action) => {
+    if (selected.size === 0) return;
+    const slugs = Array.from(selected);
+    if (action === "delete") {
+      const confirmed = window.confirm(
+        `Are you sure you want to permanently delete ${slugs.length} game(s)? This cannot be undone.`
+      );
+      if (!confirmed) return;
+    }
+    setBulkBusy(true);
+    try {
+      const body = { slugs };
+      if (action !== "delete") body.review_notes = bulkNotes;
+      const data = await apiFetch(`/api/admin/games/bulk/${action}`, {
+        token,
+        method: "POST",
+        body,
+        json: true,
+      });
+      const errors = (data.results || []).filter((r) => r.status === "error");
+      if (errors.length > 0) {
+        alert(
+          `Bulk ${action}: ${errors.length} error(s):\n` +
+          errors.map((e) => `${e.slug}: ${e.detail}`).join("\n")
+        );
+      }
+      setSelected(new Set());
+      setBulkNotes("");
+      refreshAll();
+    } catch (err) {
+      alert(err.message || `Bulk ${action} failed.`);
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [selected, bulkNotes, token, refreshAll]);
 
   const countByStatus = (s) => allGames ? allGames.filter((g) => g.status === s).length : 0;
   const countFeatured = () => allGames ? allGames.filter((g) => g.featured).length : 0;
@@ -1485,6 +1665,16 @@ function Dashboard({ token, onLogout }) {
             </div>
 
             <div className="search-sort-bar">
+              <div className="select-all-wrap">
+                <input
+                  type="checkbox"
+                  className="card-checkbox"
+                  checked={sortedGames && sortedGames.length > 0 && sortedGames.every((g) => selected.has(g.slug))}
+                  onChange={handleSelectAll}
+                  aria-label="Select all visible games"
+                />
+                <label onClick={handleSelectAll}>All</label>
+              </div>
               <div className="search-wrap">
                 <input
                   className="search-input"
@@ -1539,11 +1729,59 @@ function Dashboard({ token, onLogout }) {
                 token={token}
                 onToggled={refreshAll}
                 onDeleted={refreshAll}
+                selected={selected.has(game.slug)}
+                onSelect={handleSelect}
               />
             ))}
           </>
         )}
       </main>
+
+      {selected.size > 0 && (
+        <div className="bulk-bar">
+          <div className="bulk-bar-left">{selected.size} selected</div>
+          <div className="bulk-bar-center">
+            <input
+              className="bulk-notes"
+              type="text"
+              placeholder="Review notes (optional)..."
+              value={bulkNotes}
+              onChange={(e) => setBulkNotes(e.target.value)}
+              disabled={bulkBusy}
+            />
+            <button
+              className="btn-approve"
+              onClick={() => handleBulkAction("approve")}
+              disabled={bulkBusy}
+            >
+              {bulkBusy ? "..." : "Approve"}
+            </button>
+            <button
+              className="btn-reject"
+              onClick={() => handleBulkAction("reject")}
+              disabled={bulkBusy}
+            >
+              {bulkBusy ? "..." : "Reject"}
+            </button>
+            <button
+              className="btn-delete"
+              onClick={() => handleBulkAction("delete")}
+              disabled={bulkBusy}
+            >
+              {bulkBusy ? "..." : "Delete"}
+            </button>
+          </div>
+          <div className="bulk-bar-right">
+            <button
+              className="btn-bulk-clear"
+              onClick={() => { setSelected(new Set()); setBulkNotes(""); }}
+              disabled={bulkBusy}
+            >
+              Clear
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
