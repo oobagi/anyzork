@@ -1,0 +1,3 @@
+anyzork.com {
+	reverse_proxy catalog:8000
+}

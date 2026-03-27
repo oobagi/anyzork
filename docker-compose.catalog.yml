@@ -1,8 +1,8 @@
 services:
   catalog:
     image: ghcr.io/oobagi/anyzork-catalog:latest
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     environment:
       - ANYZORK_ADMIN_TOKEN=${ANYZORK_ADMIN_TOKEN}
       - RESEND_API_KEY=${RESEND_API_KEY:-}
@@ -12,6 +12,17 @@ services:
     restart: unless-stopped
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    restart: unless-stopped
 
   watchtower:
     image: containrrr/watchtower
@@ -25,3 +36,5 @@ services:
 
 volumes:
   catalog-data:
+  caddy-data:
+  caddy-config:
