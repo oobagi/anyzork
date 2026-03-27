@@ -512,6 +512,32 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
                 )
         return {"results": results}
 
+    @app.post("/api/admin/games/bulk/feature")
+    async def admin_bulk_feature(
+        request: Request,
+        x_admin_token: Annotated[str | None, Header()] = None,
+    ) -> dict[str, object]:
+        _require_admin_token(x_admin_token)
+        data = await request.json()
+        slugs = data.get("slugs", [])
+        featured = bool(data.get("featured", True))
+        results = []
+        for slug in slugs:
+            try:
+                game = store.get_game(slug)
+                if not game:
+                    results.append(
+                        {"slug": slug, "status": "error", "detail": "Not found"},
+                    )
+                    continue
+                store.set_featured(slug, featured=featured)
+                results.append({"slug": slug, "status": "ok"})
+            except Exception as e:
+                results.append(
+                    {"slug": slug, "status": "error", "detail": str(e)},
+                )
+        return {"results": results}
+
     @app.post("/api/admin/games/bulk/delete")
     async def admin_bulk_delete(
         request: Request,
