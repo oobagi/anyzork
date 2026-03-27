@@ -115,12 +115,17 @@ def create_catalog_app(*, root_dir: Path | None = None) -> FastAPI:
         admin_path = Path(__file__).parent / "static" / "admin.html"
         return HTMLResponse(admin_path.read_text())
 
-    @app.get("/")
-    def index() -> dict[str, object]:
+    @app.get("/", response_class=HTMLResponse)
+    def landing_page() -> HTMLResponse:
+        index_path = Path(__file__).parent / "static" / "index.html"
+        return HTMLResponse(index_path.read_text())
+
+    @app.get("/api")
+    def api_index() -> dict[str, object]:
         return {
             "name": "AnyZork Catalog API",
             "catalog_url": "/catalog.json",
-            "upload_url": "/api/games",
+            "games_url": "/api/games",
         }
 
     @app.get("/healthz")
