@@ -2,6 +2,23 @@
 
 All notable changes to AnyZork are documented here, grouped by roadmap phase.
 
+## Phase 13 — Admin Dashboard: Polish
+
+- Keyboard shortcuts: Cmd/Ctrl+K, Escape, R (#122)
+- Loading skeletons and context-aware empty states (#121)
+- Confirm dialog: variant prop, Enter/Escape keyboard support (#120)
+- Toast notifications replacing all alert() calls (#119)
+
+## Phase 12 — Admin Dashboard: Metadata Editing
+
+- Inline metadata editor with save/cancel (#118)
+- Admin metadata PATCH endpoint without status reset (#117)
+
+## Phase 11 — Admin Dashboard: Bulk Operations
+
+- Bulk feature/unfeature endpoint and UI (#116)
+- Bulk approve/reject/delete with per-slug results (#115)
+
 ## Phase 10 — Admin Dashboard: Display & Navigation
 
 - Review queue view with pending count badge and FIFO sort (#114)
