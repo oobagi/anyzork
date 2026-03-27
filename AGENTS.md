@@ -38,7 +38,7 @@ No LLM is required at runtime unless the player explicitly enables narrator mode
 | Configuration | [docs/guides/CONFIGURATION.md](docs/guides/CONFIGURATION.md) | Config file, env vars, providers |
 | Narrator Mode | [docs/guides/NARRATOR.md](docs/guides/NARRATOR.md) | Optional LLM prose layer |
 | Sharing Games | [docs/server/SHARING.md](docs/server/SHARING.md) | Publishing, browsing, installing |
-| ADR-001: SQLite | [docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md](docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md) | SQLite rationale for compiled games and saves |
+| ADR-001: SQLite | [docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md](docs/adrs/ADR-001-SQLITE-GAME-STORAGE.md) | Original SQLite rationale (superseded) |
 
 ## Tech Stack
 
