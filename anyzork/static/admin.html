@@ -806,6 +806,27 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* Skeleton loading cards */
+  .skeleton-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 14px;
+  }
+  .skeleton-line {
+    background: linear-gradient(90deg, var(--bg) 25%, var(--surface-hover) 50%, var(--bg) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 6px;
+    margin-bottom: 10px;
+  }
+  .skeleton-title { height: 20px; width: 60%; }
+  .skeleton-meta { height: 14px; width: 40%; }
+  .skeleton-tags { height: 14px; width: 75%; margin-top: 6px; }
+  .skeleton-actions { height: 36px; width: 100%; margin-top: 14px; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
   /* Bulk action bar */
   .bulk-bar {
     position: fixed;
@@ -1652,6 +1673,19 @@ function GameCard({ game, token, onToggled, onDeleted, selected, onSelect, addTo
   );
 }
 
+// ── Skeleton Card ─────────────────────────────────────────
+
+function SkeletonCard() {
+  return (
+    <div className="skeleton-card" aria-hidden="true">
+      <div className="skeleton-line skeleton-title" />
+      <div className="skeleton-line skeleton-meta" />
+      <div className="skeleton-line skeleton-tags" />
+      <div className="skeleton-line skeleton-actions" />
+    </div>
+  );
+}
+
 // ── Dashboard ─────────────────────────────────────────────
 
 function Dashboard({ token, onLogout, addToast }) {
@@ -1876,10 +1910,7 @@ function Dashboard({ token, onLogout, addToast }) {
         {error && <div className="error-msg">{error}</div>}
 
         {!games && !error && (
-          <div className="loading">
-            <div className="spinner" />
-            Loading games...
-          </div>
+          <>{[0,1,2].map(i => <SkeletonCard key={i} />)}</>
         )}
 
         {games && (
@@ -1979,11 +2010,15 @@ function Dashboard({ token, onLogout, addToast }) {
 
             {sortedGames.length === 0 && (
               <div className="empty-msg">
-                {debouncedSearch.trim()
-                  ? `No games matching "${debouncedSearch.trim()}"`
-                  : statusFilter
-                    ? `No ${statusFilter} games.`
-                    : "No games yet."}
+                {reviewMode && !debouncedSearch.trim()
+                  ? "No pending games \u2014 you're all caught up!"
+                  : debouncedSearch.trim() && statusFilter
+                    ? `No ${statusFilter} games matching "${debouncedSearch.trim()}"`
+                    : debouncedSearch.trim()
+                      ? `No games matching "${debouncedSearch.trim()}"`
+                      : statusFilter
+                        ? `No ${statusFilter} games.`
+                        : "No games uploaded yet."}
               </div>
             )}
 
