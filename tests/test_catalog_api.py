@@ -70,9 +70,9 @@ def test_catalog_api_uploads_games_as_unpublished_submissions(
     app = create_catalog_app(root_dir=tmp_path / "catalog")
     client = testclient.TestClient(app)
 
-    root_response = client.get("/")
+    root_response = client.get("/api")
     assert root_response.status_code == 200
-    assert root_response.json()["upload_url"] == "/api/games"
+    assert root_response.json()["games_url"] == "/api/games"
 
     with package_path.open("rb") as handle:
         response = client.post(
