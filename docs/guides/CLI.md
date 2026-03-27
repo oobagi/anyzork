@@ -213,6 +213,30 @@ anyzork delete haunted-lighthouse --save speedrun
 
 ---
 
+## Account
+
+### `login`
+
+Log in to AnyZork with email OTP. Required for `publish`, `unpublish`, `update`, and `my-games`.
+
+```
+anyzork login
+```
+
+No options. The command prompts for your email, sends a one-time code, and saves the session to `~/.anyzork/config.toml`.
+
+### `logout`
+
+Log out of AnyZork.
+
+```
+anyzork logout
+```
+
+No options. Clears the stored session token.
+
+---
+
 ## Sharing & Catalog
 
 ### `publish`
@@ -237,6 +261,60 @@ anyzork publish haunted-lighthouse
 # Check publish status
 anyzork publish --status haunted-lighthouse
 ```
+
+### `unpublish`
+
+Remove a published game from the catalog. Requires `login`.
+
+```
+anyzork unpublish SLUG [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `SLUG` | Catalog slug of the game to remove. Required. |
+| `-y, --yes` | Skip the confirmation prompt. |
+
+```bash
+anyzork unpublish haunted-lighthouse
+anyzork unpublish haunted-lighthouse --yes
+```
+
+### `update`
+
+Update a published game's metadata or replace its package. Requires `login`.
+
+```
+anyzork update SLUG [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `SLUG` | Catalog slug of the game to update. Required. |
+| `--title TEXT` | New title. |
+| `--author TEXT` | New author. |
+| `--description TEXT` | New description. |
+| `--tagline TEXT` | New tagline. |
+| `--genres TEXT` | Comma-separated genre tags. |
+| `--package PATH` | New `.zork` package file. |
+
+```bash
+# Update metadata
+anyzork update haunted-lighthouse --tagline "A new tagline"
+
+# Replace the package
+anyzork update haunted-lighthouse --package ./lighthouse-v2.zork
+```
+
+### `my-games`
+
+List your published games. Requires `login`.
+
+```
+anyzork my-games
+```
+
+No options. Displays a table of games you've published to the catalog.
 
 ### `browse`
 

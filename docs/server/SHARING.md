@@ -177,7 +177,5 @@ curl -X POST http://localhost:8000/api/admin/games/<slug>/unpublish \
 ## Current limitations
 
 - **No automated moderation.** All uploads enter a pending state and require manual approval before they appear in `browse` or can be installed by ref.
-- **No authentication for uploaders.** Anyone can submit a package to the upload endpoint. There is no account system or upload tokens yet.
-- **No versioning for published games.** Re-uploading with the same slug is rejected unless the server-side store allows replacement. There is no update-in-place flow.
 - **Remote installs are domain-locked.** `anyzork install <ref>` only downloads from `anyzork.com` (or subdomains). Packages from other origins must be downloaded manually and installed as local `.zork` files.
 - **50 MB upload cap.** The catalog API rejects packages larger than 50 MB.
