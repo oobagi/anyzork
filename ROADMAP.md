@@ -109,6 +109,6 @@ UI quality improvements for the admin experience.
 
 A public-facing homepage at anyzork.com with catalog browsing and install instructions.
 
-- [ ] [#123 Landing page with catalog browser](https://github.com/oobagi/anyzork/issues/123)
-- [ ] [#124 Wire landing page into FastAPI routing](https://github.com/oobagi/anyzork/issues/124)
-- [ ] [#125 Static asset serving for favicon and OG image](https://github.com/oobagi/anyzork/issues/125)
+- [x] [#123 Landing page with catalog browser](https://github.com/oobagi/anyzork/issues/123)
+- [x] [#124 Wire landing page into FastAPI routing](https://github.com/oobagi/anyzork/issues/124)
+- [x] [#125 Static asset serving for favicon and OG image](https://github.com/oobagi/anyzork/issues/125)
