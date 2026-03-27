@@ -563,6 +563,92 @@
   .btn-confirm-delete:hover { background: #c0392b; }
   .btn-confirm-delete:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  /* Metadata panel */
+  .metadata-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    align-items: baseline;
+  }
+  .metadata-key {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .metadata-value {
+    font-size: 0.88rem;
+    color: var(--text);
+    word-break: break-word;
+    min-width: 0;
+  }
+  .metadata-value a {
+    color: var(--accent);
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .metadata-value a:hover { text-decoration: underline; }
+  .card-description {
+    width: 100%;
+    font-size: 0.88rem;
+    color: var(--text);
+    line-height: 1.6;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 12px;
+    white-space: pre-wrap;
+  }
+  .card-tagline {
+    font-size: 0.9rem;
+    font-style: italic;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .metadata-thumbnail {
+    max-height: 60px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    object-fit: cover;
+  }
+  .btn-copy {
+    padding: 4px 10px;
+    background: var(--bg);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 8px;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn-copy:hover { border-color: var(--accent); color: var(--accent); }
+  .section-toggle-group {
+    display: inline-flex;
+    gap: 0;
+    margin: 0;
+  }
+  .section-toggle-group .btn-detail {
+    border-radius: 0;
+  }
+  .section-toggle-group .btn-detail:first-child {
+    border-radius: 8px 0 0 8px;
+  }
+  .section-toggle-group .btn-detail:last-child {
+    border-radius: 0 8px 8px 0;
+    border-left: none;
+  }
+  .section-toggle-group .btn-detail.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--surface-hover);
+  }
+
   /* States */
   .loading, .error-msg, .empty-msg {
     text-align: center;
@@ -773,6 +859,159 @@ function GameDetail({ slug, token }) {
   );
 }
 
+// ── Metadata Panel ────────────────────────────────────────
+
+function MetadataPanel({ game }) {
+  const [copyStatus, setCopyStatus] = useState(null);
+
+  const handleCopy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyStatus("Copied!");
+      setTimeout(() => setCopyStatus(null), 1500);
+    } catch {
+      setCopyStatus("Failed");
+      setTimeout(() => setCopyStatus(null), 1500);
+    }
+  };
+
+  const formatDate = (val) => {
+    if (!val) return null;
+    try { return new Date(val).toLocaleString(); }
+    catch { return val; }
+  };
+
+  return (
+    <div className="detail-section">
+      <h3>Metadata</h3>
+
+      {game.tagline && (
+        <div className="card-tagline">{game.tagline}</div>
+      )}
+
+      {game.description && (
+        <div className="card-description">{game.description}</div>
+      )}
+
+      <div className="metadata-grid">
+        {game.slug && (
+          <>
+            <span className="metadata-key">Slug</span>
+            <span className="metadata-value">{game.slug}</span>
+          </>
+        )}
+        {game.title && (
+          <>
+            <span className="metadata-key">Title</span>
+            <span className="metadata-value">{game.title}</span>
+          </>
+        )}
+        {game.author && (
+          <>
+            <span className="metadata-key">Author</span>
+            <span className="metadata-value">{game.author}</span>
+          </>
+        )}
+        {game.status && (
+          <>
+            <span className="metadata-key">Status</span>
+            <span className="metadata-value">{game.status}</span>
+          </>
+        )}
+        {game.room_count != null && (
+          <>
+            <span className="metadata-key">Rooms</span>
+            <span className="metadata-value">{game.room_count}</span>
+          </>
+        )}
+        {game.genres && game.genres.length > 0 && (
+          <>
+            <span className="metadata-key">Genres</span>
+            <span className="metadata-value">{game.genres.join(", ")}</span>
+          </>
+        )}
+        {game.featured != null && (
+          <>
+            <span className="metadata-key">Featured</span>
+            <span className="metadata-value">{game.featured ? "Yes" : "No"}</span>
+          </>
+        )}
+        {game.homepage_url && (
+          <>
+            <span className="metadata-key">Homepage</span>
+            <span className="metadata-value">
+              <a href={game.homepage_url} target="_blank" rel="noopener noreferrer">{game.homepage_url}</a>
+            </span>
+          </>
+        )}
+        {game.cover_image_url && (
+          <>
+            <span className="metadata-key">Cover Image</span>
+            <span className="metadata-value" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <img
+                className="metadata-thumbnail"
+                src={game.cover_image_url}
+                alt={`${game.title || game.slug} cover`}
+                onError={(e) => { e.target.style.display = "none"; }}
+              />
+              <a href={game.cover_image_url} target="_blank" rel="noopener noreferrer">View full</a>
+            </span>
+          </>
+        )}
+        {game.download_url && (
+          <>
+            <span className="metadata-key">Download URL</span>
+            <span className="metadata-value" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ minWidth: 0, wordBreak: "break-all" }}>{game.download_url}</span>
+              <button className="btn-copy" onClick={() => handleCopy(game.download_url)}>
+                {copyStatus || "Copy"}
+              </button>
+            </span>
+          </>
+        )}
+        {game.runtime_compat_version && (
+          <>
+            <span className="metadata-key">Runtime Version</span>
+            <span className="metadata-value">{game.runtime_compat_version}</span>
+          </>
+        )}
+        {game.prompt_system_version && (
+          <>
+            <span className="metadata-key">Prompt Version</span>
+            <span className="metadata-value">{game.prompt_system_version}</span>
+          </>
+        )}
+        {game.review_notes && (
+          <>
+            <span className="metadata-key">Review Notes</span>
+            <span className="metadata-value">{game.review_notes}</span>
+          </>
+        )}
+        {game.created_at && (
+          <>
+            <span className="metadata-key">Created</span>
+            <span className="metadata-value">{formatDate(game.created_at)}</span>
+          </>
+        )}
+        {game.updated_at && (
+          <>
+            <span className="metadata-key">Updated</span>
+            <span className="metadata-value">{formatDate(game.updated_at)}</span>
+          </>
+        )}
+        {game.checksum_sha256 && (
+          <>
+            <span className="metadata-key">SHA-256</span>
+            <span className="metadata-value" style={{ fontFamily: '"SF Mono", Monaco, Consolas, monospace', fontSize: "0.78rem" }}>
+              {game.checksum_sha256}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Login Screen ──────────────────────────────────────────
 
 function LoginScreen({ onLogin }) {
@@ -823,7 +1062,7 @@ function LoginScreen({ onLogin }) {
 
 function GameCard({ game, token, onToggled, onDeleted }) {
   const [busy, setBusy] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expandedSection, setExpandedSection] = useState(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [reviewNotes, setReviewNotes] = useState(game.review_notes || "");
 
@@ -918,15 +1157,27 @@ function GameCard({ game, token, onToggled, onDeleted }) {
             </button>
           </>
         )}
-        <button className="btn-detail" onClick={() => setExpanded(!expanded)}>
-          {expanded ? "Collapse" : "Files"}
-        </button>
+        <div className="section-toggle-group">
+          <button
+            className={`btn-detail${expandedSection === "metadata" ? " active" : ""}`}
+            onClick={() => setExpandedSection(expandedSection === "metadata" ? null : "metadata")}
+          >
+            Metadata
+          </button>
+          <button
+            className={`btn-detail${expandedSection === "files" ? " active" : ""}`}
+            onClick={() => setExpandedSection(expandedSection === "files" ? null : "files")}
+          >
+            Files
+          </button>
+        </div>
         <button className="btn-delete" onClick={() => setShowConfirm(true)}>
           Delete
         </button>
       </div>
 
-      {expanded && <GameDetail slug={game.slug} token={token} />}
+      {expandedSection === "metadata" && <MetadataPanel game={game} />}
+      {expandedSection === "files" && <GameDetail slug={game.slug} token={token} />}
 
       {showConfirm && (
         <ConfirmDialog
