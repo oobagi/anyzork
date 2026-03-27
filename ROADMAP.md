@@ -86,24 +86,24 @@ Upgrade the admin dashboard to show all game metadata and make it easy to find a
 
 Let admins process multiple games at once — depends on display upgrades (#110–#114).
 
-- [ ] [#115 Bulk approve/reject/delete operations](https://github.com/oobagi/anyzork/issues/115)
-- [ ] [#116 Bulk feature/unfeature](https://github.com/oobagi/anyzork/issues/116)
+- [x] [#115 Bulk approve/reject/delete operations](https://github.com/oobagi/anyzork/issues/115)
+- [x] [#116 Bulk feature/unfeature](https://github.com/oobagi/anyzork/issues/116)
 
 ## 12. Admin Dashboard — Metadata Editing
 
 Admin-scoped metadata editing without ownership restrictions.
 
-- [ ] [#117 Admin metadata PATCH endpoint](https://github.com/oobagi/anyzork/issues/117)
-- [ ] [#118 Inline metadata editor](https://github.com/oobagi/anyzork/issues/118)
+- [x] [#117 Admin metadata PATCH endpoint](https://github.com/oobagi/anyzork/issues/117)
+- [x] [#118 Inline metadata editor](https://github.com/oobagi/anyzork/issues/118)
 
 ## 13. Admin Dashboard — Polish
 
 UI quality improvements for the admin experience.
 
-- [ ] [#119 Toast notifications](https://github.com/oobagi/anyzork/issues/119)
-- [ ] [#120 Confirm dialog improvements](https://github.com/oobagi/anyzork/issues/120)
-- [ ] [#121 Loading skeletons and empty states](https://github.com/oobagi/anyzork/issues/121)
-- [ ] [#122 Keyboard shortcuts](https://github.com/oobagi/anyzork/issues/122)
+- [x] [#119 Toast notifications](https://github.com/oobagi/anyzork/issues/119)
+- [x] [#120 Confirm dialog improvements](https://github.com/oobagi/anyzork/issues/120)
+- [x] [#121 Loading skeletons and empty states](https://github.com/oobagi/anyzork/issues/121)
+- [x] [#122 Keyboard shortcuts](https://github.com/oobagi/anyzork/issues/122)
 
 ## 14. Public Landing Page
 
