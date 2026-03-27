@@ -706,6 +706,28 @@
     color: var(--text-muted);
     margin-bottom: 12px;
   }
+  .metadata-edit-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .metadata-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .metadata-form-group label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+  .metadata-form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+  }
   .metadata-thumbnail {
     max-height: 60px;
     border-radius: 6px;
@@ -1067,8 +1089,20 @@ function GameDetail({ slug, token }) {
 
 // ── Metadata Panel ────────────────────────────────────────
 
-function MetadataPanel({ game }) {
+function MetadataPanel({ game, token, onSaved }) {
   const [copyStatus, setCopyStatus] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
+  const [formData, setFormData] = useState(() => ({
+    title: game.title || "",
+    author: game.author || "",
+    description: game.description || "",
+    tagline: game.tagline || "",
+    genres: (game.genres || []).join(", "),
+    homepage_url: game.homepage_url || "",
+    cover_image_url: game.cover_image_url || "",
+  }));
 
   const handleCopy = async (text) => {
     try {
@@ -1087,133 +1121,278 @@ function MetadataPanel({ game }) {
     catch { return val; }
   };
 
+  const handleEdit = () => {
+    setFormData({
+      title: game.title || "",
+      author: game.author || "",
+      description: game.description || "",
+      tagline: game.tagline || "",
+      genres: (game.genres || []).join(", "),
+      homepage_url: game.homepage_url || "",
+      cover_image_url: game.cover_image_url || "",
+    });
+    setSaveError(null);
+    setEditing(true);
+  };
+
+  const handleCancel = () => {
+    setEditing(false);
+    setSaveError(null);
+  };
+
+  const handleChange = (field) => (e) => {
+    setFormData((prev) => ({ ...prev, [field]: e.target.value }));
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const body = {
+        title: formData.title,
+        author: formData.author,
+        description: formData.description,
+        tagline: formData.tagline,
+        genres: formData.genres.split(",").map((g) => g.trim()).filter(Boolean),
+        homepage_url: formData.homepage_url,
+        cover_image_url: formData.cover_image_url,
+      };
+      await apiFetch(`/api/admin/games/${game.slug}`, {
+        token,
+        method: "PATCH",
+        body,
+        json: true,
+      });
+      setEditing(false);
+      if (onSaved) onSaved();
+    } catch (err) {
+      setSaveError(err.message || "Failed to save metadata.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="detail-section">
-      <h3>Metadata</h3>
-
-      {game.tagline && (
-        <div className="card-tagline">{game.tagline}</div>
-      )}
-
-      {game.description && (
-        <div className="card-description">{game.description}</div>
-      )}
-
-      <div className="metadata-grid">
-        {game.slug && (
-          <>
-            <span className="metadata-key">Slug</span>
-            <span className="metadata-value">{game.slug}</span>
-          </>
-        )}
-        {game.title && (
-          <>
-            <span className="metadata-key">Title</span>
-            <span className="metadata-value">{game.title}</span>
-          </>
-        )}
-        {game.author && (
-          <>
-            <span className="metadata-key">Author</span>
-            <span className="metadata-value">{game.author}</span>
-          </>
-        )}
-        {game.status && (
-          <>
-            <span className="metadata-key">Status</span>
-            <span className="metadata-value">{game.status}</span>
-          </>
-        )}
-        {game.room_count != null && (
-          <>
-            <span className="metadata-key">Rooms</span>
-            <span className="metadata-value">{game.room_count}</span>
-          </>
-        )}
-        {game.genres && game.genres.length > 0 && (
-          <>
-            <span className="metadata-key">Genres</span>
-            <span className="metadata-value">{game.genres.join(", ")}</span>
-          </>
-        )}
-        {game.featured != null && (
-          <>
-            <span className="metadata-key">Featured</span>
-            <span className="metadata-value">{game.featured ? "Yes" : "No"}</span>
-          </>
-        )}
-        {game.homepage_url && (
-          <>
-            <span className="metadata-key">Homepage</span>
-            <span className="metadata-value">
-              <a href={game.homepage_url} target="_blank" rel="noopener noreferrer">{game.homepage_url}</a>
-            </span>
-          </>
-        )}
-        {game.cover_image_url && (
-          <>
-            <span className="metadata-key">Cover Image</span>
-            <span className="metadata-value" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <img
-                className="metadata-thumbnail"
-                src={game.cover_image_url}
-                alt={`${game.title || game.slug} cover`}
-                onError={(e) => { e.target.style.display = "none"; }}
-              />
-              <a href={game.cover_image_url} target="_blank" rel="noopener noreferrer">View full</a>
-            </span>
-          </>
-        )}
-        {game.download_url && (
-          <>
-            <span className="metadata-key">Download URL</span>
-            <span className="metadata-value" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
-              <span style={{ minWidth: 0, wordBreak: "break-all" }}>{game.download_url}</span>
-              <button className="btn-copy" onClick={() => handleCopy(game.download_url)}>
-                {copyStatus || "Copy"}
-              </button>
-            </span>
-          </>
-        )}
-        {game.runtime_compat_version && (
-          <>
-            <span className="metadata-key">Runtime Version</span>
-            <span className="metadata-value">{game.runtime_compat_version}</span>
-          </>
-        )}
-        {game.prompt_system_version && (
-          <>
-            <span className="metadata-key">Prompt Version</span>
-            <span className="metadata-value">{game.prompt_system_version}</span>
-          </>
-        )}
-        {game.review_notes && (
-          <>
-            <span className="metadata-key">Review Notes</span>
-            <span className="metadata-value">{game.review_notes}</span>
-          </>
-        )}
-        {game.created_at && (
-          <>
-            <span className="metadata-key">Created</span>
-            <span className="metadata-value">{formatDate(game.created_at)}</span>
-          </>
-        )}
-        {game.updated_at && (
-          <>
-            <span className="metadata-key">Updated</span>
-            <span className="metadata-value">{formatDate(game.updated_at)}</span>
-          </>
-        )}
-        {game.checksum_sha256 && (
-          <>
-            <span className="metadata-key">SHA-256</span>
-            <span className="metadata-value" style={{ fontFamily: '"SF Mono", Monaco, Consolas, monospace', fontSize: "0.78rem" }}>
-              {game.checksum_sha256}
-            </span>
-          </>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+        <h3 style={{ marginBottom: 0 }}>Metadata</h3>
+        {!editing && (
+          <button className="btn-detail" onClick={handleEdit}>Edit</button>
         )}
       </div>
+
+      {editing ? (
+        <div className="metadata-edit-form">
+          <div className="metadata-form-group">
+            <label htmlFor={`edit-title-${game.slug}`}>Title</label>
+            <input
+              id={`edit-title-${game.slug}`}
+              className="input"
+              type="text"
+              value={formData.title}
+              onChange={handleChange("title")}
+            />
+          </div>
+          <div className="metadata-form-group">
+            <label htmlFor={`edit-author-${game.slug}`}>Author</label>
+            <input
+              id={`edit-author-${game.slug}`}
+              className="input"
+              type="text"
+              value={formData.author}
+              onChange={handleChange("author")}
+            />
+          </div>
+          <div className="metadata-form-group">
+            <label htmlFor={`edit-description-${game.slug}`}>Description</label>
+            <textarea
+              id={`edit-description-${game.slug}`}
+              className="notes-input"
+              value={formData.description}
+              onChange={handleChange("description")}
+              rows={4}
+            />
+          </div>
+          <div className="metadata-form-group">
+            <label htmlFor={`edit-tagline-${game.slug}`}>Tagline</label>
+            <input
+              id={`edit-tagline-${game.slug}`}
+              className="input"
+              type="text"
+              value={formData.tagline}
+              onChange={handleChange("tagline")}
+            />
+          </div>
+          <div className="metadata-form-group">
+            <label htmlFor={`edit-genres-${game.slug}`}>Genres</label>
+            <input
+              id={`edit-genres-${game.slug}`}
+              className="input"
+              type="text"
+              value={formData.genres}
+              onChange={handleChange("genres")}
+              placeholder="Comma-separated, e.g. fantasy, horror"
+            />
+          </div>
+          <div className="metadata-form-group">
+            <label htmlFor={`edit-homepage-${game.slug}`}>Homepage URL</label>
+            <input
+              id={`edit-homepage-${game.slug}`}
+              className="input"
+              type="text"
+              value={formData.homepage_url}
+              onChange={handleChange("homepage_url")}
+            />
+          </div>
+          <div className="metadata-form-group">
+            <label htmlFor={`edit-cover-${game.slug}`}>Cover Image URL</label>
+            <input
+              id={`edit-cover-${game.slug}`}
+              className="input"
+              type="text"
+              value={formData.cover_image_url}
+              onChange={handleChange("cover_image_url")}
+            />
+          </div>
+          {saveError && (
+            <div className="error-msg" style={{ padding: "8px 0", textAlign: "left" }}>{saveError}</div>
+          )}
+          <div className="metadata-form-actions">
+            <button className="btn-save" onClick={handleSave} disabled={saving}>
+              {saving ? "Saving..." : "Save"}
+            </button>
+            <button className="btn-confirm-cancel" onClick={handleCancel} disabled={saving}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {game.tagline && (
+            <div className="card-tagline">{game.tagline}</div>
+          )}
+
+          {game.description && (
+            <div className="card-description">{game.description}</div>
+          )}
+
+          <div className="metadata-grid">
+            {game.slug && (
+              <>
+                <span className="metadata-key">Slug</span>
+                <span className="metadata-value">{game.slug}</span>
+              </>
+            )}
+            {game.title && (
+              <>
+                <span className="metadata-key">Title</span>
+                <span className="metadata-value">{game.title}</span>
+              </>
+            )}
+            {game.author && (
+              <>
+                <span className="metadata-key">Author</span>
+                <span className="metadata-value">{game.author}</span>
+              </>
+            )}
+            {game.status && (
+              <>
+                <span className="metadata-key">Status</span>
+                <span className="metadata-value">{game.status}</span>
+              </>
+            )}
+            {game.room_count != null && (
+              <>
+                <span className="metadata-key">Rooms</span>
+                <span className="metadata-value">{game.room_count}</span>
+              </>
+            )}
+            {game.genres && game.genres.length > 0 && (
+              <>
+                <span className="metadata-key">Genres</span>
+                <span className="metadata-value">{game.genres.join(", ")}</span>
+              </>
+            )}
+            {game.featured != null && (
+              <>
+                <span className="metadata-key">Featured</span>
+                <span className="metadata-value">{game.featured ? "Yes" : "No"}</span>
+              </>
+            )}
+            {game.homepage_url && (
+              <>
+                <span className="metadata-key">Homepage</span>
+                <span className="metadata-value">
+                  <a href={game.homepage_url} target="_blank" rel="noopener noreferrer">{game.homepage_url}</a>
+                </span>
+              </>
+            )}
+            {game.cover_image_url && (
+              <>
+                <span className="metadata-key">Cover Image</span>
+                <span className="metadata-value" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <img
+                    className="metadata-thumbnail"
+                    src={game.cover_image_url}
+                    alt={`${game.title || game.slug} cover`}
+                    onError={(e) => { e.target.style.display = "none"; }}
+                  />
+                  <a href={game.cover_image_url} target="_blank" rel="noopener noreferrer">View full</a>
+                </span>
+              </>
+            )}
+            {game.download_url && (
+              <>
+                <span className="metadata-key">Download URL</span>
+                <span className="metadata-value" style={{ display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ minWidth: 0, wordBreak: "break-all" }}>{game.download_url}</span>
+                  <button className="btn-copy" onClick={() => handleCopy(game.download_url)}>
+                    {copyStatus || "Copy"}
+                  </button>
+                </span>
+              </>
+            )}
+            {game.runtime_compat_version && (
+              <>
+                <span className="metadata-key">Runtime Version</span>
+                <span className="metadata-value">{game.runtime_compat_version}</span>
+              </>
+            )}
+            {game.prompt_system_version && (
+              <>
+                <span className="metadata-key">Prompt Version</span>
+                <span className="metadata-value">{game.prompt_system_version}</span>
+              </>
+            )}
+            {game.review_notes && (
+              <>
+                <span className="metadata-key">Review Notes</span>
+                <span className="metadata-value">{game.review_notes}</span>
+              </>
+            )}
+            {game.created_at && (
+              <>
+                <span className="metadata-key">Created</span>
+                <span className="metadata-value">{formatDate(game.created_at)}</span>
+              </>
+            )}
+            {game.updated_at && (
+              <>
+                <span className="metadata-key">Updated</span>
+                <span className="metadata-value">{formatDate(game.updated_at)}</span>
+              </>
+            )}
+            {game.checksum_sha256 && (
+              <>
+                <span className="metadata-key">SHA-256</span>
+                <span className="metadata-value" style={{ fontFamily: '"SF Mono", Monaco, Consolas, monospace', fontSize: "0.78rem" }}>
+                  {game.checksum_sha256}
+                </span>
+              </>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1391,7 +1570,7 @@ function GameCard({ game, token, onToggled, onDeleted, selected, onSelect }) {
         </button>
       </div>
 
-      {expandedSection === "metadata" && <MetadataPanel game={game} />}
+      {expandedSection === "metadata" && <MetadataPanel game={game} token={token} onSaved={onToggled} />}
       {expandedSection === "files" && <GameDetail slug={game.slug} token={token} />}
 
       {showConfirm && (
