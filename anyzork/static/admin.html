@@ -1546,9 +1546,15 @@ function Dashboard({ token, onLogout }) {
     }
     setBulkBusy(true);
     try {
+      let endpoint = `/api/admin/games/bulk/${action}`;
       const body = { slugs };
-      if (action !== "delete") body.review_notes = bulkNotes;
-      const data = await apiFetch(`/api/admin/games/bulk/${action}`, {
+      if (action === "feature" || action === "unfeature") {
+        endpoint = "/api/admin/games/bulk/feature";
+        body.featured = action === "feature";
+      } else if (action !== "delete") {
+        body.review_notes = bulkNotes;
+      }
+      const data = await apiFetch(endpoint, {
         token,
         method: "POST",
         body,
@@ -1762,6 +1768,20 @@ function Dashboard({ token, onLogout }) {
               disabled={bulkBusy}
             >
               {bulkBusy ? "..." : "Reject"}
+            </button>
+            <button
+              className="btn-feature"
+              onClick={() => handleBulkAction("feature")}
+              disabled={bulkBusy}
+            >
+              {bulkBusy ? "..." : "Feature"}
+            </button>
+            <button
+              className="btn-feature"
+              onClick={() => handleBulkAction("unfeature")}
+              disabled={bulkBusy}
+            >
+              {bulkBusy ? "..." : "Unfeature"}
             </button>
             <button
               className="btn-delete"
