@@ -62,6 +62,39 @@
     transition: all 0.15s;
   }
   .btn-logout:hover { border-color: var(--red); color: var(--red); }
+  .btn-review-queue {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 8px 16px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-review-queue:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-review-queue.active {
+    border-color: var(--accent);
+    background: rgba(108, 99, 255, 0.12);
+    color: var(--accent);
+  }
+  .review-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 10px;
+    min-width: 20px;
+    line-height: 1.2;
+  }
 
   /* Login */
   .login-wrap {
@@ -1267,6 +1300,7 @@ function Dashboard({ token, onLogout }) {
   const [searchTerm, setSearchTerm] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState("updated_desc");
+  const [reviewMode, setReviewMode] = useState(false);
   const debounceRef = useRef(null);
 
   const loadAllGames = useCallback(async () => {
@@ -1336,6 +1370,9 @@ function Dashboard({ token, onLogout }) {
       case "created_desc":
         sorted.sort((a, b) => (b.created_at || "").localeCompare(a.created_at || ""));
         break;
+      case "created_asc":
+        sorted.sort((a, b) => (a.created_at || "").localeCompare(b.created_at || ""));
+        break;
       case "title_asc":
         sorted.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
         break;
@@ -1356,12 +1393,38 @@ function Dashboard({ token, onLogout }) {
 
   const countByStatus = (s) => allGames ? allGames.filter((g) => g.status === s).length : 0;
   const countFeatured = () => allGames ? allGames.filter((g) => g.featured).length : 0;
+  const pendingCount = allGames ? allGames.filter((g) => g.status === "pending").length : 0;
+
+  const toggleReviewMode = useCallback(() => {
+    setReviewMode((prev) => {
+      if (!prev) {
+        setStatusFilter("pending");
+        setSortBy("created_asc");
+        setSearchTerm("");
+      } else {
+        setStatusFilter("");
+        setSortBy("updated_desc");
+      }
+      return !prev;
+    });
+  }, []);
 
   return (
     <>
       <header className="header">
         <h1>Any<span>Zork</span> Admin</h1>
-        <button className="btn-logout" onClick={onLogout}>Log out</button>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <button
+            className={`btn-review-queue${reviewMode ? " active" : ""}`}
+            onClick={toggleReviewMode}
+            aria-pressed={reviewMode}
+            aria-label={`Review queue with ${pendingCount} pending games`}
+          >
+            Review Queue
+            <span className="review-badge">{pendingCount}</span>
+          </button>
+          <button className="btn-logout" onClick={onLogout}>Log out</button>
+        </div>
       </header>
 
       <main className="content">
@@ -1451,6 +1514,7 @@ function Dashboard({ token, onLogout }) {
                 >
                   <option value="updated_desc">Updated (newest)</option>
                   <option value="created_desc">Created (newest)</option>
+                  <option value="created_asc">Created (oldest)</option>
                   <option value="title_asc">Title (A-Z)</option>
                   <option value="author_asc">Author (A-Z)</option>
                   <option value="rooms_desc">Rooms (most)</option>
